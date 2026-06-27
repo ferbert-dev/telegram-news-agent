@@ -7,6 +7,8 @@ import {
   parseNewsCommand,
   parseReviewCallback,
 } from "../src/telegram-control.js";
+import { publishApprovedDraft } from "../src/publish.js";
+import { TelegramError } from "../src/telegram.js";
 
 const SESSION_ID = "a".repeat(48);
 
@@ -273,6 +275,134 @@ test("duplicate publish without a receipt calls the idempotent publisher", async
 
   await handleControlUpdate(callbackUpdate(), dependencies);
   assert.equal(published, 1);
+});
+
+function publicationStateFixture({ ambiguous = false } = {}) {
+  let updateStatus;
+  let draftStatus = "review";
+  let publication = null;
+  let sends = 0;
+  const base = fixture({
+    repository: {
+      async claimTelegramUpdate() {
+        if (updateStatus === "completed") {
+          return { claimed: false, claim_token: null, claim_status: "terminal" };
+        }
+        updateStatus = "processing";
+        return {
+          claimed: true,
+          claim_token: `claim-${sends + 1}`,
+          claim_status: "claimed",
+        };
+      },
+      async finishTelegramUpdate(_id, _token, status) {
+        updateStatus = status;
+        return true;
+      },
+      async decideTelegramReviewSession() {
+        if (draftStatus === "review") {
+          draftStatus = "approved";
+          return {
+            draft_id: "draft-1",
+            decision: "publish",
+            decision_won: true,
+          };
+        }
+        return {
+          draft_id: "draft-1",
+          decision: "publish",
+          decision_won: false,
+        };
+      },
+      async findPublicationByDraft() {
+        return publication;
+      },
+      async claimDraftForPublication() {
+        if (draftStatus !== "approved") {
+          throw new Error("Draft is not approved or is already being published");
+        }
+        draftStatus = "publishing";
+        return { id: "draft-1", body: "Approved article" };
+      },
+      async releaseRejectedDraftPublication() {
+        assert.equal(draftStatus, "publishing");
+        draftStatus = "approved";
+        return { id: "draft-1", status: draftStatus };
+      },
+      async finalizeDraftPublication({ messageId }) {
+        assert.equal(draftStatus, "publishing");
+        draftStatus = "published";
+        publication = { telegram_message_id: messageId };
+        return publication;
+      },
+    },
+  });
+  base.dependencies.publishDraft = (options) =>
+    publishApprovedDraft({
+      ...options,
+      sendMessage: async () => {
+        sends += 1;
+        if (sends === 1) {
+          if (ambiguous) {
+            throw new Error("connection reset");
+          }
+          throw new TelegramError("sendMessage", 400, 400, "message rejected");
+        }
+        return { message_id: 90 };
+      },
+    });
+  return {
+    ...base,
+    state: () => ({ updateStatus, draftStatus, publication, sends }),
+  };
+}
+
+test("failed callback redelivery retries a definitive rejection through the real publisher", async () => {
+  const flow = publicationStateFixture();
+  await assert.rejects(
+    handleControlUpdate(callbackUpdate(), flow.dependencies),
+    /released for retry/,
+  );
+  assert.deepEqual(flow.state(), {
+    updateStatus: "failed",
+    draftStatus: "approved",
+    publication: null,
+    sends: 1,
+  });
+
+  const result = await handleControlUpdate(callbackUpdate(), flow.dependencies);
+  assert.equal(result.handled, true);
+  assert.deepEqual(flow.state(), {
+    updateStatus: "completed",
+    draftStatus: "published",
+    publication: { telegram_message_id: 90 },
+    sends: 2,
+  });
+});
+
+test("ambiguous send remains publishing and callback redelivery never resends", async () => {
+  const flow = publicationStateFixture({ ambiguous: true });
+  await assert.rejects(
+    handleControlUpdate(callbackUpdate(), flow.dependencies),
+    /manual reconciliation/,
+  );
+  assert.deepEqual(flow.state(), {
+    updateStatus: "failed",
+    draftStatus: "publishing",
+    publication: null,
+    sends: 1,
+  });
+
+  await assert.rejects(
+    handleControlUpdate(callbackUpdate(), flow.dependencies),
+    /already being published/,
+  );
+  assert.deepEqual(flow.state(), {
+    updateStatus: "failed",
+    draftStatus: "publishing",
+    publication: null,
+    sends: 1,
+  });
 });
 
 test("deduplicated update performs no command or callback mutation", async () => {

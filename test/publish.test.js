@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { publishApprovedDraft } from "../src/publish.js";
+import { TelegramError } from "../src/telegram.js";
 
 test("publishApprovedDraft records a claimed draft after Telegram accepts it", async () => {
   const calls = [];
@@ -78,4 +79,56 @@ test("publishApprovedDraft leaves an ambiguous failure unresolved", async () => 
     /remains in publishing state/,
   );
   assert.equal(finalized, false);
+});
+
+test("publishApprovedDraft releases a definitive Telegram rejection for retry", async () => {
+  let released = false;
+  await assert.rejects(
+    publishApprovedDraft({
+      repository: {
+        async findPublicationByDraft() {
+          return null;
+        },
+        async claimDraftForPublication(id) {
+          return { id, body: "Approved article" };
+        },
+        async releaseRejectedDraftPublication(id) {
+          assert.equal(id, "draft-1");
+          released = true;
+        },
+      },
+      token: "token",
+      channelId: "@channel",
+      draftId: "draft-1",
+      sendMessage: async () => {
+        throw new TelegramError("sendMessage", 400, 400, "message rejected");
+      },
+    }),
+    /released for retry/,
+  );
+  assert.equal(released, true);
+});
+
+test("publishApprovedDraft never resends a draft already in publishing", async () => {
+  let sent = false;
+  await assert.rejects(
+    publishApprovedDraft({
+      repository: {
+        async findPublicationByDraft() {
+          return null;
+        },
+        async claimDraftForPublication() {
+          throw new Error("Draft is not approved or is already being published");
+        },
+      },
+      token: "token",
+      channelId: "@channel",
+      draftId: "draft-1",
+      sendMessage: async () => {
+        sent = true;
+      },
+    }),
+    /already being published/,
+  );
+  assert.equal(sent, false);
 });

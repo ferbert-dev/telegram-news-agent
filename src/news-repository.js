@@ -250,6 +250,13 @@ export class NewsRepository {
     return requireResult(result, "Reset unresolved draft publication")[0];
   }
 
+  async releaseRejectedDraftPublication(id) {
+    const result = await this.client.rpc("release_rejected_draft_publication", {
+      p_draft_id: id,
+    });
+    return requireResult(result, "Release rejected draft publication")[0];
+  }
+
   async recordPublication(publication) {
     const result = await this.client
       .from("published_posts")

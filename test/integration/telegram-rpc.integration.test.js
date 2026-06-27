@@ -153,6 +153,39 @@ test(
       );
     });
 
+    await t.test("failed update claims are immediately retryable", async () => {
+      const updateId = Date.now() + 1;
+      const first = requireData(
+        await db.rpc("claim_telegram_update", {
+          p_update_id: updateId,
+          p_update_kind: "news_callback",
+          p_stale_after_seconds: 30,
+        }),
+      )[0];
+      cleanup.push(["update", updateId]);
+      assert.equal(
+        requireData(
+          await db.rpc("finish_telegram_update", {
+            p_update_id: updateId,
+            p_claim_token: first.claim_token,
+            p_status: "failed",
+            p_error_code: "internal_error",
+          }),
+        ),
+        true,
+      );
+
+      const retry = requireData(
+        await peer.rpc("claim_telegram_update", {
+          p_update_id: updateId,
+          p_update_kind: "news_callback",
+          p_stale_after_seconds: 30,
+        }),
+      )[0];
+      assert.equal(retry.claimed, true);
+      assert.notEqual(retry.claim_token, first.claim_token);
+    });
+
     await t.test("double Publish has one winner and a resumable decision", async () => {
       const fixture = await createReviewFixture(db, randomUUID());
       cleanup.push(["review", fixture.session.id, fixture.article.id]);
