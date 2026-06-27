@@ -1,6 +1,15 @@
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 export const TELEGRAM_MESSAGE_MAX_LENGTH = 4096;
 
+export class TelegramError extends Error {
+  constructor(method, status, errorCode, description) {
+    super(`Telegram ${method} failed: ${description}`);
+    this.name = "TelegramError";
+    this.status = status;
+    this.errorCode = errorCode;
+  }
+}
+
 export function getTelegramConfig() {
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
   const channelId = process.env.TELEGRAM_CHANNEL_ID?.trim();
@@ -39,7 +48,12 @@ export async function callTelegram(
 
   if (!response.ok || !payload?.ok) {
     const description = payload?.description ?? `HTTP ${response.status}`;
-    throw new Error(`Telegram ${method} failed: ${description}`);
+    throw new TelegramError(
+      method,
+      response.status,
+      payload?.error_code ?? null,
+      description,
+    );
   }
 
   return payload.result;

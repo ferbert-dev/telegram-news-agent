@@ -129,7 +129,13 @@ export async function handleControlUpdate(
         update.update_id,
         updateKind(classification),
       );
-      if (!claimed) {
+      if (!claimed.claimed) {
+        if (claimed.claim_status === "busy") {
+          throw new ControlError(
+            "update_in_progress",
+            "Telegram update is still being processed",
+          );
+        }
         return {
           value: { handled: true, duplicate: true },
           auditResult: `Ignored duplicate Telegram update ${update.update_id}.`,
@@ -160,7 +166,14 @@ export async function handleControlUpdate(
                   publishDraft,
                 },
               );
-        await repository.finishTelegramUpdate(update.update_id, "completed");
+        const finished = await repository.finishTelegramUpdate(
+          update.update_id,
+          claimed.claim_token,
+          "completed",
+        );
+        if (!finished) {
+          throw new ControlError("update_claim_lost", "Update claim was lost");
+        }
         return {
           value: { handled: true, ...value },
           auditResult: value.auditResult,
@@ -170,6 +183,7 @@ export async function handleControlUpdate(
         await repository
           .finishTelegramUpdate(
             update.update_id,
+            claimed.claim_token,
             "failed",
             error instanceof ControlError ? error.code : "internal_error",
           )
@@ -290,25 +304,26 @@ async function handleReviewCallback(
     actorId: userId,
   });
 
-  if (!decision.decision_won) {
-    const publication =
-      decision.decision === "publish"
-        ? await repository.findPublicationByDraft(decision.draft_id)
-        : null;
-    const text = publication
-      ? `Already published as Telegram message ${publication.telegram_message_id}.`
-      : decisionText(decision.decision);
-    await answerCallback(callTelegram, token, callback.id, text, true);
+  if (!decision.decision_won && decision.decision !== "publish") {
+    await answerCallback(
+      callTelegram,
+      token,
+      callback.id,
+      decisionText(decision.decision),
+      true,
+    );
     return {
       auditResult: `Duplicate callback observed existing ${decision.decision} decision for draft ${decision.draft_id}.`,
     };
   }
 
-  await callTelegram(token, "editMessageReplyMarkup", {
-    chat_id: chatId,
-    message_id: messageId,
-    reply_markup: { inline_keyboard: [] },
-  });
+  if (decision.decision_won) {
+    await callTelegram(token, "editMessageReplyMarkup", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: [] },
+    });
+  }
 
   if (decision.decision === "reject") {
     await answerCallback(
@@ -322,7 +337,12 @@ async function handleReviewCallback(
     };
   }
 
-  await answerCallback(callTelegram, token, callback.id, "Publishing...");
+  await answerCallback(
+    callTelegram,
+    token,
+    callback.id,
+    decision.decision_won ? "Publishing..." : "Resuming publication...",
+  );
   const published = await publishDraft({
     repository,
     token,

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "test:integration": "RUN_DATABASE_INTEGRATION=1 node --test test/integration/*.test.js",
     "database:check": "node --env-file=.env src/database-check.js",
     "audit:flush": "node --env-file=.env src/audit-outbox-cli.js",
     "drafts": "node --env-file=.env src/drafts-cli.js",

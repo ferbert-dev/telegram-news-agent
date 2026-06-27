@@ -14,10 +14,15 @@ function fixture(overrides = {}) {
   const calls = [];
   const repository = {
     async claimTelegramUpdate() {
-      return true;
+      return {
+        claimed: true,
+        claim_token: "claim-1",
+        claim_status: "claimed",
+      };
     },
     async finishTelegramUpdate(...args) {
       calls.push(["finishUpdate", ...args]);
+      return true;
     },
     async createTelegramReviewSession(value) {
       calls.push(["session", value]);
@@ -206,7 +211,7 @@ test("callback reauthorizes and passes chat/message binding to atomic decision",
   });
 });
 
-test("duplicate publish returns existing receipt without sending again", async () => {
+test("duplicate publish with a receipt resumes through the idempotent publisher", async () => {
   let published = false;
   const { calls, dependencies } = fixture({
     repository: {
@@ -224,14 +229,50 @@ test("duplicate publish returns existing receipt without sending again", async (
     dependencies: {
       publishDraft: async () => {
         published = true;
+        return {
+          publication: { telegram_message_id: 88 },
+          alreadyPublished: true,
+        };
       },
     },
   });
   await handleControlUpdate(callbackUpdate(), dependencies);
 
-  assert.equal(published, false);
-  const answer = calls.find(([name]) => name === "answerCallbackQuery");
-  assert.match(answer[1].text, /88/);
+  assert.equal(published, true);
+  assert.match(
+    calls.find(([name]) => name === "answerCallbackQuery")[1].text,
+    /Resuming/,
+  );
+  assert.match(calls.find(([name, body]) =>
+    name === "sendMessage" && /Published/.test(body.text),
+  )[1].text, /88/);
+});
+
+test("duplicate publish without a receipt calls the idempotent publisher", async () => {
+  let published = 0;
+  const { dependencies } = fixture({
+    repository: {
+      async decideTelegramReviewSession() {
+        return {
+          draft_id: "draft-1",
+          decision: "publish",
+          decision_won: false,
+        };
+      },
+      async findPublicationByDraft() {
+        return null;
+      },
+    },
+    dependencies: {
+      publishDraft: async () => {
+        published += 1;
+        return { publication: { telegram_message_id: 89 } };
+      },
+    },
+  });
+
+  await handleControlUpdate(callbackUpdate(), dependencies);
+  assert.equal(published, 1);
 });
 
 test("deduplicated update performs no command or callback mutation", async () => {
@@ -239,7 +280,7 @@ test("deduplicated update performs no command or callback mutation", async () =>
   const { dependencies } = fixture({
     repository: {
       async claimTelegramUpdate() {
-        return false;
+        return { claimed: false, claim_token: null, claim_status: "terminal" };
       },
     },
     dependencies: {
@@ -296,4 +337,32 @@ test("operation failures are audited with sanitized codes", async () => {
   });
   await assert.rejects(handleControlUpdate(commandUpdate(), dependencies));
   assert.equal(auditError, "internal_error");
+});
+
+test("lost update claim prevents successful acknowledgement", async () => {
+  const { dependencies } = fixture({
+    repository: {
+      async finishTelegramUpdate() {
+        return false;
+      },
+    },
+  });
+  await assert.rejects(
+    handleControlUpdate(commandUpdate(), dependencies),
+    (error) => error.code === "update_claim_lost",
+  );
+});
+
+test("fresh processing duplicate is redelivered instead of acknowledged", async () => {
+  const { dependencies } = fixture({
+    repository: {
+      async claimTelegramUpdate() {
+        return { claimed: false, claim_token: null, claim_status: "busy" };
+      },
+    },
+  });
+  await assert.rejects(
+    handleControlUpdate(commandUpdate(), dependencies),
+    (error) => error.code === "update_in_progress",
+  );
 });

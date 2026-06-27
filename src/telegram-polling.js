@@ -1,6 +1,17 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { TelegramError } from "./telegram.js";
 
 const MAX_BACKOFF_MS = 30_000;
+const LEASE_NAME = "telegram-control-poller";
+const LEASE_TTL_SECONDS = 60;
+const HEARTBEAT_INTERVAL_MS = 20_000;
+
+export class PollingLeaseLostError extends Error {
+  constructor() {
+    super("Telegram polling lease was lost");
+    this.name = "PollingLeaseLostError";
+  }
+}
 
 export function getPollingConfig(env = process.env) {
   const mode = env.TELEGRAM_UPDATE_MODE?.trim().toLowerCase();
@@ -47,39 +58,93 @@ export async function pollTelegram({
   random = Math.random,
   sleepImpl = sleep,
   log = console,
+  heartbeatIntervalMs = HEARTBEAT_INTERVAL_MS,
 }) {
-  const leaseName = "telegram-control-poller";
-  if (!(await repository.acquirePipelineLease(leaseName, ownerId, 60))) {
+  if (
+    !(await repository.acquirePipelineLease(
+      LEASE_NAME,
+      ownerId,
+      LEASE_TTL_SECONDS,
+    ))
+  ) {
     throw new Error("Another Telegram polling process holds the database lease");
   }
+
+  const leaseController = new AbortController();
+  const operationController = new AbortController();
+  const abortOperation = () => operationController.abort(signal.reason);
+  signal.addEventListener("abort", abortOperation, { once: true });
+  let rejectLeaseLoss;
+  const leaseLoss = new Promise((_, reject) => {
+    rejectLeaseLoss = reject;
+  });
+  const heartbeat = (async () => {
+    try {
+      while (!leaseController.signal.aborted) {
+        await sleepImpl(heartbeatIntervalMs, undefined, {
+          signal: leaseController.signal,
+        });
+        if (
+          !(await repository.renewPipelineLease(
+            LEASE_NAME,
+            ownerId,
+            LEASE_TTL_SECONDS,
+          ))
+        ) {
+          throw new PollingLeaseLostError();
+        }
+      }
+    } catch (error) {
+      if (!leaseController.signal.aborted) {
+        operationController.abort(error);
+        rejectLeaseLoss(
+          error instanceof PollingLeaseLostError
+            ? error
+            : new PollingLeaseLostError(),
+        );
+      }
+    }
+  })();
 
   let offset = 0;
   let attempt = 0;
   try {
     while (!signal.aborted) {
       try {
-        if (!(await repository.acquirePipelineLease(leaseName, ownerId, 60))) {
-          throw new Error("Telegram polling lease was lost");
-        }
-        const updates = await callTelegram(
-          token,
-          "getUpdates",
-          {
-            offset,
-            timeout: 25,
-            allowed_updates: ["message", "callback_query"],
-          },
-          { signal },
-        );
+        const updates = await Promise.race([
+          callTelegram(
+            token,
+            "getUpdates",
+            {
+              offset,
+              timeout: 25,
+              allowed_updates: ["message", "callback_query"],
+            },
+            { signal: operationController.signal },
+          ),
+          leaseLoss,
+        ]);
         attempt = 0;
         for (const update of updates) {
           if (signal.aborted) {
             break;
           }
-          await handleUpdate(update);
+          await Promise.race([
+            handleUpdate(update, { signal: operationController.signal }),
+            leaseLoss,
+          ]);
           offset = Math.max(offset, update.update_id + 1);
         }
       } catch (error) {
+        if (error instanceof PollingLeaseLostError) {
+          throw error;
+        }
+        if (
+          error instanceof TelegramError &&
+          (error.status === 409 || error.errorCode === 409)
+        ) {
+          throw error;
+        }
         if (signal.aborted) {
           break;
         }
@@ -94,6 +159,10 @@ export async function pollTelegram({
       }
     }
   } finally {
-    await repository.releasePipelineLease(leaseName, ownerId);
+    signal.removeEventListener("abort", abortOperation);
+    leaseController.abort();
+    operationController.abort();
+    await heartbeat;
+    await repository.releasePipelineLease(LEASE_NAME, ownerId);
   }
 }

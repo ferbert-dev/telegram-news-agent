@@ -67,8 +67,20 @@ async function handleUpdate(update) {
         update.update_id,
         "ignored",
       );
-      if (claimed) {
-        await repository.finishTelegramUpdate(update.update_id, "completed");
+      if (claimed.claimed) {
+        const finished = await repository.finishTelegramUpdate(
+          update.update_id,
+          claimed.claim_token,
+          "completed",
+        );
+        if (!finished) {
+          throw new ControlError("update_claim_lost", "Update claim was lost");
+        }
+      } else if (claimed.claim_status === "busy") {
+        throw new ControlError(
+          "update_in_progress",
+          "Telegram update is still being processed",
+        );
       }
     }
   } catch (error) {
@@ -98,6 +110,7 @@ async function handleUpdate(update) {
         text,
       }).catch(() => {});
     }
+    throw error;
   }
 }
 

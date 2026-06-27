@@ -286,26 +286,36 @@ export class NewsRepository {
     return requireResult(result, "Release pipeline lease");
   }
 
-  async claimTelegramUpdate(updateId, updateKind) {
+  async renewPipelineLease(name, ownerId, ttlSeconds = 60) {
+    const result = await this.client.rpc("renew_pipeline_lease", {
+      p_name: name,
+      p_owner_id: ownerId,
+      p_ttl_seconds: ttlSeconds,
+    });
+    return requireResult(result, "Renew pipeline lease");
+  }
+
+  async claimTelegramUpdate(updateId, updateKind, staleAfterSeconds = 120) {
     const result = await this.client.rpc("claim_telegram_update", {
       p_update_id: updateId,
       p_update_kind: updateKind,
+      p_stale_after_seconds: staleAfterSeconds,
     });
-    return requireResult(result, "Claim Telegram update");
+    return requireResult(result, "Claim Telegram update")[0];
   }
 
-  async finishTelegramUpdate(updateId, status, errorCode = null) {
-    const result = await this.client
-      .from("telegram_updates")
-      .update({
-        status,
-        error_code: errorCode,
-        completed_at: now(),
-      })
-      .eq("update_id", updateId)
-      .eq("status", "processing")
-      .select()
-      .single();
+  async finishTelegramUpdate(
+    updateId,
+    claimToken,
+    status,
+    errorCode = null,
+  ) {
+    const result = await this.client.rpc("finish_telegram_update", {
+      p_update_id: updateId,
+      p_claim_token: claimToken,
+      p_status: status,
+      p_error_code: errorCode,
+    });
     return requireResult(result, "Finish Telegram update");
   }
 
