@@ -6,11 +6,13 @@
   "scripts": {
     "test": "node --test",
     "database:check": "node --env-file=.env src/database-check.js",
+    "audit:flush": "node --env-file=.env src/audit-outbox-cli.js",
     "drafts": "node --env-file=.env src/drafts-cli.js",
     "pipeline:run": "node --env-file=.env src/pipeline-cli.js",
     "research": "node --env-file=.env src/research-cli.js",
     "sources": "node --env-file=.env src/sources-cli.js",
     "telegram:check": "node --env-file=.env src/telegram-check.js",
+    "telegram:control": "node --env-file=.env src/telegram-bot.js",
     "telegram:send": "node --env-file=.env src/send-message.js",
     "telegram:smoke": "node --env-file=.env src/telegram-smoke.js"
   },

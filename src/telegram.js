@@ -16,14 +16,20 @@ export function getTelegramConfig() {
   return { token, channelId };
 }
 
-export async function callTelegram(token, method, body) {
+export async function callTelegram(
+  token,
+  method,
+  body,
+  { signal, fetchImpl = fetch } = {},
+) {
   let response;
 
   try {
-    response = await fetch(`${TELEGRAM_API_BASE}/bot${token}/${method}`, {
+    response = await fetchImpl(`${TELEGRAM_API_BASE}/bot${token}/${method}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      signal,
     });
   } catch (error) {
     throw new Error(`Telegram ${method} request failed`, { cause: error });

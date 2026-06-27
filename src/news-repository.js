@@ -286,6 +286,55 @@ export class NewsRepository {
     return requireResult(result, "Release pipeline lease");
   }
 
+  async claimTelegramUpdate(updateId, updateKind) {
+    const result = await this.client.rpc("claim_telegram_update", {
+      p_update_id: updateId,
+      p_update_kind: updateKind,
+    });
+    return requireResult(result, "Claim Telegram update");
+  }
+
+  async finishTelegramUpdate(updateId, status, errorCode = null) {
+    const result = await this.client
+      .from("telegram_updates")
+      .update({
+        status,
+        error_code: errorCode,
+        completed_at: now(),
+      })
+      .eq("update_id", updateId)
+      .eq("status", "processing")
+      .select()
+      .single();
+    return requireResult(result, "Finish Telegram update");
+  }
+
+  async createTelegramReviewSession(session) {
+    const result = await this.client
+      .from("telegram_review_sessions")
+      .insert(session)
+      .select()
+      .single();
+    return requireResult(result, "Create Telegram review session");
+  }
+
+  async decideTelegramReviewSession({
+    sessionId,
+    action,
+    chatId,
+    messageId,
+    actorId,
+  }) {
+    const result = await this.client.rpc("decide_telegram_review_session", {
+      p_session_id: sessionId,
+      p_action: action,
+      p_chat_id: chatId,
+      p_message_id: messageId,
+      p_actor_id: actorId,
+    });
+    return requireResult(result, "Decide Telegram review session")[0];
+  }
+
   async enqueueNotionAuditBackfill(record) {
     const result = await this.client
       .from("notion_audit_outbox")
