@@ -199,6 +199,42 @@ test("successful business outcome survives finalization failure with durable bac
   assert.equal(requests, 2);
 });
 
+test("outbox option uses the durable backfill schema", async () => {
+  const records = [];
+  const result = await withNotionAudit(
+    {
+      async start() {
+        return {
+          pageId: "run-4",
+          pageUrl: "https://notion.test/run-4",
+          startedAt: new Date("2026-06-27T10:00:00.000Z"),
+        };
+      },
+      async finish() {
+        throw new Error("Notion unavailable");
+      },
+    },
+    { name: "Telegram callback", objective: "Publish draft" },
+    async () => ({
+      value: "published",
+      auditResult: "Published draft",
+      auditLinks: "https://t.me/channel/1",
+    }),
+    {
+      outbox: {
+        async enqueueNotionAuditBackfill(record) {
+          records.push(record);
+        },
+      },
+    },
+  );
+
+  assert.equal(result, "published");
+  assert.equal(records[0].notion_page_id, "run-4");
+  assert.equal(records[0].event_type, "finalize_success");
+  assert.equal(records[0].payload.finalization.status, "Succeeded");
+});
+
 test("backfill replays claimed finalizations and marks successes complete", async () => {
   const calls = [];
   const logger = {

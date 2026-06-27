@@ -30,35 +30,17 @@ create table public.telegram_updates (
   error_code text
 );
 
-create table public.notion_audit_outbox (
-  id uuid primary key default gen_random_uuid(),
-  notion_page_id text not null,
-  payload jsonb not null,
-  attempts integer not null default 0 check (attempts >= 0),
-  next_attempt_at timestamptz not null default now(),
-  last_error text,
-  created_at timestamptz not null default now(),
-  delivered_at timestamptz
-);
-
-create index notion_audit_outbox_pending_idx
-  on public.notion_audit_outbox (next_attempt_at, created_at)
-  where delivered_at is null;
-
 alter table public.telegram_review_sessions enable row level security;
 alter table public.telegram_updates enable row level security;
-alter table public.notion_audit_outbox enable row level security;
 
 revoke all on table
   public.telegram_review_sessions,
-  public.telegram_updates,
-  public.notion_audit_outbox
+  public.telegram_updates
 from anon, authenticated;
 
 grant select, insert, update on table
   public.telegram_review_sessions,
-  public.telegram_updates,
-  public.notion_audit_outbox
+  public.telegram_updates
 to service_role;
 
 create or replace function public.claim_telegram_update(
