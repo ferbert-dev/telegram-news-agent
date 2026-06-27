@@ -229,6 +229,14 @@ export class NewsRepository {
     return requireResult(result, "Find publication by draft");
   }
 
+  async resetDraftPublication(id, confirmation) {
+    const result = await this.client.rpc("reset_draft_publication", {
+      p_draft_id: id,
+      p_confirmation: confirmation,
+    });
+    return requireResult(result, "Reset unresolved draft publication")[0];
+  }
+
   async recordPublication(publication) {
     const result = await this.client
       .from("published_posts")

@@ -6,6 +6,7 @@ import {
   withNotionAudit,
 } from "./notion-audit.js";
 import { publishApprovedDraft } from "./publish.js";
+import { reconcilePublication } from "./publication-recovery.js";
 import { getTelegramConfig } from "./telegram.js";
 
 function argument(args, name) {
@@ -105,8 +106,42 @@ async function execute(command, args) {
     };
   }
 
+  if (command === "reconcile-sent") {
+    const messageId = Number(argument(args, "--message-id"));
+    const { channelId } = getTelegramConfig();
+    const result = await reconcilePublication({
+      repository,
+      draftId: id,
+      outcome: "sent",
+      channelId,
+      messageId,
+    });
+    console.log(
+      `Recorded confirmed Telegram message ${result.publication.telegram_message_id}.`,
+    );
+    return {
+      auditResult: `Reconciled draft ${id} as sent in Telegram message ${result.publication.telegram_message_id}.`,
+    };
+  }
+
+  if (command === "reconcile-not-sent") {
+    const confirmation = argument(args, "--confirm");
+    if (confirmation !== "TELEGRAM_NOT_SENT") {
+      throw new Error("--confirm must be exactly TELEGRAM_NOT_SENT");
+    }
+    const result = await reconcilePublication({
+      repository,
+      draftId: id,
+      outcome: "not-sent",
+    });
+    console.log(`Released draft ${result.draft.id} for a controlled retry.`);
+    return {
+      auditResult: `Reconciled draft ${id} as not sent and returned it to approved.`,
+    };
+  }
+
   throw new Error(
-    "Usage: drafts <list|preview|approve|reject|publish> [--id UUID] [--status STATUS] [--reason TEXT]",
+    "Usage: drafts <list|preview|approve|reject|publish|reconcile-sent|reconcile-not-sent> [--id UUID] [--status STATUS] [--reason TEXT] [--message-id ID] [--confirm TELEGRAM_NOT_SENT]",
   );
 }
 

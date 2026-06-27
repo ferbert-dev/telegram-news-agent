@@ -77,6 +77,17 @@ database lease to prevent overlapping runs.
 Publication is idempotent per draft. An uncertain Telegram response leaves the
 draft in `publishing` for manual reconciliation instead of retrying blindly.
 
+After independently checking Telegram, reconcile an uncertain publication
+without sending another message:
+
+```bash
+npm run drafts -- reconcile-sent --id <draft-id> --message-id <telegram-id>
+npm run drafts -- reconcile-not-sent --id <draft-id> --confirm TELEGRAM_NOT_SENT
+```
+
+The first command records an observed Telegram message. The second returns the
+draft to `approved` for a controlled retry and requires exact confirmation.
+
 Keep `APPROVAL_POLICY=manual` during supervised QA. With `automatic`, the same
 audited command approves and publishes the generated draft; this must not be
 enabled until the five supervised runs pass.

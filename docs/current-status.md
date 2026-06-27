@@ -130,6 +130,10 @@ SUPABASE_SECRET_KEY=
   after extraction or generation failure. Production verification returned the
   existing discovered row for retry, ignored the published row, and retained
   exactly one database row for each canonical URL.
+- Publication recovery now has explicit operator-confirmed paths for a
+  Telegram message confirmed sent or confirmed not sent. Neither reconciliation
+  path sends a message. Production verification rejected reopening an already
+  published draft.
 - Added and verified preview-first Telegram message publishing.
 - Created the dedicated Supabase project at `$0/month`.
 - Applied and verified the initial content-memory schema with RLS enabled and

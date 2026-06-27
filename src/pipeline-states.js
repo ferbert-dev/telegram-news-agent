@@ -18,7 +18,7 @@ const TRANSITIONS = {
     draft: new Set(["review", "rejected"]),
     review: new Set(["approved", "rejected"]),
     approved: new Set(["publishing", "rejected"]),
-    publishing: new Set(["published"]),
+    publishing: new Set(["published", "approved"]),
     published: new Set(),
     rejected: new Set(),
   },
