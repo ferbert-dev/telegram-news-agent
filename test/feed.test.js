@@ -6,6 +6,11 @@ import {
   fetchFeed,
   parseFeed,
 } from "../src/feed.js";
+import {
+  assertPublicIpAddress,
+  fetchPublicHttp,
+  validatePublicUrl,
+} from "../src/safe-fetch.js";
 
 const RSS = `<?xml version="1.0"?>
 <rss version="2.0">
@@ -64,6 +69,11 @@ test("assertPublicHttpUrl rejects private and unsupported URLs", () => {
   );
   assert.throws(() => assertPublicHttpUrl("file:///etc/passwd"), /Unsupported/);
   assert.doesNotThrow(() => assertPublicHttpUrl("https://example.com/feed"));
+  assert.throws(
+    () => assertPublicIpAddress("::ffff:127.0.0.1"),
+    /not allowed/,
+  );
+  assert.throws(() => assertPublicIpAddress("::127.0.0.1"), /not allowed/);
 });
 
 test("fetchFeed enforces response size before parsing", async () => {
@@ -74,7 +84,49 @@ test("fetchFeed enforces response size before parsing", async () => {
     });
 
   await assert.rejects(
-    fetchFeed("https://example.com/feed", { fetchImpl, maxBytes: 100 }),
+    fetchFeed("https://example.com/feed", {
+      fetchImpl,
+      lookupImpl: async () => [{ address: "93.184.216.34", family: 4 }],
+      maxBytes: 100,
+    }),
     /exceeds 100 bytes/,
   );
+});
+
+test("DNS validation rejects private and link-local answers", async () => {
+  await assert.rejects(
+    validatePublicUrl("https://example.com/feed", async () => [
+      { address: "10.0.0.4", family: 4 },
+    ]),
+    /not allowed/,
+  );
+  await assert.rejects(
+    validatePublicUrl("https://example.com/feed", async () => [
+      { address: "fe80::1", family: 6 },
+    ]),
+    /not allowed/,
+  );
+});
+
+test("manual redirects validate every destination before the next request", async () => {
+  const requested = [];
+  await assert.rejects(
+    fetchPublicHttp("https://example.com/feed", {
+      lookupImpl: async (hostname) => [
+        {
+          address: hostname === "example.com" ? "93.184.216.34" : "127.0.0.1",
+          family: 4,
+        },
+      ],
+      fetchImpl: async (url, options) => {
+        requested.push([url.toString(), options.redirect]);
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://internal.example/feed" },
+        });
+      },
+    }),
+    /not allowed/,
+  );
+  assert.deepEqual(requested, [["https://example.com/feed", "manual"]]);
 });

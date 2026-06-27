@@ -2,6 +2,7 @@ import { createDatabaseClient } from "./database.js";
 import { NewsRepository } from "./news-repository.js";
 import { createGeminiClient } from "./gemini-client.js";
 import {
+  backfillNotionAudits,
   getNotionAuditConfig,
   NotionAuditLogger,
   withNotionAudit,
@@ -27,15 +28,18 @@ const keywords = value(args, "--keywords", "AI,model,research,agent")
 const query = value(args, "--query", "important AI developments");
 const approvalPolicy = getApprovalPolicy();
 const auditLogger = new NotionAuditLogger(getNotionAuditConfig());
+const repository = new NewsRepository(createDatabaseClient());
+await backfillNotionAudits(auditLogger, repository);
 const result = await withNotionAudit(
   auditLogger,
   {
     name: `AI news pipeline: ${query}`,
     objective: `Research the last ${windowHours} hours, persist primary-source evidence, and create a review-ready Telegram draft.`,
+    onFinalizationFailure: (record) =>
+      repository.enqueueNotionAuditBackfill(record),
   },
   async (auditRun) => {
     const { client: aiClient, model } = createGeminiClient();
-    const repository = new NewsRepository(createDatabaseClient());
     const workflowResult = await runWorkflow({
       approvalPolicy,
       repository,

@@ -46,6 +46,7 @@ test("fetchArticle validates HTML and returns hashed extracted text", async () =
         return `<article><p>${ARTICLE_TEXT.repeat(4)}</p></article>`;
       },
     }),
+    lookupImpl: async () => [{ address: "93.184.216.34", family: 4 }],
   });
 
   assert.ok(result.text.length >= 200);

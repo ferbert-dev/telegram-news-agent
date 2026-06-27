@@ -69,6 +69,7 @@ export async function generateDraft({
   repository,
   article,
   evidence,
+  lease,
 }) {
   if (!article?.id) {
     throw new Error("Article is required for draft generation");
@@ -137,9 +138,7 @@ export async function generateDraft({
   }
 
   const draft = validateGroundedDraft(output, evidence);
-  await repository.transitionArticle(article.id, "discovered", "extracted");
-  await repository.transitionArticle(article.id, "extracted", "reviewed");
-  const saved = await repository.createDraft({
+  const saved = await repository.createReviewDraft({
     article_id: article.id,
     body: draft.telegramText,
     status: "review",
@@ -151,8 +150,9 @@ export async function generateDraft({
       source_urls: draft.sourceUrls,
       caveat: draft.caveat,
     }),
+    lease_name: lease?.name,
+    lease_owner_id: lease?.ownerId,
   });
-  await repository.transitionArticle(article.id, "reviewed", "drafted");
 
   return { draft, saved };
 }

@@ -73,7 +73,7 @@ test("validateGroundedDraft deterministically appends validated source URLs", ()
 });
 
 test("generateDraft stores a review draft and advances article state", async () => {
-  const transitions = [];
+  const writes = [];
   const client = {
     models: {
       async generateContent(request) {
@@ -83,10 +83,8 @@ test("generateDraft stores a review draft and advances article state", async () 
     },
   };
   const repository = {
-    async transitionArticle(id, from, to) {
-      transitions.push([id, from, to]);
-    },
-    async createDraft(draft) {
+    async createReviewDraft(draft) {
+      writes.push(draft);
       assert.equal(draft.status, "review");
       assert.equal(draft.body, TELEGRAM_TEXT);
       return { id: "draft-1", ...draft };
@@ -109,14 +107,16 @@ test("generateDraft stores a review draft and advances article state", async () 
         excerpt: "A primary source announced a new AI agent.",
       },
     ],
+    lease: {
+      name: "daily",
+      ownerId: "00000000-0000-4000-8000-000000000001",
+    },
   });
 
   assert.equal(result.saved.id, "draft-1");
-  assert.deepEqual(transitions, [
-    ["article-1", "discovered", "extracted"],
-    ["article-1", "extracted", "reviewed"],
-    ["article-1", "reviewed", "drafted"],
-  ]);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].article_id, "article-1");
+  assert.equal(writes[0].lease_name, "daily");
 });
 
 test("generateDraft fails before API use when evidence is not primary", async () => {

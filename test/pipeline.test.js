@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runPipeline } from "../src/pipeline.js";
+import {
+  runPipeline,
+  startPipelineLeaseHeartbeat,
+} from "../src/pipeline.js";
 
 function repositoryFixture({ leaseAcquired = true } = {}) {
   const calls = [];
@@ -9,6 +12,10 @@ function repositoryFixture({ leaseAcquired = true } = {}) {
     async acquirePipelineLease(...args) {
       calls.push(["acquire", ...args]);
       return leaseAcquired;
+    },
+    async renewPipelineLease(...args) {
+      calls.push(["renew", ...args]);
+      return true;
     },
     async releasePipelineLease(...args) {
       calls.push(["release", ...args]);
@@ -36,10 +43,7 @@ function repositoryFixture({ leaseAcquired = true } = {}) {
     async saveRawContent() {},
     async finishSearchRun() {},
     async failSearchRun() {},
-    async transitionArticle(id, from, to) {
-      calls.push(["article", id, from, to]);
-    },
-    async createDraft(draft) {
+    async createReviewDraft(draft) {
       return { ...draft, id: "draft-1" };
     },
   };
@@ -113,4 +117,103 @@ test("runPipeline refuses a concurrent run", async () => {
     /already running/,
   );
   assert.equal(repository.calls.some(([name]) => name === "release"), false);
+});
+
+test("lease heartbeat renews with owner fencing and stops cleanly", async () => {
+  let tick;
+  let cleared = false;
+  const calls = [];
+  const heartbeat = startPipelineLeaseHeartbeat({
+    repository: {
+      async renewPipelineLease(...args) {
+        calls.push(args);
+        return true;
+      },
+    },
+    leaseName: "daily",
+    ownerId: "00000000-0000-4000-8000-000000000001",
+    leaseTtlSeconds: 30,
+    setIntervalImpl(callback, interval) {
+      tick = callback;
+      assert.equal(interval, 10_000);
+      return { unref() {} };
+    },
+    clearIntervalImpl() {
+      cleared = true;
+    },
+  });
+
+  await tick();
+  heartbeat.assertOwned();
+  await heartbeat.stop();
+  assert.equal(cleared, true);
+  assert.deepEqual(calls, [
+    ["daily", "00000000-0000-4000-8000-000000000001", 30],
+  ]);
+});
+
+test("lease heartbeat fences work after ownership expires or changes", async () => {
+  let tick;
+  const heartbeat = startPipelineLeaseHeartbeat({
+    repository: {
+      async renewPipelineLease() {
+        return false;
+      },
+    },
+    leaseName: "daily",
+    ownerId: "00000000-0000-4000-8000-000000000001",
+    leaseTtlSeconds: 30,
+    setIntervalImpl(callback) {
+      tick = callback;
+      return 1;
+    },
+    clearIntervalImpl() {},
+  });
+
+  await tick();
+  assert.throws(() => heartbeat.assertOwned(), /ownership was lost/);
+  await assert.rejects(heartbeat.stop(), /ownership was lost/);
+});
+
+test("expired owner is fenced after another run acquires the lease", async () => {
+  let owner = "owner-1";
+  let expiresAt = 10;
+  let clock = 0;
+  const repository = {
+    async acquirePipelineLease(_name, candidate, ttl) {
+      if (expiresAt > clock && owner !== candidate) return false;
+      owner = candidate;
+      expiresAt = clock + ttl;
+      return true;
+    },
+    async renewPipelineLease(_name, candidate, ttl) {
+      if (owner !== candidate || expiresAt <= clock) return false;
+      expiresAt = clock + ttl;
+      return true;
+    },
+  };
+  let firstTick;
+  const first = startPipelineLeaseHeartbeat({
+    repository,
+    leaseName: "daily",
+    ownerId: "owner-1",
+    leaseTtlSeconds: 10,
+    setIntervalImpl(callback) {
+      firstTick = callback;
+      return 1;
+    },
+    clearIntervalImpl() {},
+  });
+
+  clock = 11;
+  assert.equal(
+    await repository.acquirePipelineLease("daily", "owner-2", 10),
+    true,
+  );
+  await firstTick();
+  assert.throws(() => first.assertOwned(), /ownership was lost/);
+  assert.equal(
+    await repository.acquirePipelineLease("daily", "owner-3", 10),
+    false,
+  );
 });

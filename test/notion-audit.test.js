@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  backfillNotionAudits,
   getNotionAuditConfig,
   NotionAuditLogger,
   withNotionAudit,
@@ -139,4 +140,128 @@ test("withNotionAudit never starts work when audit creation fails", async () => 
     /integration has no access/,
   );
   assert.equal(operationCalled, false);
+});
+
+test("successful business outcome survives finalization failure with durable backfill", async () => {
+  const outbox = [];
+  let requests = 0;
+  const startedAt = new Date("2026-06-27T10:00:00.000Z");
+  const logger = new NotionAuditLogger(
+    {
+      token: "secret",
+      dataSourceId: "runs",
+      agentPageId: "agent",
+      ticketPageId: null,
+    },
+    {
+      fetchImpl: async () => {
+        requests += 1;
+        return requests === 1
+          ? response({ id: "run-3", url: "https://notion.test/run-3" })
+          : response({ message: "Notion unavailable" }, false);
+      },
+      clock: () => startedAt,
+    },
+  );
+
+  const value = await withNotionAudit(
+    logger,
+    {
+      name: "Pipeline",
+      objective: "Publish once",
+      async onFinalizationFailure(record) {
+        outbox.push(record);
+      },
+    },
+    async () => ({
+      value: { publicationId: "post-1" },
+      auditResult: "Published post-1",
+      auditLinks: "https://t.me/channel/1",
+    }),
+  );
+
+  assert.deepEqual(value, { publicationId: "post-1" });
+  assert.deepEqual(outbox, [
+    {
+      notion_page_id: "run-3",
+      event_type: "finalize_success",
+      payload: {
+        started_at: startedAt.toISOString(),
+        finalization: {
+          status: "Succeeded",
+          result: "Published post-1",
+          links: "https://t.me/channel/1",
+        },
+      },
+      last_error: "Notion audit request failed: Notion unavailable",
+    },
+  ]);
+  assert.equal(requests, 2);
+});
+
+test("backfill replays claimed finalizations and marks successes complete", async () => {
+  const calls = [];
+  const logger = {
+    async finish(run, finalization) {
+      calls.push(["finish", run.pageId, finalization.status]);
+    },
+  };
+  const repository = {
+    async claimNotionAuditBackfill(limit) {
+      calls.push(["claim", limit]);
+      return [{
+        id: "outbox-1",
+        notion_page_id: "run-3",
+        payload: {
+          started_at: "2026-06-27T10:00:00.000Z",
+          finalization: { status: "Succeeded", result: "Published" },
+        },
+      }];
+    },
+    async completeNotionAuditBackfill(id) {
+      calls.push(["complete", id]);
+    },
+    async retryNotionAuditBackfill() {
+      assert.fail("successful replay must not be retried");
+    },
+  };
+
+  const result = await backfillNotionAudits(logger, repository, { limit: 10 });
+
+  assert.deepEqual(result, { claimed: 1, completed: 1, failed: 0 });
+  assert.deepEqual(calls, [
+    ["claim", 10],
+    ["finish", "run-3", "Succeeded"],
+    ["complete", "outbox-1"],
+  ]);
+});
+
+test("backfill schedules failed finalizations for retry without stopping the batch", async () => {
+  const retries = [];
+  const repository = {
+    async claimNotionAuditBackfill() {
+      return [{
+        id: "outbox-1",
+        notion_page_id: "run-3",
+        payload: {
+          started_at: "2026-06-27T10:00:00.000Z",
+          finalization: { status: "Succeeded", result: "Published" },
+        },
+      }];
+    },
+    async completeNotionAuditBackfill() {
+      assert.fail("failed replay must not be completed");
+    },
+    async retryNotionAuditBackfill(id, error) {
+      retries.push([id, error.message]);
+    },
+  };
+
+  const result = await backfillNotionAudits(
+    { async finish() { throw new Error("Notion unavailable"); } },
+    repository,
+  );
+
+  assert.deepEqual(result, { claimed: 1, completed: 0, failed: 1 });
+  assert.deepEqual(retries, [["outbox-1", "Notion unavailable"]]);
 });

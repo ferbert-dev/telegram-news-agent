@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
-import { assertPublicHttpUrl, hashText } from "./feed.js";
+import { hashText } from "./feed.js";
+import { fetchPublicHttp } from "./safe-fetch.js";
 
 const MAX_ARTICLE_BYTES = 5 * 1024 * 1024;
 const MAX_EXTRACTED_CHARACTERS = 50_000;
@@ -79,26 +80,25 @@ export async function fetchArticle(
   articleUrl,
   {
     fetchImpl = fetch,
+    lookupImpl,
     timeoutMs = 15_000,
     maxBytes = MAX_ARTICLE_BYTES,
+    maxRedirects = 5,
   } = {},
 ) {
-  const url = assertPublicHttpUrl(articleUrl);
-  const response = await fetchImpl(url, {
+  const { response, finalUrl } = await fetchPublicHttp(articleUrl, {
+    fetchImpl,
+    lookupImpl,
+    timeoutMs,
+    maxRedirects,
     headers: {
       accept: "text/html,application/xhtml+xml",
       "user-agent": "telegram-news-agent/0.1",
     },
-    redirect: "follow",
-    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
     throw new Error(`Primary page request failed with HTTP ${response.status}`);
-  }
-
-  if (response.url) {
-    assertPublicHttpUrl(response.url);
   }
 
   const contentType = response.headers.get("content-type") ?? "";
@@ -120,6 +120,6 @@ export async function fetchArticle(
   return {
     text,
     contentHash: hashText(text),
-    finalUrl: response.url || url.toString(),
+    finalUrl: finalUrl.toString(),
   };
 }

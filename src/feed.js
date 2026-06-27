@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
-import { isIP } from "node:net";
 import { XMLParser } from "fast-xml-parser";
+import { assertPublicHttpUrl, fetchPublicHttp } from "./safe-fetch.js";
+
+export { assertPublicHttpUrl } from "./safe-fetch.js";
 
 const MAX_FEED_BYTES = 5 * 1024 * 1024;
 const TRACKING_PARAMS = new Set([
@@ -40,49 +42,6 @@ function atomLink(entry) {
   return typeof alternate === "string"
     ? alternate
     : alternate?.["@_href"] ?? "";
-}
-
-function isPrivateIpLiteral(hostname) {
-  if (isIP(hostname) === 4) {
-    const [a, b] = hostname.split(".").map(Number);
-    return (
-      a === 10 ||
-      a === 127 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168)
-    );
-  }
-
-  if (isIP(hostname) === 6) {
-    const normalized = hostname.toLowerCase();
-    return (
-      normalized === "::1" ||
-      normalized.startsWith("fc") ||
-      normalized.startsWith("fd") ||
-      normalized.startsWith("fe80:")
-    );
-  }
-
-  return false;
-}
-
-export function assertPublicHttpUrl(value) {
-  const url = new URL(value);
-
-  if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error(`Unsupported URL protocol: ${url.protocol}`);
-  }
-
-  if (
-    url.hostname === "localhost" ||
-    url.hostname.endsWith(".localhost") ||
-    isPrivateIpLiteral(url.hostname)
-  ) {
-    throw new Error(`Private or loopback URL is not allowed: ${url.hostname}`);
-  }
-
-  return url;
 }
 
 export function canonicalizeUrl(value, baseUrl) {
@@ -172,19 +131,22 @@ export async function fetchFeed(
   feedUrl,
   {
     fetchImpl = fetch,
+    lookupImpl,
     timeoutMs = 15_000,
     maxBytes = MAX_FEED_BYTES,
+    maxRedirects = 5,
   } = {},
 ) {
-  const url = assertPublicHttpUrl(feedUrl);
-  const response = await fetchImpl(url, {
+  const { response, finalUrl } = await fetchPublicHttp(feedUrl, {
+    fetchImpl,
+    lookupImpl,
+    timeoutMs,
+    maxRedirects,
     headers: {
       accept:
         "application/atom+xml, application/rss+xml, application/xml, text/xml",
       "user-agent": "telegram-news-agent/0.1",
     },
-    redirect: "follow",
-    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
@@ -201,5 +163,5 @@ export async function fetchFeed(
     throw new Error(`Feed exceeds ${maxBytes} bytes`);
   }
 
-  return parseFeed(xml, url);
+  return parseFeed(xml, finalUrl);
 }

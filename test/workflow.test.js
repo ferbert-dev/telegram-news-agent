@@ -9,6 +9,9 @@ function fixture() {
     async acquirePipelineLease() {
       return true;
     },
+    async renewPipelineLease() {
+      return true;
+    },
     async releasePipelineLease() {},
     async startSearchRun() {
       return { id: "run-1" };
@@ -32,8 +35,7 @@ function fixture() {
     async saveRawContent() {},
     async finishSearchRun() {},
     async failSearchRun() {},
-    async transitionArticle() {},
-    async createDraft(draft) {
+    async createReviewDraft(draft) {
       return { ...draft, id: "draft-1" };
     },
     async approveDraft(id) {

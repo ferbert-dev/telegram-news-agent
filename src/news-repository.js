@@ -148,6 +148,19 @@ export class NewsRepository {
     return requireResult(result, "Create draft");
   }
 
+  async createReviewDraft(draft) {
+    const result = await this.client.rpc("create_review_draft", {
+      p_article_id: draft.article_id,
+      p_body: draft.body,
+      p_model: draft.model ?? null,
+      p_prompt_version: draft.prompt_version ?? null,
+      p_reviewer_notes: draft.reviewer_notes ?? null,
+      p_lease_name: draft.lease_name ?? null,
+      p_lease_owner_id: draft.lease_owner_id ?? null,
+    });
+    return requireResult(result, "Create review draft")[0];
+  }
+
   async getDraft(id) {
     const result = await this.client
       .from("drafts")
@@ -256,11 +269,51 @@ export class NewsRepository {
     return requireResult(result, "Acquire pipeline lease");
   }
 
+  async renewPipelineLease(name, ownerId, ttlSeconds = 900) {
+    const result = await this.client.rpc("renew_pipeline_lease", {
+      p_name: name,
+      p_owner_id: ownerId,
+      p_ttl_seconds: ttlSeconds,
+    });
+    return requireResult(result, "Renew pipeline lease");
+  }
+
   async releasePipelineLease(name, ownerId) {
     const result = await this.client.rpc("release_pipeline_lease", {
       p_name: name,
       p_owner_id: ownerId,
     });
     return requireResult(result, "Release pipeline lease");
+  }
+
+  async enqueueNotionAuditBackfill(record) {
+    const result = await this.client
+      .from("notion_audit_outbox")
+      .upsert(record, { onConflict: "notion_page_id,event_type" })
+      .select()
+      .single();
+    return requireResult(result, "Enqueue Notion audit backfill");
+  }
+
+  async claimNotionAuditBackfill(limit = 25) {
+    const result = await this.client.rpc("claim_notion_audit_backfill", {
+      p_limit: limit,
+    });
+    return requireResult(result, "Claim Notion audit backfill");
+  }
+
+  async completeNotionAuditBackfill(id) {
+    const result = await this.client.rpc("complete_notion_audit_backfill", {
+      p_id: id,
+    });
+    return requireResult(result, "Complete Notion audit backfill");
+  }
+
+  async retryNotionAuditBackfill(id, error) {
+    const result = await this.client.rpc("retry_notion_audit_backfill", {
+      p_id: id,
+      p_error: error instanceof Error ? error.message : String(error),
+    });
+    return requireResult(result, "Retry Notion audit backfill");
   }
 }

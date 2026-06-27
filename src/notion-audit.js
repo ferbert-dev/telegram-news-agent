@@ -137,17 +137,40 @@ export class NotionAuditLogger {
   }
 }
 
+export async function backfillNotionAudits(
+  logger,
+  repository,
+  { limit = 25 } = {},
+) {
+  const records = await repository.claimNotionAuditBackfill(limit);
+  const result = { claimed: records.length, completed: 0, failed: 0 };
+
+  for (const record of records) {
+    try {
+      await logger.finish(
+        {
+          pageId: record.notion_page_id,
+          startedAt: new Date(record.payload.started_at),
+        },
+        record.payload.finalization,
+      );
+      await repository.completeNotionAuditBackfill(record.id);
+      result.completed += 1;
+    } catch (error) {
+      await repository.retryNotionAuditBackfill(record.id, error);
+      result.failed += 1;
+    }
+  }
+
+  return result;
+}
+
 export async function withNotionAudit(logger, details, operation) {
   const run = await logger.start(details);
 
+  let outcome;
   try {
-    const outcome = await operation(run);
-    await logger.finish(run, {
-      status: "Succeeded",
-      result: outcome.auditResult,
-      links: outcome.auditLinks,
-    });
-    return outcome.value;
+    outcome = await operation(run);
   } catch (error) {
     try {
       await logger.finish(run, {
@@ -164,4 +187,28 @@ export async function withNotionAudit(logger, details, operation) {
     }
     throw error;
   }
+
+  const finalization = {
+    status: "Succeeded",
+    result: outcome.auditResult,
+    links: outcome.auditLinks,
+  };
+  try {
+    await logger.finish(run, finalization);
+  } catch (error) {
+    if (!details.onFinalizationFailure) {
+      throw error;
+    }
+    await details.onFinalizationFailure({
+      notion_page_id: run.pageId,
+      event_type: "finalize_success",
+      payload: {
+        started_at: run.startedAt.toISOString(),
+        finalization,
+      },
+      last_error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return outcome.value;
 }
