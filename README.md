@@ -10,7 +10,76 @@ Build a minimal workflow where ideas become tickets, agents execute scoped tasks
 
 - Notion board for tickets and agent roles.
 - Local project workspace for code and documentation.
-- First implementation target: Telegram bot infrastructure.
+- Node.js Telegram sender with preview-first publishing.
+- Current handoff/status: `docs/current-status.md`.
+
+## Telegram Messages
+
+Verify the configured bot and channel:
+
+```bash
+npm run telegram:check
+```
+
+Preview a message without publishing:
+
+```bash
+npm run telegram:send -- --text "AI news update"
+```
+
+Publish after reviewing the preview:
+
+```bash
+npm run telegram:send -- --text "AI news update" --send
+```
+
+Use `--file path/to/message.txt` for longer messages and `--silent` to disable
+subscriber notifications. The command accepts exactly one of `--text` or
+`--file`.
+
+## Automated News Run
+
+Configure these server-only values in `.env`:
+
+```text
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+NOTION_API_KEY=
+NOTION_AGENT_RUNS_DATA_SOURCE_ID=8eef7282-532e-4cf9-b309-bf09f9e9afeb
+NOTION_PIPELINE_AGENT_PAGE_ID=38bd7885-0eab-81f4-9879-e8b4b990e314
+SUPABASE_URL=
+SUPABASE_SECRET_KEY=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHANNEL_ID=@HonestAINews
+APPROVAL_POLICY=manual
+```
+
+Research the last 48 hours, fetch and persist the selected primary page,
+generate a grounded article from that extracted text, and stop at the review
+gate:
+
+```bash
+npm run pipeline:run
+```
+
+Review and publish the resulting draft:
+
+```bash
+npm run drafts -- list
+npm run drafts -- preview --id <draft-id>
+npm run drafts -- approve --id <draft-id>
+npm run drafts -- publish --id <draft-id>
+```
+
+The pipeline creates and finalizes a Notion `Agent Runs` audit record for every
+execution and fails closed if audit logging cannot start. It uses a 15-minute
+database lease to prevent overlapping runs.
+Publication is idempotent per draft. An uncertain Telegram response leaves the
+draft in `publishing` for manual reconciliation instead of retrying blindly.
+
+Keep `APPROVAL_POLICY=manual` during supervised QA. With `automatic`, the same
+audited command approves and publishes the generated draft; this must not be
+enabled until the five supervised runs pass.
 
 ## Workflow
 
@@ -45,9 +114,7 @@ Inbox -> Ready -> In Progress -> Review -> Blocked / Done -> Archive
 
 ## Next Steps
 
-1. Choose implementation stack: Node.js or Python.
-2. Decide Telegram mode: polling for local prototype or webhook for deployment.
-3. Define the content source for news posts.
-4. Scaffold the first bot server.
-5. Add deployment and QA tickets.
-
+1. Configure the local Supabase secret and Gemini key.
+2. Complete five supervised research-to-publish runs.
+3. Add the recurring scheduler after those QA runs pass.
+4. Add deployment monitoring and alerts.

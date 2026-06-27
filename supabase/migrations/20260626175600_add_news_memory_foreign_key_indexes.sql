@@ -1,0 +1,14 @@
+create index article_topics_topic_id_idx
+  on public.article_topics (topic_id);
+create index articles_search_run_id_idx
+  on public.articles (search_run_id);
+create index drafts_article_id_idx
+  on public.drafts (article_id);
+create index published_posts_article_id_idx
+  on public.published_posts (article_id);
+create index published_posts_draft_id_idx
+  on public.published_posts (draft_id);
+create index search_runs_source_id_idx
+  on public.search_runs (source_id);
+create index source_topics_topic_id_idx
+  on public.source_topics (topic_id);

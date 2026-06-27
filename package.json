@@ -1,0 +1,27 @@
+{
+  "name": "telegram-news-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "database:check": "node --env-file=.env src/database-check.js",
+    "drafts": "node --env-file=.env src/drafts-cli.js",
+    "pipeline:run": "node --env-file=.env src/pipeline-cli.js",
+    "research": "node --env-file=.env src/research-cli.js",
+    "sources": "node --env-file=.env src/sources-cli.js",
+    "telegram:check": "node --env-file=.env src/telegram-check.js",
+    "telegram:send": "node --env-file=.env src/send-message.js",
+    "telegram:smoke": "node --env-file=.env src/telegram-smoke.js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "dependencies": {
+    "@google/genai": "^2.10.0",
+    "@supabase/supabase-js": "2.108.2",
+    "cheerio": "^1.1.2",
+    "fast-xml-parser": "5.9.3",
+    "zod": "4.4.3"
+  }
+}
