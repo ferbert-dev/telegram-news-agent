@@ -1,4 +1,4 @@
-import { sendTelegramMessage } from "./telegram.js";
+import { sendTelegramMessage, TelegramError } from "./telegram.js";
 
 export async function publishApprovedDraft({
   repository,
@@ -23,6 +23,13 @@ export async function publishApprovedDraft({
       disableNotification: false,
     });
   } catch (error) {
+    if (error instanceof TelegramError) {
+      await repository.releaseRejectedDraftPublication(draftId);
+      throw new Error(
+        "Telegram rejected the publication; draft was released for retry",
+        { cause: error },
+      );
+    }
     throw new Error(
       "Telegram publication outcome is unresolved; draft remains in publishing state for manual reconciliation",
       { cause: error },

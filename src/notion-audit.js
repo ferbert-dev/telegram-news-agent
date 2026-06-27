@@ -165,7 +165,12 @@ export async function backfillNotionAudits(
   return result;
 }
 
-export async function withNotionAudit(logger, details, operation) {
+export async function withNotionAudit(
+  logger,
+  details,
+  operation,
+  { outbox, sanitizeError } = {},
+) {
   const run = await logger.start(details);
 
   let outcome;
@@ -177,7 +182,11 @@ export async function withNotionAudit(logger, details, operation) {
         status: "Failed",
         result: "Automated news pipeline did not complete.",
         links: run.pageUrl,
-        error: error instanceof Error ? error.message : String(error),
+        error: sanitizeError
+          ? sanitizeError(error)
+          : error instanceof Error
+            ? error.message
+            : String(error),
       });
     } catch (auditError) {
       throw new AggregateError(
@@ -196,10 +205,15 @@ export async function withNotionAudit(logger, details, operation) {
   try {
     await logger.finish(run, finalization);
   } catch (error) {
-    if (!details.onFinalizationFailure) {
+    const enqueue =
+      details.onFinalizationFailure ??
+      (outbox
+        ? (record) => outbox.enqueueNotionAuditBackfill(record)
+        : null);
+    if (!enqueue) {
       throw error;
     }
-    await details.onFinalizationFailure({
+    await enqueue({
       notion_page_id: run.pageId,
       event_type: "finalize_success",
       payload: {

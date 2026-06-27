@@ -250,6 +250,13 @@ export class NewsRepository {
     return requireResult(result, "Reset unresolved draft publication")[0];
   }
 
+  async releaseRejectedDraftPublication(id) {
+    const result = await this.client.rpc("release_rejected_draft_publication", {
+      p_draft_id: id,
+    });
+    return requireResult(result, "Release rejected draft publication")[0];
+  }
+
   async recordPublication(publication) {
     const result = await this.client
       .from("published_posts")
@@ -284,6 +291,65 @@ export class NewsRepository {
       p_owner_id: ownerId,
     });
     return requireResult(result, "Release pipeline lease");
+  }
+
+  async renewPipelineLease(name, ownerId, ttlSeconds = 60) {
+    const result = await this.client.rpc("renew_pipeline_lease", {
+      p_name: name,
+      p_owner_id: ownerId,
+      p_ttl_seconds: ttlSeconds,
+    });
+    return requireResult(result, "Renew pipeline lease");
+  }
+
+  async claimTelegramUpdate(updateId, updateKind, staleAfterSeconds = 120) {
+    const result = await this.client.rpc("claim_telegram_update", {
+      p_update_id: updateId,
+      p_update_kind: updateKind,
+      p_stale_after_seconds: staleAfterSeconds,
+    });
+    return requireResult(result, "Claim Telegram update")[0];
+  }
+
+  async finishTelegramUpdate(
+    updateId,
+    claimToken,
+    status,
+    errorCode = null,
+  ) {
+    const result = await this.client.rpc("finish_telegram_update", {
+      p_update_id: updateId,
+      p_claim_token: claimToken,
+      p_status: status,
+      p_error_code: errorCode,
+    });
+    return requireResult(result, "Finish Telegram update");
+  }
+
+  async createTelegramReviewSession(session) {
+    const result = await this.client
+      .from("telegram_review_sessions")
+      .insert(session)
+      .select()
+      .single();
+    return requireResult(result, "Create Telegram review session");
+  }
+
+  async decideTelegramReviewSession({
+    sessionId,
+    action,
+    chatId,
+    messageId,
+    actorId,
+  }) {
+    const result = await this.client.rpc("decide_telegram_review_session", {
+      p_session_id: sessionId,
+      p_action: action,
+      p_chat_id: chatId,
+      p_message_id: messageId,
+      p_actor_id: actorId,
+    });
+    return requireResult(result, "Decide Telegram review session")[0];
   }
 
   async enqueueNotionAuditBackfill(record) {

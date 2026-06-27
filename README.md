@@ -92,6 +92,37 @@ Keep `APPROVAL_POLICY=manual` during supervised QA. With `automatic`, the same
 audited command approves and publishes the generated draft; this must not be
 enabled until the five supervised runs pass.
 
+## Telegram Admin Control
+
+Apply all Supabase migrations, set `TELEGRAM_UPDATE_MODE=polling`, and run:
+
+```bash
+npm run telegram:control
+```
+
+Send `/news` in a private chat with the bot. The command and every callback
+recheck that the sender is a current administrator or creator of
+`TELEGRAM_CHANNEL_ID`. The bot creates a 24-hour opaque review session bound to
+the private chat and preview message. Publish and Reject are atomic decisions;
+publication occurs only after Publish and retains the existing idempotency and
+reconciliation behavior.
+
+Polling refuses to start while a webhook URL is configured. For an intentional
+migration only, set `TELEGRAM_POLLING_MIGRATE_WEBHOOK=true` for one startup;
+pending updates are preserved. Run one polling process. A database lease,
+persisted update IDs, bounded jittered retries, and a 30-second shutdown
+deadline protect restarts and deployments.
+
+Notion audit creation is fail-closed. If finalization fails after an operation,
+the payload is stored in `notion_audit_outbox`. Retry pending entries with:
+
+```bash
+npm run audit:flush
+```
+
+Logs and user-facing failures contain stable error codes or generic messages,
+not bot tokens, article bodies, or upstream response details.
+
 ## Workflow
 
 ```text
