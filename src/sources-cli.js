@@ -54,6 +54,9 @@ async function execute(command, args) {
   if (command === "add") {
     const name = valueAfter(args, "--name");
     const feedUrl = assertPublicHttpUrl(valueAfter(args, "--feed")).toString();
+    const sourceType = args.includes("--type")
+      ? valueAfter(args, "--type")
+      : "rss";
     const homepageArg = args.includes("--homepage")
       ? valueAfter(args, "--homepage")
       : undefined;
@@ -68,12 +71,15 @@ async function execute(command, args) {
     if (!Number.isInteger(score) || score < 0 || score > 100) {
       throw new Error("--score must be an integer from 0 to 100");
     }
+    if (!["rss", "website", "api", "manual"].includes(sourceType)) {
+      throw new Error("--type must be rss, website, api, or manual");
+    }
 
     const source = await repository.upsertSource({
       name,
       feed_url: feedUrl,
       homepage_url: homepageUrl,
-      source_type: "rss",
+      source_type: sourceType,
       reliability_score: score,
       enabled: true,
       is_primary: isPrimary,
@@ -92,7 +98,7 @@ async function execute(command, args) {
   }
 
   throw new Error(
-    "Usage: sources <list|add|enable|disable> [--name NAME --feed URL --homepage URL --score N --primary | --id UUID]",
+    "Usage: sources <list|add|enable|disable> [--name NAME --feed URL --type TYPE --homepage URL --score N --primary | --id UUID]",
   );
 }
 

@@ -1,5 +1,6 @@
 import { fetchArticle } from "./article-extractor.js";
 import { fetchFeed } from "./feed.js";
+import { fetchRedditDiscoveries } from "./reddit.js";
 import { withRetry } from "./retry.js";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -15,6 +16,30 @@ function keywordScore(candidate, keywords) {
   ).length;
 
   return Math.min(20, matches * 5);
+}
+
+function sourceHostname(source) {
+  for (const value of [source.homepage_url, source.feed_url]) {
+    try {
+      if (value) {
+        return new URL(value).hostname.toLowerCase();
+      }
+    } catch {
+      // Invalid source URLs are rejected by the source registry.
+    }
+  }
+  return null;
+}
+
+export function matchPrimarySource(url, sources) {
+  const hostname = new URL(url).hostname.toLowerCase();
+  return sources.find((source) => {
+    const sourceHost = sourceHostname(source);
+    return (
+      sourceHost &&
+      (hostname === sourceHost || hostname.endsWith(`.${sourceHost}`))
+    );
+  });
 }
 
 export function scoreCandidate(
@@ -33,10 +58,16 @@ export function scoreCandidate(
   const recency = Math.max(0, 30 - Math.min(30, ageHours * 0.625));
   const primary = source.is_primary ? 30 : 0;
 
+  const discovery = candidate.discoveryKind === "reddit" ? 5 : 0;
+
   return Number(
-    (reliability * 0.2 + recency + primary + keywordScore(candidate, keywords)).toFixed(
-      3,
-    ),
+    (
+      reliability * 0.2 +
+      recency +
+      primary +
+      keywordScore(candidate, keywords) +
+      discovery
+    ).toFixed(3),
   );
 }
 
@@ -81,6 +112,7 @@ export async function runResearch({
   keywords = [],
   windowHours = 48,
   fetchFeedImpl = fetchFeed,
+  fetchRedditImpl = fetchRedditDiscoveries,
   fetchArticleImpl = fetchArticle,
   retryImpl = withRetry,
   now = new Date(),
@@ -92,16 +124,24 @@ export async function runResearch({
 
   try {
     const sources = await repository.listEnabledSources();
-    const primarySources = sources.filter(
-      (source) => source.is_primary && source.source_type === "rss",
+    const primarySources = sources.filter((source) => source.is_primary);
+    const primaryFeeds = primarySources.filter(
+      (source) => source.source_type === "rss",
+    );
+    const redditSources = sources.filter(
+      (source) =>
+        !source.is_primary &&
+        source.source_type === "api" &&
+        source.feed_url &&
+        new URL(source.feed_url).hostname.endsWith("reddit.com"),
     );
 
-    if (!primarySources.length) {
+    if (!primaryFeeds.length) {
       throw new Error("No enabled primary RSS sources are configured");
     }
 
     const settled = await Promise.allSettled(
-      primarySources.map(async (source) => {
+      primaryFeeds.map(async (source) => {
         const entries = await retryImpl(
           () => fetchFeedImpl(source.feed_url),
           { attempts: 3, baseDelayMs: 300 },
@@ -110,19 +150,53 @@ export async function runResearch({
         return entries.map((entry) => ({ ...entry, source }));
       }),
     );
-    const candidates = settled.flatMap((result) =>
+    const directCandidates = settled.flatMap((result) =>
       result.status === "fulfilled" ? result.value : [],
     );
+    const redditSettled = await Promise.allSettled(
+      redditSources.map(async (source) => {
+        const entries = await retryImpl(
+          () => fetchRedditImpl(source.feed_url),
+          { attempts: 3, baseDelayMs: 300 },
+        );
+        await repository.markSourceChecked(source.id);
+        return entries.flatMap((entry) => {
+          const primarySource = matchPrimarySource(
+            entry.canonicalUrl,
+            primarySources,
+          );
+          return primarySource ? [{ ...entry, source: primarySource }] : [];
+        });
+      }),
+    );
+    const candidates = [
+      ...directCandidates,
+      ...redditSettled.flatMap((result) =>
+        result.status === "fulfilled" ? result.value : [],
+      ),
+    ];
     const feedErrors = settled
       .map((result, index) =>
         result.status === "rejected"
           ? {
-              source_id: primarySources[index].id,
+              source_id: primaryFeeds[index].id,
               error: result.reason?.message ?? String(result.reason),
             }
           : null,
       )
       .filter(Boolean);
+    feedErrors.push(
+      ...redditSettled
+        .map((result, index) =>
+          result.status === "rejected"
+            ? {
+                source_id: redditSources[index].id,
+                error: result.reason?.message ?? String(result.reason),
+              }
+            : null,
+        )
+        .filter(Boolean),
+    );
     const ranked = rankCandidates(candidates, {
       now,
       keywords,
@@ -148,6 +222,8 @@ export async function runResearch({
           feed_summary: candidate.summary,
           research_score: candidate.score,
           primary_source: true,
+          discovery_kind: candidate.discoveryKind ?? "primary_feed",
+          discovery_url: candidate.discoveryUrl ?? null,
         },
       });
       if (!article) {
@@ -163,6 +239,7 @@ export async function runResearch({
         metadata: {
           source_url: candidate.canonicalUrl,
           extraction_kind: "feed_summary",
+          discovery_url: candidate.discoveryUrl ?? null,
         },
       });
       articles.push({ ...candidate, article });
