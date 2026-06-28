@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { fetchFeed } from "./feed.js";
+import { fetchFeed, hashText } from "./feed.js";
 
 function isRedditHost(hostname) {
   return hostname === "reddit.com" || hostname.endsWith(".reddit.com");
@@ -36,6 +36,9 @@ export async function fetchRedditDiscoveries(feedUrl, options) {
     return candidateUrls.map((canonicalUrl) => ({
       ...entry,
       canonicalUrl,
+      contentHash: hashText(
+        [canonicalUrl, entry.title, entry.summary].join("\n"),
+      ),
       discoveryUrl: entry.canonicalUrl,
       discoveryKind: "reddit",
       unverified: true,

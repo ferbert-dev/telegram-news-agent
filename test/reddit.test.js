@@ -45,6 +45,31 @@ test("fetchRedditDiscoveries emits only outbound links with discovery provenance
   assert.equal(discoveries[0].unverified, true);
 });
 
+test("multiple outbound links receive distinct destination-aware hashes", async () => {
+  const xml = `<?xml version="1.0"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <title>Release roundup</title>
+        <link href="https://www.reddit.com/r/test/comments/abc/release/" />
+        <published>2026-06-28T12:00:00Z</published>
+        <content type="html">
+          &lt;a href="https://openai.com/news/one"&gt;one&lt;/a&gt;
+          &lt;a href="https://openai.com/news/two"&gt;two&lt;/a&gt;
+        </content>
+      </entry>
+    </feed>`;
+  const discoveries = await fetchRedditDiscoveries(
+    "https://www.reddit.com/r/test/new/.rss",
+    {
+      lookupImpl: async () => [{ address: "151.101.1.140", family: 4 }],
+      fetchImpl: async () => new Response(xml, { status: 200 }),
+    },
+  );
+
+  assert.equal(discoveries.length, 2);
+  assert.notEqual(discoveries[0].contentHash, discoveries[1].contentHash);
+});
+
 test("fetchRedditDiscoveries retains self-posts as unverified trends", async () => {
   const xml = `<?xml version="1.0"?>
     <feed xmlns="http://www.w3.org/2005/Atom">
