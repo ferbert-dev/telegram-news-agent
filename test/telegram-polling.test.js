@@ -82,6 +82,39 @@ test("polling uses a database lease and exits on cancellation", async () => {
   assert.deepEqual(calls, ["acquire", "release"]);
 });
 
+test("polling waits for a stale lease and acquires it after expiry", async () => {
+  const controller = new AbortController();
+  const calls = [];
+  let acquisitions = 0;
+  const repository = {
+    async acquirePipelineLease() {
+      acquisitions += 1;
+      return acquisitions === 2;
+    },
+    async releasePipelineLease() {
+      calls.push("release");
+    },
+  };
+
+  await pollTelegram({
+    token: "token",
+    repository,
+    ownerId: "owner",
+    callTelegram: async () => {
+      controller.abort();
+      return [];
+    },
+    handleUpdate: async () => {},
+    signal: controller.signal,
+    sleepImpl: async (delay) => calls.push(delay),
+    log: { error() {}, warn() {} },
+  });
+
+  assert.equal(acquisitions, 2);
+  assert.ok(calls.includes(2_000));
+  assert.ok(calls.includes("release"));
+});
+
 test("lease heartbeat fences a long-running handler and exits on loss", async () => {
   const controller = new AbortController();
   let renewals = 0;

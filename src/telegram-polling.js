@@ -5,6 +5,8 @@ const MAX_BACKOFF_MS = 30_000;
 const LEASE_NAME = "telegram-control-poller";
 const LEASE_TTL_SECONDS = 60;
 const HEARTBEAT_INTERVAL_MS = 20_000;
+const LEASE_ACQUIRE_TIMEOUT_MS = 70_000;
+const LEASE_ACQUIRE_RETRY_MS = 2_000;
 
 export class PollingLeaseLostError extends Error {
   constructor() {
@@ -48,6 +50,47 @@ export async function ensurePollingMode({
   });
 }
 
+async function acquirePollingLease({
+  repository,
+  ownerId,
+  signal,
+  sleepImpl,
+  log,
+  timeoutMs,
+  retryMs,
+  nowImpl,
+}) {
+  const deadline = nowImpl() + timeoutMs;
+  let waitingLogged = false;
+
+  while (!signal.aborted) {
+    if (
+      await repository.acquirePipelineLease(
+        LEASE_NAME,
+        ownerId,
+        LEASE_TTL_SECONDS,
+      )
+    ) {
+      return;
+    }
+    if (nowImpl() >= deadline) {
+      throw new Error(
+        "Another Telegram polling process still holds the database lease",
+      );
+    }
+    if (!waitingLogged) {
+      log.warn?.(
+        JSON.stringify({
+          event: "telegram_polling_lease_wait",
+          timeout_ms: timeoutMs,
+        }),
+      );
+      waitingLogged = true;
+    }
+    await sleepImpl(retryMs, undefined, { signal });
+  }
+}
+
 export async function pollTelegram({
   token,
   repository,
@@ -59,16 +102,20 @@ export async function pollTelegram({
   sleepImpl = sleep,
   log = console,
   heartbeatIntervalMs = HEARTBEAT_INTERVAL_MS,
+  leaseAcquireTimeoutMs = LEASE_ACQUIRE_TIMEOUT_MS,
+  leaseAcquireRetryMs = LEASE_ACQUIRE_RETRY_MS,
+  nowImpl = Date.now,
 }) {
-  if (
-    !(await repository.acquirePipelineLease(
-      LEASE_NAME,
-      ownerId,
-      LEASE_TTL_SECONDS,
-    ))
-  ) {
-    throw new Error("Another Telegram polling process holds the database lease");
-  }
+  await acquirePollingLease({
+    repository,
+    ownerId,
+    signal,
+    sleepImpl,
+    log,
+    timeoutMs: leaseAcquireTimeoutMs,
+    retryMs: leaseAcquireRetryMs,
+    nowImpl,
+  });
 
   const leaseController = new AbortController();
   const operationController = new AbortController();
@@ -162,7 +209,10 @@ export async function pollTelegram({
     signal.removeEventListener("abort", abortOperation);
     leaseController.abort();
     operationController.abort();
-    await heartbeat;
-    await repository.releasePipelineLease(LEASE_NAME, ownerId);
+    try {
+      await heartbeat;
+    } finally {
+      await repository.releasePipelineLease(LEASE_NAME, ownerId);
+    }
   }
 }
