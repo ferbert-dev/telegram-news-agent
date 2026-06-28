@@ -42,4 +42,27 @@ test("fetchRedditDiscoveries emits only outbound links with discovery provenance
   assert.equal(discoveries[0].canonicalUrl, "https://openai.com/news/release");
   assert.match(discoveries[0].discoveryUrl, /reddit\.com/);
   assert.equal(discoveries[0].discoveryKind, "reddit");
+  assert.equal(discoveries[0].unverified, true);
+});
+
+test("fetchRedditDiscoveries retains self-posts as unverified trends", async () => {
+  const xml = `<?xml version="1.0"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <title>Community rumor</title>
+        <link href="https://www.reddit.com/r/test/comments/rumor/" />
+        <published>2026-06-28T12:00:00Z</published>
+        <content type="html">&lt;p&gt;Unconfirmed discussion&lt;/p&gt;</content>
+      </entry>
+    </feed>`;
+  const discoveries = await fetchRedditDiscoveries(
+    "https://www.reddit.com/r/test/new/.rss",
+    {
+      lookupImpl: async () => [{ address: "151.101.1.140", family: 4 }],
+      fetchImpl: async () => new Response(xml, { status: 200 }),
+    },
+  );
+
+  assert.equal(discoveries[0].canonicalUrl, discoveries[0].discoveryUrl);
+  assert.equal(discoveries[0].unverified, true);
 });

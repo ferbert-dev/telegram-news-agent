@@ -14,7 +14,7 @@ export const TelegramDraft = z.object({
   caveat: z.string().min(1).max(500),
 });
 
-const SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
+const VERIFIED_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
 Use only the supplied primary-source evidence. Do not add facts from memory.
 Write a 150-250 word Telegram article with:
 - a plain-text headline
@@ -24,6 +24,13 @@ Write a 150-250 word Telegram article with:
 - source URLs at the end
 Do not use markdown tables. Do not claim independent verification when only one
 primary source is supplied. Every factual claim must map to one supplied URL.`;
+
+const UNVERIFIED_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
+The supplied evidence is an unverified community post or rumor. Do not add facts
+from memory and do not present its claims as confirmed. Write a 120-220 word
+Telegram trend brief that explains what people are discussing, why it may
+matter if true, and what evidence is still missing. Attribute every claim to the
+community source. Include a strong caveat and source URLs.`;
 
 export function validateGroundedDraft(draft, evidence) {
   const parsed = TelegramDraft.parse(draft);
@@ -69,15 +76,20 @@ export async function generateDraft({
   repository,
   article,
   evidence,
+  allowUnverified = false,
   lease,
 }) {
   if (!article?.id) {
     throw new Error("Article is required for draft generation");
   }
 
-  if (!evidence.length || evidence.some((item) => !item.primary)) {
+  if (
+    !evidence.length ||
+    (!allowUnverified && evidence.some((item) => !item.primary))
+  ) {
     throw new Error("Draft generation requires primary-source evidence");
   }
+  const unverified = evidence.some((item) => !item.primary);
 
   const response = await client.models.generateContent({
     model,
@@ -91,7 +103,9 @@ export async function generateDraft({
       evidence,
     }),
     config: {
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction: unverified
+        ? UNVERIFIED_SYSTEM_PROMPT
+        : VERIFIED_SYSTEM_PROMPT,
       responseMimeType: "application/json",
       responseJsonSchema: {
         type: "object",
@@ -137,18 +151,29 @@ export async function generateDraft({
     throw new Error("Gemini returned invalid JSON");
   }
 
-  const draft = validateGroundedDraft(output, evidence);
+  const grounded = validateGroundedDraft(output, evidence);
+  const draft = unverified
+    ? TelegramDraft.parse({
+        ...grounded,
+        telegramText: grounded.telegramText.startsWith("UNVERIFIED TREND")
+          ? grounded.telegramText
+          : `UNVERIFIED TREND\n\n${grounded.telegramText}`,
+      })
+    : grounded;
   const saved = await repository.createReviewDraft({
     article_id: article.id,
     body: draft.telegramText,
     status: "review",
     model,
-    prompt_version: "telegram-grounded-v1",
+    prompt_version: unverified
+      ? "telegram-unverified-trend-v1"
+      : "telegram-grounded-v1",
     reviewer_notes: JSON.stringify({
       headline: draft.headline,
       claims: draft.claims,
       source_urls: draft.sourceUrls,
       caveat: draft.caveat,
+      verification_status: unverified ? "unverified" : "primary_source",
     }),
     lease_name: lease?.name,
     lease_owner_id: lease?.ownerId,

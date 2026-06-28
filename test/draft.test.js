@@ -131,3 +131,33 @@ test("generateDraft fails before API use when evidence is not primary", async ()
     /requires primary-source evidence/,
   );
 });
+
+test("generateDraft labels explicitly allowed community evidence as unverified", async () => {
+  const repository = {
+    async createReviewDraft(draft) {
+      return { id: "draft-rumor", ...draft };
+    },
+  };
+  const client = {
+    models: {
+      async generateContent() {
+        return { text: JSON.stringify(structuredDraft()) };
+      },
+    },
+  };
+  const result = await generateDraft({
+    client,
+    model: "gemini-2.5-flash",
+    repository,
+    article: {
+      id: "article-rumor",
+      title: "Community rumor",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [{ url: SOURCE_URL, primary: false, text: "Unconfirmed claim" }],
+    allowUnverified: true,
+  });
+
+  assert.match(result.saved.body, /^UNVERIFIED TREND/);
+  assert.equal(result.saved.prompt_version, "telegram-unverified-trend-v1");
+});

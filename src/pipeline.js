@@ -119,10 +119,11 @@ export async function runPipeline({
           title: selected.title,
           publishedAt: selected.publishedAt,
           text: selected.evidenceText,
-          primary: true,
+          primary: Boolean(selected.source.is_primary),
           publisher: selected.source.name,
         },
       ],
+      allowUnverified: !selected.source.is_primary,
       lease: { name: leaseName, ownerId },
     });
     heartbeat.assertOwned();

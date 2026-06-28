@@ -172,7 +172,13 @@ export async function runResearch({
             entry.canonicalUrl,
             primarySources,
           );
-          return primarySource ? [{ ...entry, source: primarySource }] : [];
+          return [
+            {
+              ...entry,
+              source: primarySource ?? source,
+              unverified: !primarySource,
+            },
+          ];
         });
       }),
     );
@@ -230,7 +236,10 @@ export async function runResearch({
         metadata: {
           feed_summary: candidate.summary,
           research_score: candidate.score,
-          primary_source: true,
+          primary_source: candidate.source.is_primary,
+          verification_status: candidate.unverified
+            ? "unverified"
+            : "primary_source",
           discovery_kind: candidate.discoveryKind ?? "primary_feed",
           discovery_url: candidate.discoveryUrl ?? null,
         },
@@ -263,6 +272,13 @@ export async function runResearch({
     const extractionErrors = [];
     let selected = null;
     for (const candidate of articles) {
+      if (candidate.unverified) {
+        selected = {
+          ...candidate,
+          evidenceText: candidate.summary || candidate.title,
+        };
+        break;
+      }
       try {
         const extracted = await retryImpl(
           () => fetchArticleImpl(candidate.canonicalUrl),

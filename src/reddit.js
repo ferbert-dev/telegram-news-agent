@@ -27,12 +27,18 @@ export function extractRedditOutboundUrls(summary) {
 export async function fetchRedditDiscoveries(feedUrl, options) {
   const entries = await fetchFeed(feedUrl, options);
 
-  return entries.flatMap((entry) =>
-    extractRedditOutboundUrls(entry.summary).map((canonicalUrl) => ({
+  return entries.flatMap((entry) => {
+    const outboundUrls = extractRedditOutboundUrls(entry.summary);
+    const candidateUrls = outboundUrls.length
+      ? outboundUrls
+      : [entry.canonicalUrl];
+
+    return candidateUrls.map((canonicalUrl) => ({
       ...entry,
       canonicalUrl,
       discoveryUrl: entry.canonicalUrl,
       discoveryKind: "reddit",
-    })),
-  );
+      unverified: true,
+    }));
+  });
 }
