@@ -72,6 +72,20 @@ test("validateGroundedDraft deterministically appends validated source URLs", ()
   );
 });
 
+test("validateGroundedDraft rejects more than five prose sentences", () => {
+  assert.throws(
+    () =>
+      validateGroundedDraft(
+        structuredDraft({
+          telegramText:
+            "One. Two. Three. Four. Five. Six.\n\nSources:\n" + SOURCE_URL,
+        }),
+        [{ url: SOURCE_URL, primary: true }],
+      ),
+    /five-sentence limit/,
+  );
+});
+
 test("generateDraft stores a review draft and advances article state", async () => {
   const writes = [];
   const client = {
@@ -159,5 +173,5 @@ test("generateDraft labels explicitly allowed community evidence as unverified",
   });
 
   assert.match(result.saved.body, /^UNVERIFIED TREND/);
-  assert.equal(result.saved.prompt_version, "telegram-unverified-trend-v1");
+  assert.equal(result.saved.prompt_version, "telegram-unverified-trend-v2");
 });

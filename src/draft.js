@@ -16,21 +16,35 @@ export const TelegramDraft = z.object({
 
 const VERIFIED_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
 Use only the supplied primary-source evidence. Do not add facts from memory.
-Write a 150-250 word Telegram article with:
+Write like one person explaining the news to another person. Use simple B1
+English, short sentences, common words, and no marketing language or technical
+jargon unless it is essential. Write 60-100 words and no more than five
+sentences, excluding the source URL lines. Include:
 - a plain-text headline
-- a concise explanation of what happened
-- why it matters
-- a clear caveat about uncertainty or source limitations
+- what happened
+- why it matters in everyday language
+- one clear caveat about uncertainty or source limitations
 - source URLs at the end
 Do not use markdown tables. Do not claim independent verification when only one
 primary source is supplied. Every factual claim must map to one supplied URL.`;
 
 const UNVERIFIED_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
 The supplied evidence is an unverified community post or rumor. Do not add facts
-from memory and do not present its claims as confirmed. Write a 120-220 word
-Telegram trend brief that explains what people are discussing, why it may
-matter if true, and what evidence is still missing. Attribute every claim to the
+from memory and do not present its claims as confirmed. Write like one person
+explaining the discussion to another person. Use simple B1 English, short
+sentences, and common words. Write 60-100 words and no more than five sentences,
+excluding source URL lines. Explain what people are discussing, why it may
+matter if true, and what proof is still missing. Attribute every claim to the
 community source. Include a strong caveat and source URLs.`;
+
+function proseMetrics(text) {
+  const prose = text.split(/\n\s*Sources?:\s*\n/i, 1)[0].trim();
+  const words = prose ? prose.split(/\s+/).length : 0;
+  const sentences = prose
+    ? Math.max(1, (prose.match(/[.!?]+(?=\s|$)/g) ?? []).length)
+    : 0;
+  return { words, sentences };
+}
 
 export function validateGroundedDraft(draft, evidence) {
   const parsed = TelegramDraft.parse(draft);
@@ -65,6 +79,13 @@ export function validateGroundedDraft(draft, evidence) {
     telegramText,
     sourceUrls,
   });
+  const metrics = proseMetrics(normalized.telegramText);
+  if (metrics.sentences > 5) {
+    throw new Error("Draft exceeds the five-sentence limit");
+  }
+  if (metrics.words > 120) {
+    throw new Error("Draft exceeds the 120-word safety limit");
+  }
 
   validateMessage(normalized.telegramText);
   return normalized;
@@ -166,8 +187,8 @@ export async function generateDraft({
     status: "review",
     model,
     prompt_version: unverified
-      ? "telegram-unverified-trend-v1"
-      : "telegram-grounded-v1",
+      ? "telegram-unverified-trend-v2"
+      : "telegram-grounded-v2",
     reviewer_notes: JSON.stringify({
       headline: draft.headline,
       claims: draft.claims,
