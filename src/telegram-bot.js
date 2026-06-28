@@ -13,6 +13,7 @@ import {
   pollTelegram,
 } from "./telegram-polling.js";
 import { callTelegram, getTelegramConfig } from "./telegram.js";
+import { runTieredNewsSearch } from "./news-search.js";
 import { NoResearchCandidatesError } from "./research.js";
 import { runWorkflow } from "./workflow.js";
 
@@ -41,16 +42,18 @@ await callTelegram(token, "setMyCommands", {
 async function runNews() {
   const { client: aiClient, model } = createGeminiClient();
   try {
-    const result = await runWorkflow({
-      approvalPolicy: "manual",
+    const { result, tier } = await runTieredNewsSearch({
+      runWorkflow,
       repository,
       aiClient,
       model,
-      query: "Most important AI development from the last 48 hours",
-      keywords: ["AI", "model", "research", "agent"],
-      windowHours: 48,
     });
-    return { status: "review_ready", draftId: result.draft.id, preview: result.preview };
+    return {
+      status: "review_ready",
+      draftId: result.draft.id,
+      preview: result.preview,
+      windowHours: tier.windowHours,
+    };
   } catch (error) {
     if (error instanceof NoResearchCandidatesError) {
       return { status: "no_candidates" };
