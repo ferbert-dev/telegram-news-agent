@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  matchPrimarySource,
   rankCandidates,
   runResearch,
   scoreCandidate,
@@ -57,6 +58,24 @@ test("rankCandidates removes old and duplicate candidates deterministically", ()
 
   assert.equal(ranked.length, 1);
   assert.equal(ranked[0].title, "New AI agent released");
+});
+
+test("Reddit discoveries can only map to configured primary domains", () => {
+  const sources = [
+    {
+      ...PRIMARY_SOURCE,
+      homepage_url: "https://openai.com/",
+    },
+  ];
+
+  assert.equal(
+    matchPrimarySource("https://openai.com/news/release", sources)?.id,
+    PRIMARY_SOURCE.id,
+  );
+  assert.equal(
+    matchPrimarySource("https://fake-openai.example/news", sources),
+    undefined,
+  );
 });
 
 test("runResearch persists candidates and completes the run", async () => {
