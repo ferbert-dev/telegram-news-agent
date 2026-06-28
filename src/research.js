@@ -5,6 +5,13 @@ import { withRetry } from "./retry.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 
+export class NoResearchCandidatesError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "NoResearchCandidatesError";
+  }
+}
+
 function keywordScore(candidate, keywords) {
   if (!keywords.length) {
     return 0;
@@ -204,7 +211,9 @@ export async function runResearch({
     });
 
     if (!ranked.length) {
-      throw new Error("No recent primary-source candidates were found");
+      throw new NoResearchCandidatesError(
+        "No recent primary-source candidates were found",
+      );
     }
 
     const articles = [];
@@ -246,7 +255,9 @@ export async function runResearch({
     }
 
     if (!articles.length) {
-      throw new Error("No new primary-source articles were found");
+      throw new NoResearchCandidatesError(
+        "No new primary-source articles were found",
+      );
     }
 
     const extractionErrors = [];
