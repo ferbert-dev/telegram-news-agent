@@ -153,10 +153,11 @@ test("Telegram 409 is fatal instead of retried", async () => {
   assert.equal(polls, 1);
 });
 
-test("failed update is redelivered with the same offset", async () => {
+test("failed update is redelivered with the same offset and increasing backoff", async () => {
   const controller = new AbortController();
   const offsets = [];
-  let attempts = 0;
+  const delays = [];
+  let polls = 0;
   const repository = {
     async acquirePipelineLease() {
       return true;
@@ -172,21 +173,23 @@ test("failed update is redelivered with the same offset", async () => {
     ownerId: "owner",
     callTelegram: async (_token, _method, body) => {
       offsets.push(body.offset);
-      if (attempts++ === 0) {
-        return [{ update_id: 14 }];
+      polls += 1;
+      if (polls === 3) {
+        controller.abort();
       }
-      controller.abort();
       return [{ update_id: 14 }];
     },
     handleUpdate: async () => {
-      if (attempts === 1) {
-        throw new Error("crash");
-      }
+      throw new Error("crash");
     },
     signal: controller.signal,
-    sleepImpl: async () => {},
-    random: () => 0,
+    sleepImpl: async (delay) => delays.push(delay),
+    random: () => 0.999,
     log: { error() {} },
   });
-  assert.deepEqual(offsets, [0, 0]);
+  assert.deepEqual(offsets, [0, 0, 0]);
+  assert.deepEqual(
+    delays.filter((delay) => delay !== 20_000),
+    [499, 999],
+  );
 });

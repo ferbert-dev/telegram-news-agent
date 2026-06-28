@@ -124,7 +124,6 @@ export async function pollTelegram({
           ),
           leaseLoss,
         ]);
-        attempt = 0;
         for (const update of updates) {
           if (signal.aborted) {
             break;
@@ -135,6 +134,7 @@ export async function pollTelegram({
           ]);
           offset = Math.max(offset, update.update_id + 1);
         }
+        attempt = 0;
       } catch (error) {
         if (error instanceof PollingLeaseLostError) {
           throw error;

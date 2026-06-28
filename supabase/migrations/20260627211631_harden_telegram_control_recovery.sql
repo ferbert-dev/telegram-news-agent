@@ -208,7 +208,7 @@ begin
 end;
 $$;
 
-create function public.renew_pipeline_lease(
+create or replace function public.renew_pipeline_lease(
   p_name text,
   p_owner_id uuid,
   p_ttl_seconds integer default 60
