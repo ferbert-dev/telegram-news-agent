@@ -165,6 +165,68 @@ test("/news denial performs no pipeline mutation", async () => {
   assert.equal(ran, false);
 });
 
+test("/news completes cleanly when research finds no verified candidates", async () => {
+  const calls = [];
+  const repository = {
+    async claimTelegramUpdate() {
+      return { claimed: true, claim_token: "claim" };
+    },
+    async finishTelegramUpdate(_updateId, _claimToken, status) {
+      calls.push(["finish", status]);
+      return true;
+    },
+  };
+  const auditLogger = {
+    async start() {
+      return {
+        pageId: "run",
+        pageUrl: "https://notion.test/run",
+        startedAt: new Date(),
+      };
+    },
+    async finish(_run, result) {
+      calls.push(["audit", result.status]);
+    },
+  };
+  const callTelegram = async (_token, method, body) => {
+    calls.push([method, body]);
+    if (method === "getChatMember") {
+      return { status: "administrator" };
+    }
+    return { message_id: 10 };
+  };
+
+  const result = await handleControlUpdate(
+    {
+      update_id: 99,
+      message: {
+        text: "/news",
+        from: { id: 7 },
+        chat: { id: 8, type: "private" },
+      },
+    },
+    {
+      botUsername: "bot",
+      token: "token",
+      channelId: "@channel",
+      repository,
+      auditLogger,
+      callTelegram,
+      runNews: async () => ({ status: "no_candidates" }),
+    },
+  );
+
+  assert.equal(result.handled, true);
+  assert.ok(
+    calls.some(
+      ([method, body]) =>
+        method === "sendMessage" && /No verified primary-source/.test(body.text),
+    ),
+  );
+  assert.ok(calls.some(([name, status]) => name === "finish" && status === "completed"));
+  assert.ok(calls.some(([name, status]) => name === "audit" && status === "Succeeded"));
+});
+
 test("/news rejects group chat and malformed or missing sender", async () => {
   for (const update of [
     commandUpdate({ chat: { id: 9, type: "group" } }),

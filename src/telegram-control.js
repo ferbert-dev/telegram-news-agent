@@ -241,6 +241,16 @@ async function handleNewsCommand(
     text: "Research started. A review draft will appear here.",
   });
   const result = await runNews();
+  if (result.status === "no_candidates") {
+    await callTelegram(token, "sendMessage", {
+      chat_id: chatId,
+      text: "No verified primary-source AI news was found in the last 48 hours. Nothing was drafted.",
+    });
+    return {
+      auditResult:
+        "Research completed without a verified primary-source candidate; no draft was created.",
+    };
+  }
   const preview = await callTelegram(token, "sendMessage", {
     chat_id: chatId,
     text: result.preview,
