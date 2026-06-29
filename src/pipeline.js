@@ -2,6 +2,35 @@ import { randomUUID } from "node:crypto";
 import { generateDraft } from "./draft.js";
 import { runResearch } from "./research.js";
 
+export function buildDraftEvidence(selected) {
+  const primaryEvidence = {
+    url: selected.canonicalUrl,
+    title: selected.title,
+    publishedAt: selected.publishedAt,
+    text: selected.evidenceText,
+    primary: Boolean(selected.source.is_primary),
+    publisher: selected.source.name,
+  };
+  if (
+    !selected.unverified ||
+    !selected.discoveryUrl ||
+    selected.discoveryUrl === selected.canonicalUrl
+  ) {
+    return [primaryEvidence];
+  }
+  return [
+    primaryEvidence,
+    {
+      url: selected.discoveryUrl,
+      title: `Reddit discussion: ${selected.title}`,
+      publishedAt: selected.publishedAt,
+      text: selected.evidenceText,
+      primary: false,
+      publisher: selected.source.name,
+    },
+  ];
+}
+
 export function startPipelineLeaseHeartbeat({
   repository,
   leaseName,
@@ -113,16 +142,7 @@ export async function runPipeline({
       model,
       repository,
       article: selected.article,
-      evidence: [
-        {
-          url: selected.canonicalUrl,
-          title: selected.title,
-          publishedAt: selected.publishedAt,
-          text: selected.evidenceText,
-          primary: Boolean(selected.source.is_primary),
-          publisher: selected.source.name,
-        },
-      ],
+      evidence: buildDraftEvidence(selected),
       allowUnverified: !selected.source.is_primary,
       lease: { name: leaseName, ownerId },
     });

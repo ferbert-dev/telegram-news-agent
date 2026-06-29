@@ -1,9 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildDraftEvidence,
   runPipeline,
   startPipelineLeaseHeartbeat,
 } from "../src/pipeline.js";
+
+test("unverified Reddit trends allow only the linked page and discussion URL", () => {
+  const evidence = buildDraftEvidence({
+    canonicalUrl: "https://example.com/rumor",
+    discoveryUrl: "https://www.reddit.com/r/test/comments/rumor/",
+    title: "Rumored release",
+    publishedAt: "2026-06-29T00:00:00Z",
+    evidenceText: "A community member described a possible release.",
+    unverified: true,
+    source: { name: "Reddit Test", is_primary: false },
+  });
+
+  assert.deepEqual(
+    evidence.map((item) => item.url),
+    [
+      "https://example.com/rumor",
+      "https://www.reddit.com/r/test/comments/rumor/",
+    ],
+  );
+  assert.ok(evidence.every((item) => item.primary === false));
+});
 
 function repositoryFixture({ leaseAcquired = true } = {}) {
   const calls = [];
