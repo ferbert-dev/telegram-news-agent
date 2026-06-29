@@ -49,3 +49,65 @@ export async function runTieredNewsSearch({
 
   throw lastEmptyResult;
 }
+
+export async function runCheckpointedNewsSearch({
+  updateId,
+  repository,
+  aiClient,
+  model,
+  runWorkflow,
+}) {
+  const existing = await repository.getTelegramNewsCheckpoint(updateId);
+  if (existing) {
+    return {
+      status: existing.status,
+      draftId: existing.draft_id,
+      preview: existing.preview,
+      windowHours: existing.window_hours,
+      resumed: true,
+    };
+  }
+
+  try {
+    const { result, tier } = await runTieredNewsSearch({
+      runWorkflow,
+      repository,
+      aiClient,
+      model,
+    });
+    const checkpoint = await repository.saveTelegramNewsCheckpoint({
+      update_id: updateId,
+      status: "review_ready",
+      draft_id: result.draft.id,
+      preview: result.preview,
+      window_hours: tier.windowHours,
+      updated_at: new Date().toISOString(),
+    });
+    return {
+      status: checkpoint.status,
+      draftId: checkpoint.draft_id,
+      preview: checkpoint.preview,
+      windowHours: checkpoint.window_hours,
+      resumed: false,
+    };
+  } catch (error) {
+    if (!(error instanceof NoResearchCandidatesError)) {
+      throw error;
+    }
+    const checkpoint = await repository.saveTelegramNewsCheckpoint({
+      update_id: updateId,
+      status: "no_candidates",
+      draft_id: null,
+      preview: null,
+      window_hours: null,
+      updated_at: new Date().toISOString(),
+    });
+    return {
+      status: checkpoint.status,
+      draftId: null,
+      preview: null,
+      windowHours: null,
+      resumed: false,
+    };
+  }
+}
