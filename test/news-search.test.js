@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runTieredNewsSearch } from "../src/news-search.js";
+import {
+  runCheckpointedNewsSearch,
+  runTieredNewsSearch,
+} from "../src/news-search.js";
 import { NoResearchCandidatesError } from "../src/research.js";
 
 test("tiered news search prefers the 48-hour window", async () => {
@@ -53,4 +56,58 @@ test("tiered news search does not hide operational failures", async () => {
     }),
     /database unavailable/,
   );
+});
+
+test("checkpointed news search resumes without running research again", async () => {
+  let workflowCalls = 0;
+  const repository = {
+    async getTelegramNewsCheckpoint() {
+      return {
+        status: "review_ready",
+        draft_id: "draft-existing",
+        preview: "Existing preview",
+        window_hours: 168,
+      };
+    },
+  };
+  const result = await runCheckpointedNewsSearch({
+    updateId: 10,
+    repository,
+    aiClient: {},
+    model: "model",
+    runWorkflow: async () => {
+      workflowCalls += 1;
+    },
+  });
+
+  assert.equal(workflowCalls, 0);
+  assert.equal(result.draftId, "draft-existing");
+  assert.equal(result.resumed, true);
+});
+
+test("checkpointed news search saves the completed draft before returning", async () => {
+  const writes = [];
+  const repository = {
+    async getTelegramNewsCheckpoint() {
+      return null;
+    },
+    async saveTelegramNewsCheckpoint(checkpoint) {
+      writes.push(checkpoint);
+      return checkpoint;
+    },
+  };
+  const result = await runCheckpointedNewsSearch({
+    updateId: 11,
+    repository,
+    aiClient: {},
+    model: "model",
+    runWorkflow: async () => ({
+      draft: { id: "draft-new" },
+      preview: "New preview",
+    }),
+  });
+
+  assert.equal(writes[0].update_id, 11);
+  assert.equal(writes[0].draft_id, "draft-new");
+  assert.equal(result.resumed, false);
 });

@@ -154,6 +154,7 @@ export async function handleControlUpdate(
                 runNews,
                 now,
                 newSessionId,
+                updateId: update.update_id,
               })
             : await handleReviewCallback(
                 update.callback_query,
@@ -221,7 +222,16 @@ async function requireAdmin(message, dependencies) {
 async function handleNewsCommand(
   message,
   command,
-  { token, channelId, repository, callTelegram, runNews, now, newSessionId },
+  {
+    token,
+    channelId,
+    repository,
+    callTelegram,
+    runNews,
+    now,
+    newSessionId,
+    updateId,
+  },
 ) {
   const chatId = message?.chat?.id;
   if (message?.chat?.type !== "private" || chatId == null) {
@@ -240,7 +250,7 @@ async function handleNewsCommand(
     chat_id: chatId,
     text: "Research started. A review draft will appear here.",
   });
-  const result = await runNews();
+  const result = await runNews({ updateId, userId, chatId });
   if (result.status === "no_candidates") {
     await callTelegram(token, "sendMessage", {
       chat_id: chatId,

@@ -326,6 +326,24 @@ export class NewsRepository {
     return requireResult(result, "Finish Telegram update");
   }
 
+  async getTelegramNewsCheckpoint(updateId) {
+    const result = await this.client
+      .from("telegram_news_request_checkpoints")
+      .select("*")
+      .eq("update_id", updateId)
+      .maybeSingle();
+    return requireResult(result, "Get Telegram news checkpoint");
+  }
+
+  async saveTelegramNewsCheckpoint(checkpoint) {
+    const result = await this.client
+      .from("telegram_news_request_checkpoints")
+      .upsert(checkpoint, { onConflict: "update_id" })
+      .select()
+      .single();
+    return requireResult(result, "Save Telegram news checkpoint");
+  }
+
   async createTelegramReviewSession(session) {
     const result = await this.client
       .from("telegram_review_sessions")
