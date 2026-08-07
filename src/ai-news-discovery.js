@@ -1,11 +1,18 @@
 import { z } from "zod";
 
+const DirectArticleUrl = z
+  .string()
+  .min(1)
+  .refine((value) => URL.canParse(value), "Invalid article URL");
+
 export const NewsDiscovery = z.object({
   items: z
     .array(
       z.object({
         title: z.string().min(1),
-        url: z.string().url(),
+        // OpenAI Structured Outputs does not accept JSON Schema's `uri`
+        // format, so keep URL validation in Zod after the response is parsed.
+        url: DirectArticleUrl,
         summary: z.string().min(1),
         publishedAt: z.string().nullable().optional(),
         author: z.string().nullable().optional(),

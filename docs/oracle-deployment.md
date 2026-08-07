@@ -45,6 +45,8 @@ Secrets:
 - `ORACLE_SSH_PRIVATE_KEY`: a dedicated private deployment key.
 - `ORACLE_KNOWN_HOSTS`: the verified SSH host-key line for Oracle.
 - `PRODUCTION_ENV_FILE`: the complete runtime environment file described below.
+- `OPENAI_API_KEY`: store this as an environment secret in the GitHub
+  `production` environment. Only the deploy job can read it.
 
 Use a dedicated deployment key rather than a personal interactive SSH key. Add
 only its public half to the Oracle user's `~/.ssh/authorized_keys`.
@@ -62,8 +64,8 @@ TELEGRAM_UPDATE_MODE=polling
 TELEGRAM_POLLING_MIGRATE_WEBHOOK=false
 APPROVAL_POLICY=manual
 AI_PROVIDER_ORDER=openai,gemini
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.6
+OPENAI_MODEL=gpt-5.4-2026-03-05
+OPENAI_REASONING_EFFORT=medium
 GEMINI_API_KEY=<secret>
 GEMINI_MODEL=gemini-2.5-flash
 NOTION_API_KEY=<secret>
@@ -72,10 +74,10 @@ NOTION_PIPELINE_AGENT_PAGE_ID=<id>
 NOTION_PIPELINE_TICKET_PAGE_ID=
 ```
 
-At least one provider key must be non-empty. With the order above, OpenAI is
-used when configured and healthy; otherwise the bot automatically continues
-with Gemini. Leaving `OPENAI_API_KEY` empty is valid. Keep provider keys only in
-this secret, never in the repository.
+The deploy job appends the separately stored `OPENAI_API_KEY` environment
+secret to this file immediately before uploading the deployment bundle. With
+the order above, OpenAI GPT-5.4 is primary and Gemini is the fallback. Keep
+provider keys only in GitHub secrets, never in the repository.
 
 Generate both database passwords independently. Hex values avoid URL-encoding
 ambiguity in the internal PostgreSQL connection string. `DATABASE_URL` is not
