@@ -111,3 +111,127 @@ test("checkpointed news search saves the completed draft before returning", asyn
   assert.equal(writes[0].draft_id, "draft-new");
   assert.equal(result.resumed, false);
 });
+
+test("tiered search passes one normalized settings snapshot into workflow", async () => {
+  let received;
+  const result = await runTieredNewsSearch({
+    repository: {},
+    settings: {
+      telegram_channel_id: "@channel",
+      language_code: "de",
+      topic_codes: ["nature", "animals"],
+      custom_topics: ["Meeresbiologie"],
+      approval_policy: "automatic",
+      version: 4,
+    },
+    telegram: { token: "token", channelId: "@channel" },
+    runWorkflow: async (options) => {
+      received = options;
+      return {
+        status: "published",
+        draft: { id: "draft-auto" },
+        preview: "Vorschau",
+        publication: { telegram_message_id: 91 },
+      };
+    },
+  });
+
+  assert.equal(result.result.status, "published");
+  assert.equal(received.approvalPolicy, "automatic");
+  assert.equal(received.newsSettings.languageCode, "de");
+  assert.deepEqual(received.newsSettings.topicCodes, ["nature", "animals"]);
+  assert.match(received.query, /Meeresbiologie/);
+  assert.match(received.query, /German/);
+});
+
+test("checkpointed automatic search persists and returns publication receipt", async () => {
+  const saved = [];
+  let approved = false;
+  const repository = {
+    async getTelegramNewsCheckpoint() {
+      return null;
+    },
+    async saveTelegramNewsCheckpoint(checkpoint) {
+      saved.push(checkpoint);
+      return checkpoint;
+    },
+    async getDraft() {
+      return { id: "draft-published", status: "review" };
+    },
+    async approveDraft() {
+      approved = true;
+    },
+  };
+
+  const result = await runCheckpointedNewsSearch({
+    updateId: 12,
+    repository,
+    settings: {
+      approvalPolicy: "automatic",
+      topicCodes: ["world"],
+    },
+    telegram: { token: "token", channelId: "@channel" },
+    runWorkflow: async () => ({
+      status: "awaiting_approval",
+      draft: { id: "draft-published" },
+      preview: "Published preview",
+    }),
+    publishDraft: async () => ({
+      publication: { telegram_message_id: 123 },
+    }),
+  });
+
+  assert.equal(saved[0].status, "review_ready");
+  assert.equal(saved[0].publication_message_id, null);
+  assert.equal(saved[1].status, "published");
+  assert.equal(saved[1].publication_message_id, 123);
+  assert.equal(approved, true);
+  assert.equal(result.status, "published");
+  assert.equal(result.draftId, "draft-published");
+  assert.equal(result.preview, "Published preview");
+  assert.equal(result.publicationMessageId, 123);
+});
+
+test("automatic checkpoint recovery republishes only the stored draft idempotently", async () => {
+  let researched = false;
+  let publishedDraft;
+  const writes = [];
+  const checkpoint = {
+    update_id: 13,
+    status: "review_ready",
+    draft_id: "draft-stored",
+    preview: "Stored preview",
+    window_hours: 48,
+    publication_message_id: null,
+    settings_snapshot: {
+      approvalPolicy: "automatic",
+      topicCodes: ["world"],
+    },
+  };
+  const repository = {
+    async getTelegramNewsCheckpoint() { return checkpoint; },
+    async getDraft() { return { id: "draft-stored", status: "published" }; },
+    async saveTelegramNewsCheckpoint(value) {
+      writes.push(value);
+      return value;
+    },
+  };
+
+  const result = await runCheckpointedNewsSearch({
+    updateId: 13,
+    repository,
+    settings: { approvalPolicy: "automatic", topicCodes: ["world"] },
+    telegram: { token: "token", channelId: "@channel" },
+    runWorkflow: async () => { researched = true; },
+    publishDraft: async ({ draftId }) => {
+      publishedDraft = draftId;
+      return { publication: { telegram_message_id: 321 } };
+    },
+  });
+
+  assert.equal(researched, false);
+  assert.equal(publishedDraft, "draft-stored");
+  assert.equal(writes[0].status, "published");
+  assert.equal(result.publicationMessageId, 321);
+  assert.equal(result.resumed, true);
+});

@@ -300,6 +300,78 @@ test("runResearch performs web search even when RSS has a recent candidate", asy
   assert.equal(searchCalls, 1);
 });
 
+test("non-AI settings skip static AI feeds and allow provider-only research", async () => {
+  let feedCalled = false;
+  let providerRequest;
+  const rawWrites = [];
+  const repository = {
+    async startSearchRun(input) {
+      assert.equal(input.metadata.news_settings.languageCode, "uk");
+      return { id: "run-nature" };
+    },
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(article) {
+      return { id: "article-nature", ...article };
+    },
+    async saveRawContent(content) {
+      rawWrites.push(content);
+    },
+    async finishSearchRun() {},
+    async failSearchRun() {},
+  };
+
+  const result = await runResearch({
+    repository,
+    query: "Nature and animals",
+    keywords: ["nature", "animals"],
+    now: NOW,
+    newsSettings: {
+      languageCode: "uk",
+      topicCodes: ["nature", "animals"],
+      customTopics: ["Морська біологія"],
+      version: 2,
+    },
+    fetchFeedImpl: async () => {
+      feedCalled = true;
+      return [candidate()];
+    },
+    discoveryProvider: {
+      async searchNews(request) {
+        providerRequest = request;
+        return {
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+          items: [
+            {
+              title: "Нове дослідження тварин",
+              url: "https://nature.example.org/animal-study",
+              summary: "Дослідники описали нову поведінку тварин.",
+              publishedAt: "2026-06-26T20:00:00Z",
+            },
+          ],
+        };
+      },
+    },
+    fetchArticleImpl: async (url) => ({
+      text: "Direct evidence from the nature article.",
+      contentHash: "nature-article-hash",
+      finalUrl: url,
+    }),
+    retryImpl: (operation) => operation(),
+  });
+
+  assert.equal(feedCalled, false);
+  assert.equal(providerRequest.languageCode, "uk");
+  assert.deepEqual(providerRequest.topicCodes, ["nature", "animals"]);
+  assert.deepEqual(providerRequest.customTopics, ["Морська біологія"]);
+  assert.equal(result.selected.title, "Нове дослідження тварин");
+  assert.equal(rawWrites[0].language_code, "uk");
+  assert.equal(rawWrites[1].language_code, null);
+});
+
 test("runResearch uses a web-grounded search summary when the publisher blocks extraction", async () => {
   const repository = {
     async startSearchRun() {

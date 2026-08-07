@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LANGUAGE_OPTIONS, newsSettingsSnapshot } from "./news-settings.js";
 import { validateMessage } from "./telegram.js";
 
 const Claim = z.object({
@@ -45,10 +46,10 @@ export const TELEGRAM_DRAFT_JSON_SCHEMA = {
   ],
 };
 
-const VERIFIED_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
+const VERIFIED_SYSTEM_PROMPT = `You are the editor of a concise general-interest news channel.
 Use only the supplied primary-source evidence. Do not add facts from memory.
-Write like one person explaining the news to another person. Use simple B1
-English, short sentences, common words, and no marketing language or technical
+Write like one person explaining the news to another person. Use clear B1-level
+language, short sentences, common words, and no marketing language or technical
 jargon unless it is essential. Write 60-100 words and no more than five
 sentences, excluding the source URL lines. Include:
 - a plain-text headline
@@ -59,37 +60,51 @@ sentences, excluding the source URL lines. Include:
 Do not use markdown tables. Do not claim independent verification when only one
 primary source is supplied. Every factual claim must map to one supplied URL.`;
 
-const UNVERIFIED_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
+const UNVERIFIED_SYSTEM_PROMPT = `You are the editor of a concise general-interest news channel.
 The supplied evidence is an unverified community post or rumor. Do not add facts
 from memory and do not present its claims as confirmed. Write like one person
-explaining the discussion to another person. Use simple B1 English, short
+explaining the discussion to another person. Use clear B1-level language, short
 sentences, and common words. Write 60-100 words and no more than five sentences,
 excluding source URL lines. Explain what people are discussing, why it may
 matter if true, and what proof is still missing. Attribute every claim to the
 community source. Include a strong caveat and source URLs.`;
 
-const WEB_SOURCE_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
+const WEB_SOURCE_SYSTEM_PROMPT = `You are the editor of a concise general-interest news channel.
 The supplied evidence was extracted from a direct web article found through
 live internet search. It may be reputable reporting, but it is not necessarily
 a first-party announcement. Use only the supplied article evidence and do not
-add facts from memory. Attribute claims to the named publisher. Use simple B1
-English, short sentences, common words, and no marketing language. Write 60-100
+add facts from memory. Attribute claims to the named publisher. Use clear B1-level
+language, short sentences, common words, and no marketing language. Write 60-100
 words and no more than five sentences, excluding source URL lines. Explain what
 happened, why it matters, and one clear caveat about source limitations. Include
 the direct article URL at the end. Do not call the report independently verified.`;
 
-const WEB_SEARCH_SUMMARY_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
+const WEB_SEARCH_SUMMARY_SYSTEM_PROMPT = `You are the editor of a concise general-interest news channel.
 The supplied evidence is a web-grounded summary returned by live internet
 search because the publisher page could not be extracted. Use only the supplied
 summary and do not add facts from memory. Attribute every claim to the named
-publisher and link the direct article URL. Use simple B1 English, short
+publisher and link the direct article URL. Use clear B1-level language, short
 sentences, and common words. Write 60-100 words and no more than five sentences,
 excluding source URL lines. Explain what was reported and why it may matter.
 Include a clear caveat that the publisher page could not be independently read
 by this bot. Do not present the report as independently verified.`;
 
+const SOURCE_HEADINGS = Object.freeze({
+  en: "Sources",
+  uk: "Джерела",
+  de: "Quellen",
+});
+
+const UNVERIFIED_PREFIXES = Object.freeze({
+  en: "UNVERIFIED TREND",
+  uk: "НЕПЕРЕВІРЕНИЙ ТРЕНД",
+  de: "UNBESTÄTIGTER TREND",
+});
+
 function proseMetrics(text) {
-  const prose = text.split(/\n\s*Sources?:\s*\n/i, 1)[0].trim();
+  const prose = text
+    .split(/\n\s*(?:Sources?|Quellen?|Джерела):\s*\n/iu, 1)[0]
+    .trim();
   const words = prose ? prose.split(/\s+/).length : 0;
   const sentences = prose
     ? Math.max(1, (prose.match(/[.!?]+(?=\s|$)/g) ?? []).length)
@@ -97,7 +112,14 @@ function proseMetrics(text) {
   return { words, sentences };
 }
 
-export function validateGroundedDraft(draft, evidence) {
+export function validateGroundedDraft(
+  draft,
+  evidence,
+  { languageCode = "en" } = {},
+) {
+  if (!LANGUAGE_OPTIONS[languageCode]) {
+    throw new Error("languageCode must be en, uk, or de");
+  }
   const parsed = TelegramDraft.parse(draft);
   const allowedUrls = new Set(evidence.map((item) => item.url));
 
@@ -123,7 +145,7 @@ export function validateGroundedDraft(draft, evidence) {
     (sourceUrl) => !parsed.telegramText.includes(sourceUrl),
   );
   const telegramText = missingUrls.length
-    ? `${parsed.telegramText.trim()}\n\nSources:\n${missingUrls.join("\n")}`
+    ? `${parsed.telegramText.trim()}\n\n${SOURCE_HEADINGS[languageCode]}:\n${missingUrls.join("\n")}`
     : parsed.telegramText;
   const normalized = TelegramDraft.parse({
     ...parsed,
@@ -151,9 +173,15 @@ export async function generateDraft({
   evidence,
   allowUnverified = false,
   lease,
+  languageCode = "en",
+  newsSettings,
 }) {
   if (!article?.id) {
     throw new Error("Article is required for draft generation");
+  }
+  const language = LANGUAGE_OPTIONS[languageCode];
+  if (!language) {
+    throw new Error("languageCode must be en, uk, or de");
   }
 
   const verificationStatuses = evidence.map(
@@ -175,16 +203,18 @@ export async function generateDraft({
     throw new Error("Draft generation requires primary-source evidence");
   }
   const unverified = verificationStatus === "unverified_community";
-  const systemInstruction = unverified
+  const evidenceInstruction = unverified
     ? UNVERIFIED_SYSTEM_PROMPT
     : verificationStatus === "web_search_summary"
       ? WEB_SEARCH_SUMMARY_SYSTEM_PROMPT
       : verificationStatus === "web_source"
         ? WEB_SOURCE_SYSTEM_PROMPT
         : VERIFIED_SYSTEM_PROMPT;
+  const systemInstruction = `${evidenceInstruction}\nWrite the entire headline, article text, caveat, and claim text in ${language.name}. Keep source URLs unchanged. Use the localized source heading "${SOURCE_HEADINGS[languageCode]}".`;
 
   const input = {
-    task: "Create one review-ready Telegram article.",
+    task: `Create one review-ready Telegram article in ${language.name}.`,
+    languageCode,
     article: {
       title: article.title,
       url: article.canonical_url,
@@ -223,13 +253,16 @@ export async function generateDraft({
     generated = { value, provider: "gemini", model };
   }
 
-  const grounded = validateGroundedDraft(generated.value, evidence);
+  const grounded = validateGroundedDraft(generated.value, evidence, {
+    languageCode,
+  });
+  const unverifiedPrefix = UNVERIFIED_PREFIXES[languageCode];
   const draft = unverified
     ? TelegramDraft.parse({
         ...grounded,
-        telegramText: grounded.telegramText.startsWith("UNVERIFIED TREND")
+        telegramText: grounded.telegramText.startsWith(unverifiedPrefix)
           ? grounded.telegramText
-          : `UNVERIFIED TREND\n\n${grounded.telegramText}`,
+          : `${unverifiedPrefix}\n\n${grounded.telegramText}`,
       })
     : grounded;
   const saved = await repository.createReviewDraft({
@@ -251,6 +284,8 @@ export async function generateDraft({
       caveat: draft.caveat,
       provider: generated.provider,
       verification_status: verificationStatus,
+      language_code: languageCode,
+      news_settings: newsSettings ? newsSettingsSnapshot(newsSettings) : null,
     }),
     lease_name: lease?.name,
     lease_owner_id: lease?.ownerId,

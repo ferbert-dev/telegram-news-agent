@@ -36,16 +36,24 @@ export async function publishApprovedDraft({
     );
   }
 
-  const publication = await repository.finalizeDraftPublication({
-    draftId,
-    channelId,
-    messageId: sent.message_id,
-    messageText: draft.body,
-    metadata: {
-      bot_message_date: sent.date ?? null,
-      approval: "database_approved",
-    },
-  });
+  let publication;
+  try {
+    publication = await repository.finalizeDraftPublication({
+      draftId,
+      channelId,
+      messageId: sent.message_id,
+      messageText: draft.body,
+      metadata: {
+        bot_message_date: sent.date ?? null,
+        approval: "database_approved",
+      },
+    });
+  } catch (error) {
+    throw new Error(
+      "Telegram publication outcome is unresolved after the message was accepted; draft remains in publishing state for manual reconciliation",
+      { cause: error },
+    );
+  }
 
   return { publication, alreadyPublished: false };
 }

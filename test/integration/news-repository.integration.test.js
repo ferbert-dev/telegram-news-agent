@@ -16,8 +16,15 @@ test(
     const repository = new NewsRepository(pool);
     const suffix = randomUUID();
     const updateId = Date.now() + Math.floor(Math.random() * 10_000);
+    const publishedUpdateId = updateId + 1_000_000;
     const leaseName = `integration-${suffix}`;
     const ownerId = randomUUID();
+    const settingsChannel = `@integration_${suffix.replaceAll("-", "")}`;
+    const idBase = Date.now() * 1_000 + Math.floor(Math.random() * 500);
+    const reviewChatId = idBase;
+    const settingsUserId = idBase + 1;
+    const promptMessageId = idBase + 2;
+    const previewMessageId = idBase + 3;
     let source;
     let searchRun;
     let article;
@@ -41,6 +48,92 @@ test(
       assert.equal((await repository.setSourceEnabled(source.id, false)).enabled, false);
       assert.equal((await repository.setSourceEnabled(source.id, true)).enabled, true);
       assert.ok((await repository.markSourceChecked(source.id)).last_checked_at);
+
+      const defaultSettings = await repository.getOrCreateNewsSettings({
+        channelId: settingsChannel,
+        reviewChatId,
+        updatedBy: settingsUserId,
+      });
+      assert.equal(defaultSettings.schedule_interval_minutes, null);
+      assert.equal(defaultSettings.language_code, "en");
+      assert.equal(defaultSettings.approval_policy, "manual");
+      assert.deepEqual(defaultSettings.topic_codes, [
+        "ai",
+        "world",
+        "science",
+        "nature",
+        "animals",
+        "history",
+        "culture",
+        "technology",
+        "society",
+      ]);
+
+      const updatedSettings = await repository.updateNewsSettings({
+        channelId: settingsChannel,
+        reviewChatId,
+        scheduleIntervalMinutes: 60,
+        languageCode: "de",
+        topicCodes: ["world", "nature"],
+        customTopics: ["Ocean exploration"],
+        approvalPolicy: "automatic",
+        updatedBy: settingsUserId,
+        expectedVersion: defaultSettings.version,
+      });
+      assert.equal(updatedSettings.version, defaultSettings.version + 1);
+      assert.equal(updatedSettings.language_code, "de");
+      assert.equal(
+        await repository.updateNewsSettings({
+          channelId: settingsChannel,
+          reviewChatId,
+          scheduleIntervalMinutes: null,
+          languageCode: "uk",
+          topicCodes: ["history"],
+          customTopics: [],
+          approvalPolicy: "manual",
+          updatedBy: settingsUserId,
+          expectedVersion: defaultSettings.version,
+        }),
+        null,
+      );
+      assert.equal(
+        (await repository.getNewsSettings(settingsChannel)).version,
+        updatedSettings.version,
+      );
+
+      const settingsInput = await repository.beginTelegramSettingsInput({
+        controlChatId: reviewChatId,
+        requestedBy: settingsUserId,
+        promptMessageId,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+      assert.equal(Number(settingsInput.prompt_message_id), promptMessageId);
+      assert.equal(
+        await repository.consumeTelegramSettingsInput({
+          controlChatId: reviewChatId,
+          requestedBy: settingsUserId,
+          promptMessageId: promptMessageId + 1,
+        }),
+        null,
+      );
+      assert.equal(
+        (
+          await repository.consumeTelegramSettingsInput({
+            controlChatId: reviewChatId,
+            requestedBy: settingsUserId,
+            promptMessageId,
+          })
+        ).id,
+        settingsInput.id,
+      );
+      assert.equal(
+        await repository.consumeTelegramSettingsInput({
+          controlChatId: reviewChatId,
+          requestedBy: settingsUserId,
+          promptMessageId,
+        }),
+        null,
+      );
 
       searchRun = await repository.startSearchRun({
         query: `integration ${suffix}`,
@@ -110,26 +203,78 @@ test(
         true,
       );
 
+      const claimedPublishedUpdate = await repository.claimTelegramUpdate(
+        publishedUpdateId,
+        "integration_published",
+      );
+      const publishedCheckpoint = await repository.saveTelegramNewsCheckpoint({
+        update_id: publishedUpdateId,
+        status: "published",
+        draft_id: draft.id,
+        preview: "Published integration preview",
+        window_hours: 48,
+        publication_message_id: 909,
+        settings_snapshot: {
+          languageCode: "de",
+          topicCodes: ["world", "nature"],
+        },
+        updated_at: new Date().toISOString(),
+      });
+      assert.equal(Number(publishedCheckpoint.publication_message_id), 909);
+      assert.equal(publishedCheckpoint.settings_snapshot.languageCode, "de");
+      assert.equal(
+        await repository.finishTelegramUpdate(
+          publishedUpdateId,
+          claimedPublishedUpdate.claim_token,
+          "completed",
+        ),
+        true,
+      );
+
       sessionId =
         randomUUID().replaceAll("-", "") +
         randomUUID().replaceAll("-", "");
       await repository.createTelegramReviewSession({
         id: sessionId,
         draft_id: draft.id,
-        control_chat_id: 101,
-        preview_message_id: 202,
-        requested_by: 303,
+        telegram_channel_id: settingsChannel,
+        control_chat_id: reviewChatId,
+        preview_message_id: previewMessageId,
+        requested_by: settingsUserId,
         expires_at: new Date(Date.now() + 60_000).toISOString(),
       });
+      assert.equal(
+        (await repository.findTelegramReviewSessionByDraft(draft.id)).id,
+        sessionId,
+      );
+      assert.equal(await repository.hasPendingTelegramReview(settingsChannel), true);
+      await pool.query(
+        "update public.telegram_review_sessions set created_at = now() - interval '2 minutes', expires_at = now() - interval '1 minute' where id = $1",
+        [sessionId],
+      );
+      const renewedReview = await repository.renewTelegramReviewSession({
+        draftId: draft.id,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+      assert.equal(renewedReview.id, sessionId);
+      const reboundReview = await repository.rebindTelegramReviewSession({
+        draftId: draft.id,
+        controlChatId: reviewChatId,
+        expectedPreviewMessageId: previewMessageId,
+        previewMessageId: previewMessageId + 100,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+      assert.equal(Number(reboundReview.preview_message_id), previewMessageId + 100);
       const decision = await repository.decideTelegramReviewSession({
         sessionId,
         action: "reject",
-        chatId: 101,
-        messageId: 202,
-        actorId: 303,
+        chatId: reviewChatId,
+        messageId: previewMessageId + 100,
+        actorId: settingsUserId,
       });
       assert.equal(decision.decision, "reject");
       assert.equal(decision.decision_won, true);
+      assert.equal(await repository.hasPendingTelegramReview(settingsChannel), false);
 
       assert.equal(
         await repository.acquirePipelineLease(leaseName, ownerId, 60),
@@ -163,7 +308,24 @@ test(
         ])
         .catch(() => {});
       await pool
+        .query(
+          "delete from public.telegram_settings_inputs where control_chat_id = $1 and requested_by = $2",
+          [reviewChatId, settingsUserId],
+        )
+        .catch(() => {});
+      await pool
+        .query(
+          "delete from public.news_bot_settings where telegram_channel_id = $1",
+          [settingsChannel],
+        )
+        .catch(() => {});
+      await pool
         .query("delete from public.telegram_updates where update_id = $1", [updateId])
+        .catch(() => {});
+      await pool
+        .query("delete from public.telegram_updates where update_id = $1", [
+          publishedUpdateId,
+        ])
         .catch(() => {});
       if (sessionId) {
         await pool

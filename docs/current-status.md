@@ -6,8 +6,8 @@ Last updated: 2026-08-07
 
 - Local path: `/Users/ferbertigo/Development/VSCode/telegram-news-agent`
 - GitHub remote: `git@github.com:ferbert-dev/telegram-news-agent.git`
-- Main branch was pushed successfully.
-- Last confirmed pushed commit: `96605f7 Initial agent ops project scaffold`
+- Main is deployed through the checked-in GitHub Actions workflow; this settings
+  change was based on `2ad1c5a Search the public web for news (#18)`.
 
 ## What Exists
 
@@ -36,6 +36,10 @@ Last updated: 2026-08-07
 - The Node runtime now supports source management, 48-hour research and
   ranking, GPT-5.4 generation and web search with Gemini fallback, explicit
   approval, and idempotent Telegram publication.
+- Private admin `/settings` controls English/Ukrainian/German output, a broad
+  preset/custom topic mix, review-required versus automatic publication, and a
+  paused/1h/6h/12h/24h database-backed schedule. Safe defaults remain broad,
+  English, manual review, and paused.
 - Every run combines the approved RSS feeds with live AI-provider web search
   across the public internet. Search results are not domain-allowlisted, but a
   direct article must pass public-URL safety checks. The bot extracts the page
@@ -78,7 +82,8 @@ Target workflow:
 
 ```text
 Scheduled routine
-  -> research recent AI/news trends
+  -> read the versioned channel configuration
+  -> research recent configured topics across the public web
   -> collect source items
   -> synthesize a short human-readable article
   -> publish to Telegram
@@ -95,9 +100,10 @@ Scheduled routine
    `NOTION_AGENT_RUNS_DATA_SOURCE_ID`, and `NOTION_PIPELINE_AGENT_PAGE_ID`.
 5. Run `npm run pipeline:run`, review the generated draft, and publish it with
    the `drafts` CLI.
-6. Complete five supervised end-to-end QA runs before enabling recurrence.
-7. Open a pull request for the implementation and have a Reviewer agent review it.
-6. Keep `.env.example` variables current:
+6. Complete supervised end-to-end QA runs before enabling automatic
+   publication; begin scheduled QA in review-required mode.
+7. Complete live supervised Telegram QA for the persisted settings and scheduler.
+8. Keep `.env.example` variables current:
 
 ```text
 TELEGRAM_BOT_TOKEN=
@@ -113,10 +119,9 @@ NOTION_PIPELINE_AGENT_PAGE_ID=38bd7885-0eab-81f4-9879-e8b4b990e314
 DATABASE_URL=postgresql://telegram_news_app:<password>@localhost:5432/telegram_news
 ```
 
-7. Keep the explicit draft approval command as the review gate.
-8. Add a recurring scheduler only after supervised QA.
-9. Add a minimal run logger that writes to console first and Notion later.
-10. After each completed task, run the Orchestrator Next-Step Loop and create/update the next Notion ticket.
+9. Keep review-required mode as the default gate.
+10. Add deployment monitoring and cost alerts before using the one-hour interval.
+11. After each completed task, run the Orchestrator Next-Step Loop and create/update the next Notion ticket.
 
 ## Completed Since Handoff
 

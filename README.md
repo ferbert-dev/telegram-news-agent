@@ -104,9 +104,8 @@ npm run drafts -- reconcile-not-sent --id <draft-id> --confirm TELEGRAM_NOT_SENT
 The first command records an observed Telegram message. The second returns the
 draft to `approved` for a controlled retry and requires exact confirmation.
 
-Keep `APPROVAL_POLICY=manual` during supervised QA. With `automatic`, the same
-audited command approves and publishes the generated draft; this must not be
-enabled until the five supervised runs pass.
+`APPROVAL_POLICY` remains the default for CLI runs. Telegram-triggered and
+scheduled runs use the persisted per-channel setting described below.
 
 ## Telegram Admin Control
 
@@ -116,12 +115,33 @@ Apply the PostgreSQL migrations, set `TELEGRAM_UPDATE_MODE=polling`, and run:
 npm run telegram:control
 ```
 
-Send `/news` in a private chat with the bot. The command and every callback
-recheck that the sender is a current administrator or creator of
-`TELEGRAM_CHANNEL_ID`. The bot creates a 24-hour opaque review session bound to
-the private chat and preview message. Publish and Reject are atomic decisions;
-publication occurs only after Publish and retains the existing idempotency and
-reconciliation behavior.
+Send `/settings` in a private chat with the bot to configure, in order:
+
+1. output language: English, Ukrainian, or German;
+2. preset topics plus up to five custom topic labels;
+3. review-required or automatic publication;
+4. paused, every 1, 6, 12, or 24 hours.
+
+The native Telegram inline menu writes a versioned configuration to PostgreSQL;
+no public web UI or additional Oracle port is required. Defaults are the broad
+topic mix, English, review required, and automatic search paused. Enabling
+automatic publication requires a separate confirmation screen. Selecting the
+one-hour interval can consume provider search/tool credits quickly.
+
+Send `/news` to run immediately with the saved configuration. The command,
+settings actions, and review callbacks recheck that the sender is a current
+administrator or creator of `TELEGRAM_CHANNEL_ID`. In review-required mode the
+bot creates a 24-hour opaque session bound to the private chat and preview
+message. Publish and Reject are atomic decisions; publication retains the
+existing idempotency and reconciliation behavior.
+
+The embedded scheduler polls for due database rows and atomically claims one
+run at a time. It rereads a complete configuration snapshot before each search,
+survives restarts, prevents overlapping pipeline executions, and will not
+create another manual draft for the channel while an unexpired review is
+pending. Before any automatic send, it durably checkpoints the selected draft;
+a crash resumes that exact draft instead of researching and publishing another
+one. An uncertain Telegram send pauses recurrence for manual reconciliation.
 
 Polling refuses to start while a webhook URL is configured. For an intentional
 migration only, set `TELEGRAM_POLLING_MIGRATE_WEBHOOK=true` for one startup;
@@ -142,9 +162,9 @@ not bot tokens, article bodies, or upstream response details.
 ## Docker and Oracle Deployment
 
 Production runs as two private Docker Compose services on the Oracle instance:
-the polling bot and PostgreSQL. The database has no published host port. The
-one-shot `migrate` service applies the checked-in SQL migrations before each bot
-update.
+the polling bot (including the database-backed scheduler) and PostgreSQL. The
+database has no published host port. The one-shot `migrate` service applies the
+checked-in SQL migrations before each bot update.
 
 The GitHub Actions workflow in `.github/workflows/deploy.yml` performs this
 sequence on every merge to `main`:
@@ -195,5 +215,6 @@ Inbox -> Ready -> In Progress -> Review -> Blocked / Done -> Archive
 
 1. Configure the local PostgreSQL connection and at least one AI provider key.
 2. Complete five supervised research-to-publish runs.
-3. Add the recurring scheduler after those QA runs pass.
-4. Add deployment monitoring and alerts.
+3. Configure `/settings`, leave review-required mode enabled, and exercise each
+   language/topic combination needed for the channel.
+4. Add deployment monitoring and alerts before enabling unattended publishing.

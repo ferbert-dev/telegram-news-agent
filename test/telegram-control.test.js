@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   classifyControlUpdate,
   createReviewCallback,
+  deliverReviewDraft,
   handleControlUpdate,
   parseNewsCommand,
   parseReviewCallback,
@@ -135,17 +136,20 @@ test("/news requires private admin and persists a bound 24h session", async () =
   assert.equal(result.handled, true);
   const session = calls.find(([name]) => name === "session")[1];
   assert.equal(session.control_chat_id, 9);
+  assert.equal(session.telegram_channel_id, "@channel");
   assert.equal(session.preview_message_id, 77);
   assert.equal(session.draft_id, "draft-1");
   assert.equal(session.expires_at, "2026-06-28T12:00:00.000Z");
-  const keyboard = calls.find(([name]) => name === "editMessageReplyMarkup")[1]
-    .reply_markup.inline_keyboard;
+  const previewCall = calls.find(
+    ([name, body]) => name === "sendMessage" && body.text === "Preview",
+  );
+  const keyboard = previewCall[1].reply_markup.inline_keyboard;
   assert.match(keyboard[0][0].callback_data, /^news:p:[a-f0-9]+$/);
 });
 
 test("/news denial performs no pipeline mutation", async () => {
   let ran = false;
-  const { dependencies } = fixture({
+  const { calls, dependencies } = fixture({
     callTelegram: async (_token, method) => {
       if (method === "getChatMember") {
         return { status: "member" };
@@ -163,6 +167,10 @@ test("/news denial performs no pipeline mutation", async () => {
     (error) => error.code === "forbidden",
   );
   assert.equal(ran, false);
+  assert.equal(
+    calls.find(([name]) => name === "finishUpdate")[3],
+    "completed",
+  );
 });
 
 test("/news completes cleanly when research finds no verified candidates", async () => {
@@ -220,11 +228,264 @@ test("/news completes cleanly when research finds no verified candidates", async
   assert.ok(
     calls.some(
       ([method, body]) =>
-        method === "sendMessage" && /No verified primary-source/.test(body.text),
+        method === "sendMessage" && /No suitable recent news/.test(body.text),
     ),
   );
   assert.ok(calls.some(([name, status]) => name === "finish" && status === "completed"));
   assert.ok(calls.some(([name, status]) => name === "audit" && status === "Succeeded"));
+});
+
+test("/news confirms automatic publication without creating a review session", async () => {
+  const { calls, dependencies } = fixture({
+    dependencies: {
+      runNews: async () => ({
+        status: "published",
+        draftId: "draft-automatic",
+        publication: { telegram_message_id: 501 },
+      }),
+    },
+  });
+
+  const result = await handleControlUpdate(commandUpdate(), dependencies);
+
+  assert.equal(result.draftId, "draft-automatic");
+  assert.equal(calls.some(([name]) => name === "session"), false);
+  assert.ok(
+    calls.some(
+      ([name, body]) =>
+        name === "sendMessage" && /Published automatically.*501/.test(body.text),
+    ),
+  );
+});
+
+test("deliverReviewDraft creates a bound reusable manual-review session", async () => {
+  const calls = [];
+  const repository = {
+    async createTelegramReviewSession(value) {
+      calls.push(["session", value]);
+    },
+  };
+  const result = await deliverReviewDraft({
+    token: "token",
+    channelId: "@channel",
+    chatId: 99,
+    requestedBy: 7,
+    repository,
+    callTelegram: async (_token, method, body) => {
+      calls.push([method, body]);
+      return method === "sendMessage" ? { message_id: 123 } : true;
+    },
+    draftId: "draft-scheduled",
+    preview: "Scheduled preview",
+    now: () => new Date("2026-08-07T08:00:00Z"),
+    newSessionId: () => SESSION_ID,
+  });
+
+  assert.deepEqual(result, {
+    draftId: "draft-scheduled",
+    previewMessageId: 123,
+    sessionId: SESSION_ID,
+  });
+  assert.deepEqual(calls.find(([name]) => name === "session")[1], {
+    id: SESSION_ID,
+    draft_id: "draft-scheduled",
+    telegram_channel_id: "@channel",
+    control_chat_id: 99,
+    preview_message_id: 123,
+    requested_by: 7,
+    expires_at: "2026-08-08T08:00:00.000Z",
+  });
+  assert.equal(calls.some(([name]) => name === "editMessageReplyMarkup"), false);
+  assert.match(
+    calls.find(([name]) => name === "sendMessage")[1].reply_markup
+      .inline_keyboard[0][0].callback_data,
+    /^news:p:/,
+  );
+});
+
+test("deliverReviewDraft resumes a committed session after an ambiguous database response", async () => {
+  const calls = [];
+  const result = await deliverReviewDraft({
+    token: "token",
+    channelId: "@channel",
+    chatId: 99,
+    requestedBy: 7,
+    repository: {
+      async findTelegramReviewSessionByDraft() {
+        return {
+          id: SESSION_ID,
+          control_chat_id: 99,
+          preview_message_id: 123,
+          decision: null,
+          expires_at: "2026-08-09T08:00:00.000Z",
+        };
+      },
+      async createTelegramReviewSession() {
+        throw new Error("must not create a duplicate session");
+      },
+    },
+    callTelegram: async (_token, method, body) => {
+      calls.push([method, body]);
+      return true;
+    },
+    draftId: "draft-scheduled",
+    preview: "Scheduled preview",
+  });
+
+  assert.equal(result.resumed, true);
+  assert.equal(result.sessionId, SESSION_ID);
+  assert.deepEqual(calls.map(([method]) => method), ["editMessageReplyMarkup"]);
+});
+
+test("deliverReviewDraft renews an expired undecided session", async () => {
+  const calls = [];
+  const expired = {
+    id: SESSION_ID,
+    control_chat_id: 99,
+    preview_message_id: 123,
+    decision: null,
+    expires_at: "2026-08-06T08:00:00.000Z",
+  };
+  const result = await deliverReviewDraft({
+    token: "token",
+    channelId: "@channel",
+    chatId: 99,
+    requestedBy: 7,
+    repository: {
+      async findTelegramReviewSessionByDraft() {
+        return expired;
+      },
+      async renewTelegramReviewSession(input) {
+        calls.push(["renew", input]);
+        return { ...expired, expires_at: input.expiresAt };
+      },
+    },
+    callTelegram: async (_token, method, body) => {
+      calls.push([method, body]);
+      return true;
+    },
+    draftId: "draft-scheduled",
+    preview: "Scheduled preview",
+    now: () => new Date("2026-08-07T08:00:00Z"),
+  });
+
+  assert.equal(result.resumed, true);
+  assert.equal(result.unavailable, undefined);
+  assert.equal(calls[0][0], "editMessageReplyMarkup");
+  assert.equal(calls[1][0], "renew");
+  assert.equal(calls[1][1].expiresAt, "2026-08-08T08:00:00.000Z");
+});
+
+test("deliverReviewDraft rebinds a session when its preview was deleted", async () => {
+  const calls = [];
+  const existing = {
+    id: SESSION_ID,
+    control_chat_id: 99,
+    preview_message_id: 123,
+    decision: null,
+    expires_at: "2026-08-09T08:00:00.000Z",
+  };
+  const result = await deliverReviewDraft({
+    token: "token",
+    channelId: "@channel",
+    chatId: 99,
+    requestedBy: 7,
+    repository: {
+      async findTelegramReviewSessionByDraft() {
+        return existing;
+      },
+      async rebindTelegramReviewSession(input) {
+        calls.push(["rebind", input]);
+        return { ...existing, preview_message_id: input.previewMessageId };
+      },
+    },
+    callTelegram: async (_token, method, body) => {
+      calls.push([method, body]);
+      if (method === "editMessageReplyMarkup") {
+        throw new Error("message not found");
+      }
+      return { message_id: 456 };
+    },
+    draftId: "draft-scheduled",
+    preview: "Scheduled preview",
+    now: () => new Date("2026-08-07T08:00:00Z"),
+  });
+
+  assert.equal(result.rebound, true);
+  assert.equal(result.previewMessageId, 456);
+  assert.deepEqual(calls.map(([name]) => name), [
+    "editMessageReplyMarkup",
+    "sendMessage",
+    "rebind",
+  ]);
+  assert.deepEqual(calls[2][1], {
+    draftId: "draft-scheduled",
+    controlChatId: 99,
+    expectedPreviewMessageId: 123,
+    previewMessageId: 456,
+    expiresAt: "2026-08-08T08:00:00.000Z",
+  });
+});
+
+test("deliverReviewDraft does not reattach buttons to a decided session", async () => {
+  const calls = [];
+  const result = await deliverReviewDraft({
+    token: "token",
+    channelId: "@channel",
+    chatId: 99,
+    requestedBy: 7,
+    repository: {
+      async findTelegramReviewSessionByDraft() {
+        return {
+          id: SESSION_ID,
+          control_chat_id: 99,
+          preview_message_id: 123,
+          decision: "reject",
+          expires_at: "2026-08-09T08:00:00.000Z",
+        };
+      },
+    },
+    callTelegram: async (_token, method) => {
+      calls.push(method);
+      return true;
+    },
+    draftId: "draft-scheduled",
+    preview: "Scheduled preview",
+    now: () => new Date("2026-08-07T08:00:00Z"),
+  });
+
+  assert.equal(result.unavailable, true);
+  assert.equal(result.decision, "reject");
+  assert.deepEqual(calls, []);
+});
+
+test("an expired callback answer cannot block idempotent publication resume", async () => {
+  let published = false;
+  const { dependencies } = fixture({
+    repository: {
+      async decideTelegramReviewSession() {
+        return {
+          draft_id: "draft-1",
+          decision: "publish",
+          decision_won: false,
+        };
+      },
+    },
+    callTelegram: async (_token, method) => {
+      if (method === "getChatMember") return { status: "administrator" };
+      if (method === "answerCallbackQuery") throw new Error("query is too old");
+      return { message_id: 77 };
+    },
+    dependencies: {
+      async publishDraft() {
+        published = true;
+        return { publication: { telegram_message_id: 42 } };
+      },
+    },
+  });
+
+  await handleControlUpdate(callbackUpdate(), dependencies);
+  assert.equal(published, true);
 });
 
 test("/news rejects group chat and malformed or missing sender", async () => {
@@ -449,18 +710,19 @@ test("ambiguous send remains publishing and callback redelivery never resends", 
     /manual reconciliation/,
   );
   assert.deepEqual(flow.state(), {
-    updateStatus: "failed",
+    updateStatus: "completed",
     draftStatus: "publishing",
     publication: null,
     sends: 1,
   });
 
-  await assert.rejects(
-    handleControlUpdate(callbackUpdate(), flow.dependencies),
-    /already being published/,
+  const duplicate = await handleControlUpdate(
+    callbackUpdate(),
+    flow.dependencies,
   );
+  assert.equal(duplicate.duplicate, true);
   assert.deepEqual(flow.state(), {
-    updateStatus: "failed",
+    updateStatus: "completed",
     draftStatus: "publishing",
     publication: null,
     sends: 1,

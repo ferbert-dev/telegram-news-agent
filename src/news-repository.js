@@ -72,11 +72,14 @@ const CHECKPOINT_COLUMNS = [
   "draft_id",
   "preview",
   "window_hours",
+  "publication_message_id",
+  "settings_snapshot",
   "updated_at",
 ];
 const REVIEW_SESSION_COLUMNS = [
   "id",
   "draft_id",
+  "telegram_channel_id",
   "control_chat_id",
   "preview_message_id",
   "requested_by",
@@ -470,6 +473,153 @@ export class NewsRepository {
     );
   }
 
+  async getOrCreateNewsSettings({ channelId, reviewChatId, updatedBy }) {
+    const rows = await this.functionRows(
+      "get_or_create_news_settings",
+      [channelId, reviewChatId, updatedBy],
+      "Get or create news settings",
+    );
+    return rows[0] ?? null;
+  }
+
+  async getNewsSettings(channelId) {
+    const rows = await this.functionRows(
+      "get_news_settings",
+      [channelId],
+      "Get news settings",
+    );
+    return rows[0] ?? null;
+  }
+
+  async updateNewsSettings({
+    channelId,
+    reviewChatId,
+    scheduleIntervalMinutes,
+    languageCode,
+    topicCodes,
+    customTopics,
+    approvalPolicy,
+    updatedBy,
+    expectedVersion,
+  }) {
+    const rows = await this.functionRows(
+      "update_news_settings",
+      [
+        channelId,
+        reviewChatId,
+        scheduleIntervalMinutes,
+        languageCode,
+        topicCodes,
+        customTopics,
+        approvalPolicy,
+        updatedBy,
+        expectedVersion,
+      ],
+      "Update news settings",
+    );
+    return rows[0] ?? null;
+  }
+
+  async beginTelegramSettingsInput({
+    controlChatId,
+    requestedBy,
+    promptMessageId,
+    expiresAt,
+  }) {
+    const rows = await this.functionRows(
+      "begin_telegram_settings_input",
+      [controlChatId, requestedBy, promptMessageId, expiresAt],
+      "Begin Telegram settings input",
+    );
+    return rows[0] ?? null;
+  }
+
+  async consumeTelegramSettingsInput({
+    controlChatId,
+    requestedBy,
+    promptMessageId,
+  }) {
+    const rows = await this.functionRows(
+      "consume_telegram_settings_input",
+      [controlChatId, requestedBy, promptMessageId],
+      "Consume Telegram settings input",
+    );
+    return rows[0] ?? null;
+  }
+
+  async claimDueNewsSchedule({ claimToken, staleAfterSeconds = 1800 }) {
+    const rows = await this.functionRows(
+      "claim_due_news_schedule",
+      [claimToken, staleAfterSeconds],
+      "Claim due news schedule",
+    );
+    return rows[0] ?? null;
+  }
+
+  async saveNewsScheduleDraft({
+    channelId,
+    claimToken,
+    draftId,
+    preview,
+    windowHours,
+  }) {
+    return this.functionScalar(
+      "save_news_schedule_draft",
+      [channelId, claimToken, draftId, preview, windowHours],
+      "Save news schedule draft",
+    );
+  }
+
+  async saveNewsSchedulePublication({
+    channelId,
+    claimToken,
+    draftId,
+    publicationMessageId,
+  }) {
+    return this.functionScalar(
+      "save_news_schedule_publication",
+      [channelId, claimToken, draftId, publicationMessageId],
+      "Save news schedule publication",
+    );
+  }
+
+  async renewNewsScheduleClaim({ channelId, claimToken }) {
+    return this.functionScalar(
+      "renew_news_schedule_claim",
+      [channelId, claimToken],
+      "Renew news schedule claim",
+    );
+  }
+
+  async pauseNewsScheduleUnresolved({ channelId, claimToken, errorCode }) {
+    return this.functionScalar(
+      "pause_news_schedule_unresolved",
+      [channelId, claimToken, errorCode],
+      "Pause unresolved news schedule",
+    );
+  }
+
+  async finishNewsSchedule({
+    channelId,
+    claimToken,
+    status,
+    errorCode = null,
+  }) {
+    return this.functionScalar(
+      "finish_news_schedule",
+      [channelId, claimToken, status, errorCode],
+      "Finish news schedule",
+    );
+  }
+
+  async hasPendingTelegramReview(channelId) {
+    return this.functionScalar(
+      "has_pending_telegram_review",
+      [channelId],
+      "Check pending Telegram review",
+    );
+  }
+
   async claimTelegramUpdate(updateId, updateKind, staleAfterSeconds = 120) {
     return (
       await this.functionRows(
@@ -519,6 +669,50 @@ export class NewsRepository {
       REVIEW_SESSION_COLUMNS,
       "Create Telegram review session",
     );
+  }
+
+  async findTelegramReviewSessionByDraft(draftId) {
+    const result = await this.query(
+      "Find Telegram review session by draft",
+      "select * from public.telegram_review_sessions where draft_id = $1",
+      [draftId],
+    );
+    if (result.rows.length > 1) {
+      throw new Error(
+        "Find Telegram review session by draft failed: expected at most one row",
+      );
+    }
+    return result.rows[0] ?? null;
+  }
+
+  async renewTelegramReviewSession({ draftId, expiresAt }) {
+    const rows = await this.functionRows(
+      "renew_telegram_review_session",
+      [draftId, expiresAt],
+      "Renew Telegram review session",
+    );
+    return rows[0] ?? null;
+  }
+
+  async rebindTelegramReviewSession({
+    draftId,
+    controlChatId,
+    expectedPreviewMessageId,
+    previewMessageId,
+    expiresAt,
+  }) {
+    const rows = await this.functionRows(
+      "rebind_telegram_review_session",
+      [
+        draftId,
+        controlChatId,
+        expectedPreviewMessageId,
+        previewMessageId,
+        expiresAt,
+      ],
+      "Rebind Telegram review session",
+    );
+    return rows[0] ?? null;
   }
 
   async decideTelegramReviewSession({
