@@ -1,45 +1,36 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { createClient } from "@supabase/supabase-js";
+import { Pool } from "pg";
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION === "1";
-const url = process.env.SUPABASE_TEST_URL;
-const key = process.env.SUPABASE_TEST_SECRET_KEY;
+const connectionString =
+  process.env.DATABASE_TEST_URL ?? process.env.DATABASE_URL;
 
-function client() {
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+async function one(pool, text, values = []) {
+  const result = await pool.query(text, values);
+  assert.equal(result.rows.length, 1);
+  return result.rows[0];
 }
 
-function requireData(result) {
-  assert.ifError(result.error);
-  return result.data;
+async function scalar(pool, name, values) {
+  return (await one(
+    pool,
+    `select public.${name}(${values.map((_, index) => `$${index + 1}`).join(", ")}) as value`,
+    values,
+  )).value;
 }
 
-async function createReviewFixture(db, suffix) {
-  const article = requireData(
-    await db
-      .from("articles")
-      .insert({
-        canonical_url: `https://integration.test/${suffix}`,
-        title: `Integration ${suffix}`,
-        status: "drafted",
-      })
-      .select()
-      .single(),
+async function createReviewFixture(pool, suffix) {
+  const article = await one(
+    pool,
+    "insert into public.articles (canonical_url, title, status) values ($1, $2, 'drafted') returning *",
+    [`https://integration.test/${suffix}`, `Integration ${suffix}`],
   );
-  const draft = requireData(
-    await db
-      .from("drafts")
-      .insert({
-        article_id: article.id,
-        body: "Integration draft",
-        status: "review",
-      })
-      .select()
-      .single(),
+  const draft = await one(
+    pool,
+    "insert into public.drafts (article_id, body, status) values ($1, 'Integration draft', 'review') returning *",
+    [article.id],
   );
   const session = {
     id: randomUUID().replaceAll("-", "") + randomUUID().replaceAll("-", ""),
@@ -47,260 +38,227 @@ async function createReviewFixture(db, suffix) {
     control_chat_id: 101,
     preview_message_id: 202,
     requested_by: 303,
-    expires_at: new Date(Date.now() + 60_000).toISOString(),
+    expires_at: new Date(Date.now() + 60_000),
   };
-  requireData(await db.from("telegram_review_sessions").insert(session));
+  await pool.query(
+    "insert into public.telegram_review_sessions (id, draft_id, control_chat_id, preview_message_id, requested_by, expires_at) values ($1, $2, $3, $4, $5, $6)",
+    [
+      session.id,
+      session.draft_id,
+      session.control_chat_id,
+      session.preview_message_id,
+      session.requested_by,
+      session.expires_at,
+    ],
+  );
   return { article, draft, session };
 }
 
 test(
-  "Telegram RPC integration invariants",
-  { skip: !enabled || !url || !key },
+  "Telegram PostgreSQL function integration invariants",
+  { skip: !enabled || !connectionString },
   async (t) => {
-    const db = client();
-    const peer = client();
+    const db = new Pool({ connectionString, max: 2 });
+    const peer = new Pool({ connectionString, max: 2 });
     const cleanup = [];
 
-    await t.test("session expiry and message binding fail closed", async () => {
-      const expired = await createReviewFixture(db, randomUUID());
-      cleanup.push(["review", expired.session.id, expired.article.id]);
-      requireData(
-        await db
-          .from("telegram_review_sessions")
-          .update({
-            created_at: new Date(Date.now() - 120_000).toISOString(),
-            expires_at: new Date(Date.now() - 60_000).toISOString(),
-          })
-          .eq("id", expired.session.id),
-      );
-      const expiredDecision = await db.rpc("decide_telegram_review_session", {
-        p_session_id: expired.session.id,
-        p_action: "publish",
-        p_chat_id: 101,
-        p_message_id: 202,
-        p_actor_id: 303,
+    try {
+      await t.test("session expiry and message binding fail closed", async () => {
+        const expired = await createReviewFixture(db, randomUUID());
+        cleanup.push(["review", expired.session.id, expired.article.id]);
+        await db.query(
+          "update public.telegram_review_sessions set created_at = $1, expires_at = $2 where id = $3",
+          [
+            new Date(Date.now() - 120_000),
+            new Date(Date.now() - 60_000),
+            expired.session.id,
+          ],
+        );
+        await assert.rejects(
+          db.query(
+            "select * from public.decide_telegram_review_session($1, $2, $3, $4, $5)",
+            [expired.session.id, "publish", 101, 202, 303],
+          ),
+          /expired/i,
+        );
+
+        const bound = await createReviewFixture(db, randomUUID());
+        cleanup.push(["review", bound.session.id, bound.article.id]);
+        await assert.rejects(
+          db.query(
+            "select * from public.decide_telegram_review_session($1, $2, $3, $4, $5)",
+            [bound.session.id, "publish", 101, 999, 303],
+          ),
+          /binding mismatch/i,
+        );
       });
-      assert.match(expiredDecision.error?.message ?? "", /expired/i);
 
-      const bound = await createReviewFixture(db, randomUUID());
-      cleanup.push(["review", bound.session.id, bound.article.id]);
-      const wrongMessage = await db.rpc("decide_telegram_review_session", {
-        p_session_id: bound.session.id,
-        p_action: "publish",
-        p_chat_id: 101,
-        p_message_id: 999,
-        p_actor_id: 303,
+      await t.test("stale claims recover and old claim tokens are fenced", async () => {
+        const updateId = Date.now();
+        const first = await one(
+          db,
+          "select * from public.claim_telegram_update($1, $2, $3)",
+          [updateId, "news_callback", 30],
+        );
+        cleanup.push(["update", updateId]);
+        assert.equal(first.claimed, true);
+
+        const busy = await one(
+          peer,
+          "select * from public.claim_telegram_update($1, $2, $3)",
+          [updateId, "news_callback", 30],
+        );
+        assert.equal(busy.claim_status, "busy");
+
+        await db.query(
+          "update public.telegram_updates set claimed_at = $1 where update_id = $2",
+          [new Date(Date.now() - 31_000), updateId],
+        );
+        const second = await one(
+          peer,
+          "select * from public.claim_telegram_update($1, $2, $3)",
+          [updateId, "news_callback", 30],
+        );
+        assert.equal(second.claimed, true);
+        assert.notEqual(second.claim_token, first.claim_token);
+
+        assert.equal(
+          await scalar(db, "finish_telegram_update", [
+            updateId,
+            first.claim_token,
+            "completed",
+            null,
+          ]),
+          false,
+        );
+        assert.equal(
+          await scalar(peer, "finish_telegram_update", [
+            updateId,
+            second.claim_token,
+            "completed",
+            null,
+          ]),
+          true,
+        );
       });
-      assert.match(wrongMessage.error?.message ?? "", /binding mismatch/i);
-    });
 
-    await t.test("stale claims recover and old claim tokens are fenced", async () => {
-      const updateId = Date.now();
-      const first = requireData(
-        await db.rpc("claim_telegram_update", {
-          p_update_id: updateId,
-          p_update_kind: "news_callback",
-          p_stale_after_seconds: 30,
-        }),
-      )[0];
-      cleanup.push(["update", updateId]);
-      assert.equal(first.claimed, true);
+      await t.test("failed update claims are immediately retryable", async () => {
+        const updateId = Date.now() + 1;
+        const first = await one(
+          db,
+          "select * from public.claim_telegram_update($1, $2, $3)",
+          [updateId, "news_callback", 30],
+        );
+        cleanup.push(["update", updateId]);
+        assert.equal(
+          await scalar(db, "finish_telegram_update", [
+            updateId,
+            first.claim_token,
+            "failed",
+            "internal_error",
+          ]),
+          true,
+        );
+        const retry = await one(
+          peer,
+          "select * from public.claim_telegram_update($1, $2, $3)",
+          [updateId, "news_callback", 30],
+        );
+        assert.equal(retry.claimed, true);
+        assert.notEqual(retry.claim_token, first.claim_token);
+      });
 
-      const busy = requireData(
-        await peer.rpc("claim_telegram_update", {
-          p_update_id: updateId,
-          p_update_kind: "news_callback",
-          p_stale_after_seconds: 30,
-        }),
-      )[0];
-      assert.equal(busy.claim_status, "busy");
+      await t.test("double Publish has one winner and a resumable decision", async () => {
+        const fixture = await createReviewFixture(db, randomUUID());
+        cleanup.push(["review", fixture.session.id, fixture.article.id]);
+        const values = [fixture.session.id, "publish", 101, 202, 303];
+        const results = await Promise.all([
+          db.query(
+            "select * from public.decide_telegram_review_session($1, $2, $3, $4, $5)",
+            values,
+          ),
+          peer.query(
+            "select * from public.decide_telegram_review_session($1, $2, $3, $4, $5)",
+            values,
+          ),
+        ]);
+        const decisions = results.flatMap((result) => result.rows);
+        assert.deepEqual(
+          decisions.map(({ decision_won }) => decision_won).sort(),
+          [false, true],
+        );
+        assert.ok(decisions.every(({ decision }) => decision === "publish"));
 
-      requireData(
-        await db
-          .from("telegram_updates")
-          .update({ claimed_at: new Date(Date.now() - 31_000).toISOString() })
-          .eq("update_id", updateId),
-      );
-      const second = requireData(
-        await peer.rpc("claim_telegram_update", {
-          p_update_id: updateId,
-          p_update_kind: "news_callback",
-          p_stale_after_seconds: 30,
-        }),
-      )[0];
-      assert.equal(second.claimed, true);
-      assert.notEqual(second.claim_token, first.claim_token);
+        await db.query(
+          "update public.telegram_review_sessions set created_at = $1, expires_at = $2 where id = $3",
+          [
+            new Date(Date.now() - 120_000),
+            new Date(Date.now() - 60_000),
+            fixture.session.id,
+          ],
+        );
+        const replay = await one(
+          db,
+          "select * from public.decide_telegram_review_session($1, $2, $3, $4, $5)",
+          values,
+        );
+        assert.equal(replay.decision, "publish");
+        assert.equal(replay.decision_won, false);
+      });
 
-      assert.equal(
-        requireData(
-          await db.rpc("finish_telegram_update", {
-            p_update_id: updateId,
-            p_claim_token: first.claim_token,
-            p_status: "completed",
-          }),
-        ),
-        false,
-      );
-      assert.equal(
-        requireData(
-          await peer.rpc("finish_telegram_update", {
-            p_update_id: updateId,
-            p_claim_token: second.claim_token,
-            p_status: "completed",
-          }),
-        ),
-        true,
-      );
-    });
+      await t.test("Publish/Reject race commits exactly one decision", async () => {
+        const fixture = await createReviewFixture(db, randomUUID());
+        cleanup.push(["review", fixture.session.id, fixture.article.id]);
+        const base = [fixture.session.id, null, 101, 202, 303];
+        const results = await Promise.all([
+          db.query(
+            "select * from public.decide_telegram_review_session($1, $2, $3, $4, $5)",
+            [base[0], "publish", ...base.slice(2)],
+          ),
+          peer.query(
+            "select * from public.decide_telegram_review_session($1, $2, $3, $4, $5)",
+            [base[0], "reject", ...base.slice(2)],
+          ),
+        ]);
+        const decisions = results.flatMap((result) => result.rows);
+        assert.equal(decisions.filter(({ decision_won }) => decision_won).length, 1);
+        assert.equal(new Set(decisions.map(({ decision }) => decision)).size, 1);
+      });
 
-    await t.test("failed update claims are immediately retryable", async () => {
-      const updateId = Date.now() + 1;
-      const first = requireData(
-        await db.rpc("claim_telegram_update", {
-          p_update_id: updateId,
-          p_update_kind: "news_callback",
-          p_stale_after_seconds: 30,
-        }),
-      )[0];
-      cleanup.push(["update", updateId]);
-      assert.equal(
-        requireData(
-          await db.rpc("finish_telegram_update", {
-            p_update_id: updateId,
-            p_claim_token: first.claim_token,
-            p_status: "failed",
-            p_error_code: "internal_error",
-          }),
-        ),
-        true,
-      );
-
-      const retry = requireData(
-        await peer.rpc("claim_telegram_update", {
-          p_update_id: updateId,
-          p_update_kind: "news_callback",
-          p_stale_after_seconds: 30,
-        }),
-      )[0];
-      assert.equal(retry.claimed, true);
-      assert.notEqual(retry.claim_token, first.claim_token);
-    });
-
-    await t.test("double Publish has one winner and a resumable decision", async () => {
-      const fixture = await createReviewFixture(db, randomUUID());
-      cleanup.push(["review", fixture.session.id, fixture.article.id]);
-      const input = {
-        p_session_id: fixture.session.id,
-        p_action: "publish",
-        p_chat_id: 101,
-        p_message_id: 202,
-        p_actor_id: 303,
-      };
-      const results = await Promise.all([
-        db.rpc("decide_telegram_review_session", input),
-        peer.rpc("decide_telegram_review_session", input),
-      ]);
-      const decisions = results.flatMap((result) => requireData(result));
-      assert.deepEqual(
-        decisions.map(({ decision_won }) => decision_won).sort(),
-        [false, true],
-      );
-      assert.ok(decisions.every(({ decision }) => decision === "publish"));
-
-      requireData(
-        await db
-          .from("telegram_review_sessions")
-          .update({
-            created_at: new Date(Date.now() - 120_000).toISOString(),
-            expires_at: new Date(Date.now() - 60_000).toISOString(),
-          })
-          .eq("id", fixture.session.id),
-      );
-      const replay = requireData(
-        await db.rpc("decide_telegram_review_session", input),
-      )[0];
-      assert.equal(replay.decision, "publish");
-      assert.equal(replay.decision_won, false);
-    });
-
-    await t.test("Publish/Reject race commits exactly one decision", async () => {
-      const fixture = await createReviewFixture(db, randomUUID());
-      cleanup.push(["review", fixture.session.id, fixture.article.id]);
-      const base = {
-        p_session_id: fixture.session.id,
-        p_chat_id: 101,
-        p_message_id: 202,
-        p_actor_id: 303,
-      };
-      const results = await Promise.all([
-        db.rpc("decide_telegram_review_session", {
-          ...base,
-          p_action: "publish",
-        }),
-        peer.rpc("decide_telegram_review_session", {
-          ...base,
-          p_action: "reject",
-        }),
-      ]);
-      const decisions = results.flatMap((result) => requireData(result));
-      assert.equal(decisions.filter(({ decision_won }) => decision_won).length, 1);
-      assert.equal(new Set(decisions.map(({ decision }) => decision)).size, 1);
-    });
-
-    await t.test("expired poll lease is fenced from renewal and reclaimable", async () => {
-      const name = `telegram-integration-${randomUUID()}`;
-      const owner = randomUUID();
-      const nextOwner = randomUUID();
-      cleanup.push(["lease", name]);
-      assert.equal(
-        requireData(
-          await db.rpc("acquire_pipeline_lease", {
-            p_name: name,
-            p_owner_id: owner,
-            p_ttl_seconds: 30,
-          }),
-        ),
-        true,
-      );
-      requireData(
-        await db
-          .from("pipeline_leases")
-          .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
-          .eq("name", name),
-      );
-      assert.equal(
-        requireData(
-          await db.rpc("renew_pipeline_lease", {
-            p_name: name,
-            p_owner_id: owner,
-            p_ttl_seconds: 30,
-          }),
-        ),
-        false,
-      );
-      assert.equal(
-        requireData(
-          await peer.rpc("acquire_pipeline_lease", {
-            p_name: name,
-            p_owner_id: nextOwner,
-            p_ttl_seconds: 30,
-          }),
-        ),
-        true,
-      );
-    });
-
-    for (const item of cleanup.reverse()) {
-      if (Array.isArray(item) && item[0] === "update") {
-        await db.from("telegram_updates").delete().eq("update_id", item[1]);
-      } else if (Array.isArray(item) && item[0] === "lease") {
-        await db.from("pipeline_leases").delete().eq("name", item[1]);
-      } else if (Array.isArray(item) && item[0] === "review") {
-        await db.from("telegram_review_sessions").delete().eq("id", item[1]);
-        await db.from("articles").delete().eq("id", item[2]);
-      } else {
-        await db.from("articles").delete().eq("id", item);
+      await t.test("expired poll lease is fenced and reclaimable", async () => {
+        const name = `telegram-integration-${randomUUID()}`;
+        const owner = randomUUID();
+        const nextOwner = randomUUID();
+        cleanup.push(["lease", name]);
+        assert.equal(
+          await scalar(db, "acquire_pipeline_lease", [name, owner, 30]),
+          true,
+        );
+        await db.query(
+          "update public.pipeline_leases set expires_at = $1 where name = $2",
+          [new Date(Date.now() - 1_000), name],
+        );
+        assert.equal(
+          await scalar(db, "renew_pipeline_lease", [name, owner, 30]),
+          false,
+        );
+        assert.equal(
+          await scalar(peer, "acquire_pipeline_lease", [name, nextOwner, 30]),
+          true,
+        );
+      });
+    } finally {
+      for (const item of cleanup.reverse()) {
+        if (item[0] === "update") {
+          await db.query("delete from public.telegram_updates where update_id = $1", [item[1]]);
+        } else if (item[0] === "lease") {
+          await db.query("delete from public.pipeline_leases where name = $1", [item[1]]);
+        } else if (item[0] === "review") {
+          await db.query("delete from public.telegram_review_sessions where id = $1", [item[1]]);
+          await db.query("delete from public.articles where id = $1", [item[2]]);
+        }
       }
+      await Promise.all([db.end(), peer.end()]);
     }
   },
 );

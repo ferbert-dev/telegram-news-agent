@@ -2,14 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NewsRepository } from "../src/news-repository.js";
 
-test("createReviewDraft delegates all state changes to one transactional RPC", async () => {
+test("createReviewDraft delegates all state changes to one transactional function", async () => {
   const calls = [];
   const repository = new NewsRepository({
-    async rpc(name, parameters) {
-      calls.push([name, parameters]);
+    async query(text, parameters) {
+      calls.push([text, parameters]);
       return {
-        data: [{ id: "draft-1", article_id: parameters.p_article_id }],
-        error: null,
+        rows: [{ id: "draft-1", article_id: parameters[0] }],
       };
     },
   });
@@ -23,31 +22,27 @@ test("createReviewDraft delegates all state changes to one transactional RPC", a
   });
 
   assert.equal(draft.id, "draft-1");
-  assert.deepEqual(calls, [
-    [
-      "create_review_draft",
-      {
-        p_article_id: "article-1",
-        p_body: "Grounded draft",
-        p_model: "model",
-        p_prompt_version: "v1",
-        p_reviewer_notes: "{}",
-        p_lease_name: null,
-        p_lease_owner_id: null,
-      },
-    ],
+  assert.equal(
+    calls[0][0],
+    "select * from public.create_review_draft($1, $2, $3, $4, $5, $6, $7)",
+  );
+  assert.deepEqual(calls[0][1], [
+    "article-1",
+    "Grounded draft",
+    "model",
+    "v1",
+    "{}",
+    null,
+    null,
   ]);
 });
 
-test("createReviewDraft surfaces RPC rollback failures without fallback writes", async () => {
+test("createReviewDraft surfaces transaction failures without fallback writes", async () => {
   let calls = 0;
   const repository = new NewsRepository({
-    async rpc() {
+    async query() {
       calls += 1;
-      return {
-        data: null,
-        error: new Error("injected failure after draft insert"),
-      };
+      throw new Error("injected failure after draft insert");
     },
   });
 
@@ -56,19 +51,20 @@ test("createReviewDraft surfaces RPC rollback failures without fallback writes",
       article_id: "article-1",
       body: "Grounded draft",
     }),
-    /injected failure after draft insert/,
+    /Create review draft failed: injected failure after draft insert/,
   );
   assert.equal(calls, 1);
 });
 
-test("audit backfill lifecycle uses service-role RPCs", async () => {
+test("audit backfill lifecycle uses PostgreSQL functions", async () => {
   const calls = [];
   const repository = new NewsRepository({
-    async rpc(name, parameters) {
-      calls.push([name, parameters]);
+    async query(text, parameters) {
+      calls.push([text, parameters]);
       return {
-        data: name.startsWith("claim_") ? [{ id: "outbox-1" }] : true,
-        error: null,
+        rows: text.includes("claim_notion_audit_backfill")
+          ? [{ id: "outbox-1" }]
+          : [{ value: true }],
       };
     },
   });
@@ -80,8 +76,24 @@ test("audit backfill lifecycle uses service-role RPCs", async () => {
     true,
   );
   assert.deepEqual(calls, [
-    ["claim_notion_audit_backfill", { p_limit: 10 }],
-    ["complete_notion_audit_backfill", { p_id: "outbox-1" }],
-    ["retry_notion_audit_backfill", { p_id: "outbox-2", p_error: "offline" }],
+    ["select * from public.claim_notion_audit_backfill($1)", [10]],
+    ["select public.complete_notion_audit_backfill($1) as value", ["outbox-1"]],
+    [
+      "select public.retry_notion_audit_backfill($1, $2) as value",
+      ["outbox-2", "offline"],
+    ],
   ]);
+});
+
+test("repository rejects PostgreSQL writes that unexpectedly match no rows", async () => {
+  const repository = new NewsRepository({
+    async query() {
+      return { rows: [] };
+    },
+  });
+
+  await assert.rejects(
+    repository.setSourceEnabled("missing", true),
+    /Enable source failed: expected one row, received 0/,
+  );
 });

@@ -78,8 +78,8 @@ Scheduled routine
 ## Pending Work
 
 1. Use the operating loop in `docs/agent-operating-manual.md` for every new task.
-2. Add `SUPABASE_SECRET_KEY` to local `.env` from the Supabase project API keys
-   page. Never commit or paste this server-only credential.
+2. Add the local PostgreSQL `DATABASE_URL` to `.env`. Never commit database
+   credentials.
 3. Add `GEMINI_API_KEY` to local `.env`.
 4. Add the Notion HTTP integration values `NOTION_API_KEY`,
    `NOTION_AGENT_RUNS_DATA_SOURCE_ID`, and `NOTION_PIPELINE_AGENT_PAGE_ID`.
@@ -96,8 +96,7 @@ GEMINI_API_KEY=
 NOTION_API_KEY=
 NOTION_AGENT_RUNS_DATA_SOURCE_ID=8eef7282-532e-4cf9-b309-bf09f9e9afeb
 NOTION_PIPELINE_AGENT_PAGE_ID=38bd7885-0eab-81f4-9879-e8b4b990e314
-SUPABASE_URL=
-SUPABASE_SECRET_KEY=
+DATABASE_URL=postgresql://telegram_news_app:<password>@localhost:5432/telegram_news
 ```
 
 7. Keep the explicit draft approval command as the review gate.
@@ -138,7 +137,7 @@ SUPABASE_SECRET_KEY=
 - Created the dedicated Supabase project at `$0/month`.
 - Applied and verified the initial content-memory schema with RLS enabled and
   anonymous/authenticated access revoked.
-- Added local SQL migrations under `supabase/migrations/`.
+- Added local SQL migrations under `db/migrations/`.
 - Added URL/hash deduplication, primary-source ranking, structured grounded
   drafts, and persistent raw RSS evidence.
 - Added atomic approve, reject, claim, and publication-finalization functions.

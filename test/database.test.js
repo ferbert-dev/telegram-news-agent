@@ -1,35 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getDatabaseConfig, requireResult } from "../src/database.js";
+import { getDatabaseConfig } from "../src/database.js";
 import { assertTransition } from "../src/pipeline-states.js";
 
-test("getDatabaseConfig returns trimmed server credentials", () => {
+test("getDatabaseConfig returns a bounded PostgreSQL pool configuration", () => {
   assert.deepEqual(
     getDatabaseConfig({
-      SUPABASE_URL: " https://project.supabase.co ",
-      SUPABASE_SECRET_KEY: " secret ",
+      DATABASE_URL: " postgres://agent:secret@db:5432/news ",
+      DATABASE_POOL_MAX: " 3 ",
+      DATABASE_CONNECT_TIMEOUT_MS: " 7000 ",
+      DATABASE_IDLE_TIMEOUT_MS: " 45000 ",
     }),
     {
-      url: "https://project.supabase.co",
-      secretKey: "secret",
+      connectionString: "postgres://agent:secret@db:5432/news",
+      max: 3,
+      connectionTimeoutMillis: 7000,
+      idleTimeoutMillis: 45000,
+      allowExitOnIdle: true,
     },
   );
 });
 
-test("getDatabaseConfig rejects missing server secret", () => {
+test("getDatabaseConfig rejects missing or invalid database settings", () => {
+  assert.throws(() => getDatabaseConfig({}), /DATABASE_URL is required/);
   assert.throws(
-    () => getDatabaseConfig({ SUPABASE_URL: "https://project.supabase.co" }),
-    /SUPABASE_SECRET_KEY is required/,
-  );
-});
-
-test("requireResult returns data and normalizes errors", () => {
-  assert.deepEqual(requireResult({ data: [{ id: 1 }], error: null }, "Read"), [
-    { id: 1 },
-  ]);
-  assert.throws(
-    () => requireResult({ data: null, error: new Error("denied") }, "Read"),
-    /Read failed: denied/,
+    () =>
+      getDatabaseConfig({
+        DATABASE_URL: "postgres://db/news",
+        DATABASE_POOL_MAX: "0",
+      }),
+    /DATABASE_POOL_MAX must be a positive integer/,
   );
 });
 

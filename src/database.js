@@ -1,36 +1,46 @@
-import { createClient } from "@supabase/supabase-js";
+import { Pool, types } from "pg";
+
+types.setTypeParser(types.builtins.INT8, (value) => Number(value));
+
+function positiveInteger(value, name, fallback) {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return fallback;
+  }
+  const parsed = Number(normalized);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
 
 export function getDatabaseConfig(env = process.env) {
-  const url = env.SUPABASE_URL?.trim();
-  const secretKey = env.SUPABASE_SECRET_KEY?.trim();
-
-  if (!url) {
-    throw new Error("SUPABASE_URL is required");
+  const connectionString = env.DATABASE_URL?.trim();
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is required");
   }
 
-  if (!secretKey) {
-    throw new Error("SUPABASE_SECRET_KEY is required");
-  }
-
-  return { url, secretKey };
+  return {
+    connectionString,
+    max: positiveInteger(env.DATABASE_POOL_MAX, "DATABASE_POOL_MAX", 4),
+    connectionTimeoutMillis: positiveInteger(
+      env.DATABASE_CONNECT_TIMEOUT_MS,
+      "DATABASE_CONNECT_TIMEOUT_MS",
+      5_000,
+    ),
+    idleTimeoutMillis: positiveInteger(
+      env.DATABASE_IDLE_TIMEOUT_MS,
+      "DATABASE_IDLE_TIMEOUT_MS",
+      30_000,
+    ),
+    allowExitOnIdle: true,
+  };
 }
 
 export function createDatabaseClient(config = getDatabaseConfig()) {
-  return createClient(config.url, config.secretKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-  });
+  return new Pool(config);
 }
 
-export function requireResult(result, operation) {
-  if (result.error) {
-    throw new Error(`${operation} failed: ${result.error.message}`, {
-      cause: result.error,
-    });
-  }
-
-  return result.data;
+export async function closeDatabaseClient(client) {
+  await client.end();
 }
