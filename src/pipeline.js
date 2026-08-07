@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { generateDraft } from "./draft.js";
+import {
+  newsSettingsSnapshot,
+  normalizeNewsSettings,
+} from "./news-settings.js";
 import { runResearch } from "./research.js";
 
 export function buildDraftEvidence(selected) {
@@ -115,7 +119,10 @@ export async function runPipeline({
   leaseHeartbeatIntervalMs,
   setIntervalImpl,
   clearIntervalImpl,
+  newsSettings,
 }) {
+  const normalizedSettings = normalizeNewsSettings(newsSettings);
+  const settingsSnapshot = newsSettingsSnapshot(normalizedSettings);
   const acquired = await repository.acquirePipelineLease(
     leaseName,
     ownerId,
@@ -145,6 +152,7 @@ export async function runPipeline({
       fetchArticleImpl,
       discoveryProvider: aiProvider,
       now,
+      newsSettings: settingsSnapshot,
     });
     heartbeat.assertOwned();
     const selected = research.selected;
@@ -157,6 +165,8 @@ export async function runPipeline({
       evidence: buildDraftEvidence(selected),
       allowUnverified: !selected.source.is_primary,
       lease: { name: leaseName, ownerId },
+      languageCode: normalizedSettings.languageCode,
+      newsSettings: settingsSnapshot,
     });
     heartbeat.assertOwned();
 
@@ -168,6 +178,7 @@ export async function runPipeline({
       provider: generated.provider,
       model: generated.model,
       feedErrors: research.feedErrors,
+      settings: settingsSnapshot,
     };
   } finally {
     let heartbeatError;

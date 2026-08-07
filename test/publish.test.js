@@ -81,6 +81,29 @@ test("publishApprovedDraft leaves an ambiguous failure unresolved", async () => 
   assert.equal(finalized, false);
 });
 
+test("a database failure after Telegram accepts the message stays unresolved", async () => {
+  await assert.rejects(
+    publishApprovedDraft({
+      repository: {
+        async findPublicationByDraft() {
+          return null;
+        },
+        async claimDraftForPublication(id) {
+          return { id, body: "Approved article" };
+        },
+        async finalizeDraftPublication() {
+          throw new Error("database unavailable");
+        },
+      },
+      token: "token",
+      channelId: "@channel",
+      draftId: "draft-1",
+      sendMessage: async () => ({ message_id: 42, date: 123 }),
+    }),
+    /unresolved after the message was accepted/,
+  );
+});
+
 test("publishApprovedDraft releases a definitive Telegram rejection for retry", async () => {
   let released = false;
   await assert.rejects(

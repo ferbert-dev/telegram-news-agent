@@ -6,6 +6,10 @@ import {
   hashText,
 } from "./feed.js";
 import { fetchRedditDiscoveries } from "./reddit.js";
+import {
+  newsSettingsSnapshot,
+  normalizeNewsSettings,
+} from "./news-settings.js";
 import { withRetry } from "./retry.js";
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -55,6 +59,19 @@ function webSourceForUrl(value) {
     reliability_score: 80,
     is_primary: false,
   };
+}
+
+function sourceMatchesSettings(source, settings) {
+  if (!settings) {
+    return true;
+  }
+  const sourceTopicCodes = source.topic_codes ?? source.topicCodes;
+  if (Array.isArray(sourceTopicCodes) && sourceTopicCodes.length) {
+    return sourceTopicCodes.some((code) => settings.topicCodes.includes(code));
+  }
+  // Existing static RSS/API sources are AI-specific. Untagged sources are
+  // therefore eligible only when AI is one of the selected subjects.
+  return settings.topicCodes.includes("ai");
 }
 
 export function matchPrimarySource(url, sources) {
@@ -148,27 +165,41 @@ export async function runResearch({
   discoveryProvider,
   retryImpl = withRetry,
   now = new Date(),
+  newsSettings,
 }) {
+  const normalizedSettings = newsSettings
+    ? normalizeNewsSettings(newsSettings)
+    : null;
+  const settingsSnapshot = normalizedSettings
+    ? newsSettingsSnapshot(normalizedSettings)
+    : null;
   const run = await repository.startSearchRun({
     query,
-    metadata: { keywords, window_hours: windowHours },
+    metadata: {
+      keywords,
+      window_hours: windowHours,
+      news_settings: settingsSnapshot,
+    },
   });
 
   try {
     const sources = await repository.listEnabledSources();
     const primarySources = sources.filter((source) => source.is_primary);
     const primaryFeeds = primarySources.filter(
-      (source) => source.source_type === "rss",
+      (source) =>
+        source.source_type === "rss" &&
+        sourceMatchesSettings(source, normalizedSettings),
     );
     const redditSources = sources.filter(
       (source) =>
         !source.is_primary &&
+        sourceMatchesSettings(source, normalizedSettings) &&
         source.source_type === "api" &&
         source.feed_url &&
         new URL(source.feed_url).hostname.endsWith("reddit.com"),
     );
 
-    if (!primaryFeeds.length) {
+    if (!primaryFeeds.length && !discoveryProvider?.searchNews) {
       throw new Error("No enabled primary RSS sources are configured");
     }
 
@@ -244,11 +275,17 @@ export async function runResearch({
 
     if (discoveryProvider?.searchNews) {
       try {
-        providerDiscovery = await discoveryProvider.searchNews({
+        const providerRequest = {
           query,
           windowHours,
           limit: 8,
-        });
+        };
+        if (normalizedSettings) {
+          providerRequest.languageCode = normalizedSettings.languageCode;
+          providerRequest.topicCodes = [...normalizedSettings.topicCodes];
+          providerRequest.customTopics = [...normalizedSettings.customTopics];
+        }
+        providerDiscovery = await discoveryProvider.searchNews(providerRequest);
         const seenWebPublishers = new Set();
         const providerCandidates = providerDiscovery.items.flatMap(
           (item, searchRank) => {
@@ -299,6 +336,7 @@ export async function runResearch({
                   : "web_source",
                 searchRank,
                 discoveryKind: `${providerDiscovery.provider}_web_search`,
+                languageCode: normalizedSettings?.languageCode ?? null,
               },
             ];
           },
@@ -357,7 +395,7 @@ export async function runResearch({
         article_id: article.id,
         content: candidate.summary || candidate.title,
         content_type: "text",
-        language_code: "en",
+        language_code: candidate.languageCode ?? null,
         extractor: "discovery-summary",
         content_hash: candidate.contentHash,
         metadata: {
@@ -394,7 +432,7 @@ export async function runResearch({
           article_id: candidate.article.id,
           content: extracted.text,
           content_type: "text",
-          language_code: "en",
+          language_code: null,
           extractor: candidate.source.is_primary
             ? "primary-html"
             : "web-html",
@@ -474,6 +512,7 @@ export async function runResearch({
               error: providerDiscovery.error ?? null,
             }
           : null,
+        news_settings: settingsSnapshot,
       },
     });
 

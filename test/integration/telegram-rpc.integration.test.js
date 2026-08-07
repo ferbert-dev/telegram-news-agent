@@ -81,6 +81,12 @@ test(
           ),
           /expired/i,
         );
+        const renewed = await one(
+          db,
+          "select * from public.renew_telegram_review_session($1, $2)",
+          [expired.draft.id, new Date(Date.now() + 60_000)],
+        );
+        assert.equal(renewed.id, expired.session.id);
 
         const bound = await createReviewFixture(db, randomUUID());
         cleanup.push(["review", bound.session.id, bound.article.id]);
@@ -225,6 +231,262 @@ test(
         assert.equal(new Set(decisions.map(({ decision }) => decision)).size, 1);
       });
 
+      await t.test("settings versions and due schedule claims have one winner", async () => {
+        const channelId = `@schedule_${randomUUID().replaceAll("-", "")}`;
+        cleanup.push(["settings", channelId]);
+        const created = await one(
+          db,
+          "select * from public.get_or_create_news_settings($1, $2, $3)",
+          [channelId, 101, 303],
+        );
+        assert.equal(created.version, 1);
+
+        const updateValues = [
+          channelId,
+          101,
+          60,
+          "de",
+          ["world", "nature"],
+          ["Ocean exploration"],
+          "manual",
+          303,
+          created.version,
+        ];
+        const versionRace = await Promise.all([
+          db.query(
+            "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+            updateValues,
+          ),
+          peer.query(
+            "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+            updateValues,
+          ),
+        ]);
+        assert.equal(
+          versionRace.reduce((count, result) => count + result.rows.length, 0),
+          1,
+        );
+
+        await db.query(
+          "update public.news_bot_settings set next_run_at = $1 where telegram_channel_id = $2",
+          [new Date("2000-01-01T00:00:00Z"), channelId],
+        );
+        const pipelineOwner = randomUUID();
+        cleanup.push(["lease", "daily-news-pipeline"]);
+        assert.equal(
+          await scalar(db, "acquire_pipeline_lease", [
+            "daily-news-pipeline",
+            pipelineOwner,
+            30,
+          ]),
+          true,
+        );
+        assert.equal(
+          (
+            await peer.query(
+              "select * from public.claim_due_news_schedule($1, $2)",
+              [randomUUID(), 30],
+            )
+          ).rows.length,
+          0,
+        );
+        assert.equal(
+          await scalar(db, "release_pipeline_lease", [
+            "daily-news-pipeline",
+            pipelineOwner,
+          ]),
+          true,
+        );
+        const firstToken = randomUUID();
+        const competingToken = randomUUID();
+        const claims = await Promise.all([
+          db.query("select * from public.claim_due_news_schedule($1, $2)", [
+            firstToken,
+            30,
+          ]),
+          peer.query("select * from public.claim_due_news_schedule($1, $2)", [
+            competingToken,
+            30,
+          ]),
+        ]);
+        const won = claims.flatMap((result) => result.rows);
+        assert.equal(won.length, 1);
+        const winningToken = won[0].schedule_claim_token;
+        assert.ok([firstToken, competingToken].includes(winningToken));
+
+        await db.query(
+          "update public.news_bot_settings set schedule_claimed_at = $1 where telegram_channel_id = $2",
+          [new Date(Date.now() - 31_000), channelId],
+        );
+        const recoveryToken = randomUUID();
+        const recovered = await one(
+          peer,
+          "select * from public.claim_due_news_schedule($1, $2)",
+          [recoveryToken, 30],
+        );
+        assert.equal(recovered.telegram_channel_id, channelId);
+        assert.equal(recovered.schedule_claim_token, recoveryToken);
+        assert.equal(recovered.schedule_run_id, won[0].schedule_run_id);
+        assert.equal(recovered.schedule_settings_snapshot.languageCode, "de");
+        assert.equal(
+          await scalar(peer, "renew_news_schedule_claim", [
+            channelId,
+            recoveryToken,
+          ]),
+          true,
+        );
+        assert.equal(
+          await scalar(db, "renew_news_schedule_claim", [
+            channelId,
+            winningToken,
+          ]),
+          false,
+        );
+
+        const scheduled = await createReviewFixture(db, randomUUID());
+        cleanup.push(["review", scheduled.session.id, scheduled.article.id]);
+        assert.equal(
+          await scalar(db, "has_pending_telegram_review", [channelId]),
+          true,
+        );
+        assert.equal(
+          await scalar(peer, "save_news_schedule_draft", [
+            channelId,
+            recoveryToken,
+            scheduled.draft.id,
+            "Durable scheduled preview",
+            48,
+          ]),
+          true,
+        );
+
+        const changedDuringRun = await one(
+          db,
+          "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+          [
+            channelId,
+            101,
+            60,
+            "uk",
+            ["history"],
+            [],
+            "automatic",
+            303,
+            recovered.version,
+          ],
+        );
+        assert.equal(changedDuringRun.schedule_claim_token, recoveryToken);
+        assert.equal(
+          changedDuringRun.schedule_settings_snapshot.languageCode,
+          "de",
+        );
+        assert.equal(
+          await scalar(peer, "save_news_schedule_publication", [
+            channelId,
+            recoveryToken,
+            scheduled.draft.id,
+            909,
+          ]),
+          true,
+        );
+
+        assert.equal(
+          await scalar(db, "finish_news_schedule", [
+            channelId,
+            winningToken,
+            "published",
+            null,
+          ]),
+          false,
+        );
+        assert.equal(
+          await scalar(peer, "finish_news_schedule", [
+            channelId,
+            recoveryToken,
+            "published",
+            null,
+          ]),
+          true,
+        );
+        const finished = await one(
+          db,
+          "select * from public.get_news_settings($1)",
+          [channelId],
+        );
+        assert.equal(finished.schedule_claim_token, null);
+        assert.equal(finished.schedule_run_id, null);
+        assert.equal(finished.schedule_draft_id, null);
+        assert.equal(finished.last_run_status, "published");
+        assert.ok(new Date(finished.next_run_at) > new Date());
+      });
+
+      await t.test("unresolved pause fences stale settings callbacks", async () => {
+        const channelId = `@unresolved_${randomUUID().replaceAll("-", "")}`;
+        cleanup.push(["settings", channelId]);
+        const created = await one(
+          db,
+          "select * from public.get_or_create_news_settings($1, $2, $3)",
+          [channelId, 101, 303],
+        );
+        const enabled = await one(
+          db,
+          "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+          [channelId, 101, 60, "en", ["world"], [], "automatic", 303, created.version],
+        );
+        await db.query(
+          "update public.news_bot_settings set next_run_at = now() - interval '1 minute' where telegram_channel_id = $1",
+          [channelId],
+        );
+        const token = randomUUID();
+        await one(
+          db,
+          "select * from public.claim_due_news_schedule($1, $2)",
+          [token, 30],
+        );
+        assert.equal(
+          await scalar(db, "pause_news_schedule_unresolved", [
+            channelId,
+            token,
+            "publication_unresolved",
+          ]),
+          true,
+        );
+        const paused = await one(
+          db,
+          "select * from public.get_news_settings($1)",
+          [channelId],
+        );
+        assert.equal(paused.schedule_interval_minutes, null);
+        assert.equal(paused.version, enabled.version + 1);
+        assert.equal(
+          (
+            await db.query(
+              "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+              [channelId, 101, 60, "en", ["world"], [], "automatic", 303, enabled.version],
+            )
+          ).rows.length,
+          0,
+        );
+      });
+
+      await t.test("settings constraints reject unsupported values", async () => {
+        const channelId = `@invalid_${randomUUID().replaceAll("-", "")}`;
+        await assert.rejects(
+          db.query(
+            "insert into public.news_bot_settings (telegram_channel_id, review_chat_id, schedule_interval_minutes, next_run_at, language_code, updated_by) values ($1, 101, 30, now(), 'fr', 303)",
+            [channelId],
+          ),
+          /check constraint/i,
+        );
+        await assert.rejects(
+          db.query(
+            "insert into public.news_bot_settings (telegram_channel_id, review_chat_id, topic_codes, custom_topics, updated_by) values ($1, 101, '{}', '{}', 303)",
+            [channelId],
+          ),
+          /check constraint/i,
+        );
+      });
+
       await t.test("expired poll lease is fenced and reclaimable", async () => {
         const name = `telegram-integration-${randomUUID()}`;
         const owner = randomUUID();
@@ -253,6 +515,11 @@ test(
           await db.query("delete from public.telegram_updates where update_id = $1", [item[1]]);
         } else if (item[0] === "lease") {
           await db.query("delete from public.pipeline_leases where name = $1", [item[1]]);
+        } else if (item[0] === "settings") {
+          await db.query(
+            "delete from public.news_bot_settings where telegram_channel_id = $1",
+            [item[1]],
+          );
         } else if (item[0] === "review") {
           await db.query("delete from public.telegram_review_sessions where id = $1", [item[1]]);
           await db.query("delete from public.articles where id = $1", [item[2]]);

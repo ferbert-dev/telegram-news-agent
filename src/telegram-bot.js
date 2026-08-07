@@ -8,15 +8,26 @@ import { NewsRepository } from "./news-repository.js";
 import {
   getNotionAuditConfig,
   NotionAuditLogger,
+  withNotionAudit,
 } from "./notion-audit.js";
-import { handleControlUpdate, ControlError } from "./telegram-control.js";
+import {
+  handleControlUpdate,
+  ControlError,
+  deliverReviewDraft,
+  isTerminalControlError,
+} from "./telegram-control.js";
 import {
   ensurePollingMode,
   getPollingConfig,
   pollTelegram,
 } from "./telegram-polling.js";
 import { callTelegram, getTelegramConfig } from "./telegram.js";
-import { runCheckpointedNewsSearch } from "./news-search.js";
+import {
+  runCheckpointedNewsSearch,
+  runTieredNewsSearch,
+} from "./news-search.js";
+import { runNewsScheduler } from "./news-scheduler.js";
+import { publishApprovedDraft } from "./publish.js";
 import { runWorkflow } from "./workflow.js";
 
 const { token, channelId } = getTelegramConfig();
@@ -38,24 +49,83 @@ await callTelegram(token, "setMyCommands", {
   commands: [
     {
       command: "news",
-      description: "Create a news draft for private review",
+      description: "Search now using your saved news settings",
+    },
+    {
+      command: "settings",
+      description: "Configure language, topics, publishing, and schedule",
     },
   ],
 });
 
-async function runNews({ updateId }) {
+async function runNews({ updateId, userId, chatId }) {
+  const settings = await repository.getOrCreateNewsSettings({
+    channelId,
+    reviewChatId: chatId,
+    updatedBy: userId,
+  });
   return runCheckpointedNewsSearch({
     updateId,
     runWorkflow,
     repository,
     aiProvider,
+    settings,
+    telegram: { token, channelId },
   });
+}
+
+async function runScheduledNews(settings) {
+  return runTieredNewsSearch({
+    runWorkflow,
+    repository,
+    aiProvider,
+    settings: { ...settings, approvalPolicy: "manual" },
+    telegram: { token, channelId },
+  });
+}
+
+async function publishScheduledDraft({ draftId }) {
+  const draft = await repository.getDraft(draftId);
+  if (draft.status === "review") {
+    await repository.approveDraft(draftId);
+  } else if (!["approved", "publishing", "published"].includes(draft.status)) {
+    throw new Error(`Scheduled draft ${draftId} is not publishable`);
+  }
+  return publishApprovedDraft({
+    repository,
+    token,
+    channelId,
+    draftId,
+  });
+}
+
+async function withScheduledAudit({ claim, settings }, operation) {
+  return withNotionAudit(
+    auditLogger,
+    {
+      name: "Telegram scheduler - news run",
+      objective: `Run scheduled news occurrence ${claim.schedule_run_id} using settings version ${settings.version}.`,
+    },
+    async (auditRun) => {
+      const value = await operation();
+      return {
+        value,
+        auditResult: `Scheduled news outcome: ${value.status}.`,
+        auditLinks: auditRun.pageUrl,
+      };
+    },
+    {
+      outbox: repository,
+      sanitizeError: () => "scheduled_run_failed",
+    },
+  );
 }
 
 async function handleUpdate(update) {
   try {
     const result = await handleControlUpdate(update, {
       botUsername: bot.username,
+      botId: bot.id,
       token,
       channelId,
       repository,
@@ -98,7 +168,10 @@ async function handleUpdate(update) {
     const text =
       error instanceof ControlError && error.code === "forbidden"
         ? "Administrator access required."
-        : "The request could not be completed.";
+        : error instanceof ControlError &&
+            error.code === "publication_unresolved"
+          ? "Telegram may have accepted the publication, so automatic retry is stopped. Reconcile the draft before publishing again."
+          : "The request could not be completed.";
     if (callback?.id) {
       await callTelegram(token, "answerCallbackQuery", {
         callback_query_id: callback.id,
@@ -111,7 +184,9 @@ async function handleUpdate(update) {
         text,
       }).catch(() => {});
     }
-    throw error;
+    if (!isTerminalControlError(error)) {
+      throw error;
+    }
   }
 }
 
@@ -134,12 +209,14 @@ console.log(
   JSON.stringify({
     event: "telegram_control_started",
     mode: "polling",
+    scheduler: "database",
     bot_id: bot.id,
     ai_providers: aiProvider.names,
   }),
 );
+const services = [];
 try {
-  await pollTelegram({
+  const pollingService = pollTelegram({
     token,
     repository,
     ownerId: randomUUID(),
@@ -147,7 +224,27 @@ try {
     handleUpdate,
     signal: controller.signal,
   });
+  const schedulerService = runNewsScheduler({
+    signal: controller.signal,
+    repository,
+    runNews: runScheduledNews,
+    publishDraft: publishScheduledDraft,
+    deliverReviewDraft: (input) =>
+      deliverReviewDraft({
+        ...input,
+        token,
+        repository,
+        callTelegram,
+      }),
+    notifyAdmin: (chatId, text) =>
+      callTelegram(token, "sendMessage", { chat_id: chatId, text }),
+    withAudit: withScheduledAudit,
+  });
+  services.push(pollingService, schedulerService);
+  await Promise.all([pollingService, schedulerService]);
 } finally {
+  controller.abort();
+  await Promise.allSettled(services);
   await closeDatabaseClient(databaseClient);
   console.log(JSON.stringify({ event: "telegram_control_stopped" }));
 }

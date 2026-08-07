@@ -84,8 +84,11 @@ test("OpenAI adapter uses Responses structured output and web search", async () 
     schemaName: "status",
   });
   const discovered = await provider.searchNews({
-    query: "AI news",
+    query: "Nature and animal news",
     windowHours: 48,
+    languageCode: "de",
+    topicCodes: ["nature", "animals"],
+    customTopics: ["Meeresbiologie"],
   });
 
   assert.equal(generated.value.status, "OK");
@@ -102,6 +105,14 @@ test("OpenAI adapter uses Responses structured output and web search", async () 
   assert.equal(calls[1].tool_choice, "required");
   assert.deepEqual(calls[1].include, ["web_search_call.action.sources"]);
   assert.deepEqual(calls[1].reasoning, { effort: "medium" });
+  assert.equal(calls[1].max_tool_calls, 4);
+  assert.doesNotMatch(calls[1].input[0].content, /recent AI news/);
+  assert.match(calls[1].input[0].content, /subject labels only/);
+  assert.match(calls[1].input[0].content, /German/);
+  assert.deepEqual(JSON.parse(calls[1].input[1].content).topicCodes, [
+    "nature",
+    "animals",
+  ]);
 });
 
 test("Gemini adapter uses structured JSON generation and Google Search", async () => {
@@ -138,8 +149,11 @@ test("Gemini adapter uses structured JSON generation and Google Search", async (
     jsonSchema: STATUS_JSON_SCHEMA,
   });
   const discovered = await provider.searchNews({
-    query: "AI news",
+    query: "Nature and animal news",
     windowHours: 48,
+    languageCode: "uk",
+    topicCodes: ["nature", "animals"],
+    customTopics: ["Морська біологія"],
   });
 
   assert.equal(generated.value.status, "OK");
@@ -147,4 +161,10 @@ test("Gemini adapter uses structured JSON generation and Google Search", async (
   assert.equal(calls[0].config.responseMimeType, "application/json");
   assert.deepEqual(calls[1].config.tools, [{ googleSearch: {} }]);
   assert.equal(calls[1].config.responseMimeType, undefined);
+  assert.doesNotMatch(calls[1].config.systemInstruction, /recent AI news/);
+  assert.match(calls[1].config.systemInstruction, /subject labels only/);
+  assert.match(calls[1].config.systemInstruction, /Ukrainian/);
+  assert.deepEqual(JSON.parse(calls[1].contents).customTopics, [
+    "Морська біологія",
+  ]);
 });

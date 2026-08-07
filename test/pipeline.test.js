@@ -148,6 +148,72 @@ test("runPipeline researches and creates a review draft without publishing", asy
   ]);
 });
 
+test("runPipeline carries configured topics and language through research and drafting", async () => {
+  const repository = repositoryFixture();
+  let searchRequest;
+  let draftRequest;
+  const aiProvider = {
+    async searchNews(request) {
+      searchRequest = request;
+      return { provider: "openai", model: "test-model", items: [] };
+    },
+    async generateStructured(request) {
+      draftRequest = request;
+      return {
+        provider: "openai",
+        model: "test-model",
+        value: {
+          headline: "Neue Forschung",
+          telegramText:
+            "Neue Forschung\n\nEine Quelle meldet neue Forschung.\n\nQuellen:\nhttps://example.com/news",
+          claims: [
+            {
+              text: "Eine Quelle meldet neue Forschung.",
+              sourceUrl: "https://example.com/news",
+            },
+          ],
+          sourceUrls: ["https://example.com/news"],
+          caveat: "Bisher liegt nur diese Quelle vor.",
+        },
+      };
+    },
+  };
+
+  const result = await runPipeline({
+    repository,
+    aiProvider,
+    ownerId: "00000000-0000-4000-8000-000000000001",
+    newsSettings: {
+      languageCode: "de",
+      topicCodes: ["ai", "nature"],
+      customTopics: [],
+      version: 5,
+    },
+    now: new Date("2026-06-27T12:00:00Z"),
+    fetchFeedImpl: async () => [
+      {
+        title: "New research",
+        canonicalUrl: "https://example.com/news",
+        publishedAt: "2026-06-27T10:00:00Z",
+        summary: "A research result was announced.",
+        author: "Primary",
+        contentHash: "settings-feed-hash",
+      },
+    ],
+    fetchArticleImpl: async () => ({
+      text: "Detailed primary evidence.",
+      contentHash: "settings-article-hash",
+      finalUrl: "https://example.com/news",
+    }),
+  });
+
+  assert.equal(searchRequest.languageCode, "de");
+  assert.deepEqual(searchRequest.topicCodes, ["ai", "nature"]);
+  assert.match(draftRequest.systemInstruction, /in German/);
+  assert.equal(result.settings.version, 5);
+  assert.equal(result.settings.languageCode, "de");
+});
+
 test("runPipeline refuses a concurrent run", async () => {
   const repository = repositoryFixture({ leaseAcquired: false });
 

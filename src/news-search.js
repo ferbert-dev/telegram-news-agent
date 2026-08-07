@@ -1,15 +1,10 @@
 import { NoResearchCandidatesError } from "./research.js";
-
-const SEARCH_TIERS = [
-  {
-    query: "Most important AI development from the last 48 hours",
-    windowHours: 48,
-  },
-  {
-    query: "Most important verified AI news or emerging trend from the last 7 days",
-    windowHours: 24 * 7,
-  },
-];
+import { publishApprovedDraft } from "./publish.js";
+import {
+  buildSearchPlan,
+  newsSettingsSnapshot,
+  normalizeNewsSettings,
+} from "./news-settings.js";
 
 export async function runTieredNewsSearch({
   runWorkflow,
@@ -17,28 +12,28 @@ export async function runTieredNewsSearch({
   aiProvider,
   aiClient,
   model,
+  settings,
+  telegram,
+  sendMessage,
 }) {
   let lastEmptyResult;
+  const normalizedSettings = normalizeNewsSettings(settings);
+  const settingsSnapshot = newsSettingsSnapshot(normalizedSettings);
 
-  for (const tier of SEARCH_TIERS) {
+  for (const tier of buildSearchPlan(normalizedSettings)) {
     try {
       const result = await runWorkflow({
-        approvalPolicy: "manual",
+        approvalPolicy: normalizedSettings.approvalPolicy,
         repository,
         aiProvider,
         aiClient,
         model,
+        telegram,
+        sendMessage,
         query: tier.query,
-        keywords: [
-          "AI",
-          "model",
-          "research",
-          "agent",
-          "release",
-          "benchmark",
-          "open source",
-        ],
+        keywords: tier.keywords,
         windowHours: tier.windowHours,
+        newsSettings: settingsSnapshot,
       });
       return { result, tier };
     } catch (error) {
@@ -59,25 +54,56 @@ export async function runCheckpointedNewsSearch({
   aiClient,
   model,
   runWorkflow,
+  settings,
+  telegram,
+  sendMessage,
+  publishDraft = publishApprovedDraft,
 }) {
   const existing = await repository.getTelegramNewsCheckpoint(updateId);
   if (existing) {
+    const existingSettings = normalizeNewsSettings(
+      existing.settings_snapshot ?? settings,
+    );
+    if (
+      existing.status === "review_ready" &&
+      existingSettings.approvalPolicy === "automatic"
+    ) {
+      return publishCheckpointedDraft({
+        checkpoint: existing,
+        settings: existingSettings,
+        repository,
+        telegram,
+        sendMessage,
+        publishDraft,
+        resumed: true,
+      });
+    }
     return {
       status: existing.status,
       draftId: existing.draft_id,
       preview: existing.preview,
       windowHours: existing.window_hours,
+      publicationMessageId: existing.publication_message_id ?? null,
       resumed: true,
     };
   }
 
+  const normalizedSettings = normalizeNewsSettings(settings);
+  const settingsSnapshot = newsSettingsSnapshot(normalizedSettings);
   try {
+    const pipelineSettings =
+      normalizedSettings.approvalPolicy === "automatic"
+        ? { ...settingsSnapshot, approvalPolicy: "manual" }
+        : normalizedSettings;
     const { result, tier } = await runTieredNewsSearch({
       runWorkflow,
       repository,
       aiProvider,
       aiClient,
       model,
+      settings: pipelineSettings,
+      telegram,
+      sendMessage,
     });
     const checkpoint = await repository.saveTelegramNewsCheckpoint({
       update_id: updateId,
@@ -85,13 +111,27 @@ export async function runCheckpointedNewsSearch({
       draft_id: result.draft.id,
       preview: result.preview,
       window_hours: tier.windowHours,
+      publication_message_id: null,
+      settings_snapshot: settingsSnapshot,
       updated_at: new Date().toISOString(),
     });
+    if (normalizedSettings.approvalPolicy === "automatic") {
+      return publishCheckpointedDraft({
+        checkpoint,
+        settings: normalizedSettings,
+        repository,
+        telegram,
+        sendMessage,
+        publishDraft,
+        resumed: false,
+      });
+    }
     return {
       status: checkpoint.status,
       draftId: checkpoint.draft_id,
       preview: checkpoint.preview,
       windowHours: checkpoint.window_hours,
+      publicationMessageId: null,
       resumed: false,
     };
   } catch (error) {
@@ -104,6 +144,8 @@ export async function runCheckpointedNewsSearch({
       draft_id: null,
       preview: null,
       window_hours: null,
+      publication_message_id: null,
+      settings_snapshot: settingsSnapshot,
       updated_at: new Date().toISOString(),
     });
     return {
@@ -111,7 +153,56 @@ export async function runCheckpointedNewsSearch({
       draftId: null,
       preview: null,
       windowHours: null,
+      publicationMessageId: null,
       resumed: false,
     };
   }
+}
+
+async function publishCheckpointedDraft({
+  checkpoint,
+  settings,
+  repository,
+  telegram,
+  sendMessage,
+  publishDraft,
+  resumed,
+}) {
+  if (!telegram?.token || !telegram?.channelId) {
+    throw new Error("Automatic approval requires Telegram configuration");
+  }
+  const draft = await repository.getDraft(checkpoint.draft_id);
+  if (draft.status === "review") {
+    await repository.approveDraft(checkpoint.draft_id);
+  } else if (!["approved", "publishing", "published"].includes(draft.status)) {
+    throw new Error(`Draft ${checkpoint.draft_id} is not publishable`);
+  }
+  const published = await publishDraft({
+    repository,
+    token: telegram.token,
+    channelId: telegram.channelId,
+    draftId: checkpoint.draft_id,
+    sendMessage,
+  });
+  const publicationMessageId = published.publication.telegram_message_id;
+  const saved = await repository.saveTelegramNewsCheckpoint({
+    update_id: checkpoint.update_id,
+    status: "published",
+    draft_id: checkpoint.draft_id,
+    preview: checkpoint.preview,
+    window_hours: checkpoint.window_hours,
+    publication_message_id: publicationMessageId,
+    settings_snapshot: newsSettingsSnapshot(settings),
+    updated_at: new Date().toISOString(),
+  });
+  return {
+    status: saved.status,
+    draftId: saved.draft_id,
+    preview: saved.preview,
+    windowHours: saved.window_hours,
+    publication: published.publication,
+    publicationMessageId:
+      saved.publication_message_id ?? publicationMessageId,
+    resumed,
+  };
 }

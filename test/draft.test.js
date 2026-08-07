@@ -72,6 +72,22 @@ test("validateGroundedDraft deterministically appends validated source URLs", ()
   );
 });
 
+test("validateGroundedDraft appends localized source headings", () => {
+  const result = validateGroundedDraft(
+    structuredDraft({
+      headline: "Neue Forschung",
+      telegramText: "Neue Forschung\n\nEine belegte Zusammenfassung.",
+    }),
+    [{ url: SOURCE_URL, primary: true }],
+    { languageCode: "de" },
+  );
+
+  assert.equal(
+    result.telegramText,
+    `Neue Forschung\n\nEine belegte Zusammenfassung.\n\nQuellen:\n${SOURCE_URL}`,
+  );
+});
+
 test("validateGroundedDraft rejects more than five prose sentences", () => {
   assert.throws(
     () =>
@@ -299,4 +315,103 @@ test("generateDraft records blocked-page web search evidence separately", async 
     JSON.parse(stored.reviewer_notes).verification_status,
     "web_search_summary",
   );
+});
+
+test("generateDraft requests German output without changing grounding rules", async () => {
+  let request;
+  let stored;
+  const germanDraft = structuredDraft({
+    headline: "Neue Entdeckung",
+    telegramText: `Neue Entdeckung\n\nEine Quelle meldet eine Entdeckung.\n\nQuellen:\n${SOURCE_URL}`,
+    claims: [
+      {
+        text: "Eine Quelle meldet eine Entdeckung.",
+        sourceUrl: SOURCE_URL,
+      },
+    ],
+    caveat: "Bisher gibt es nur eine Quelle.",
+  });
+
+  await generateDraft({
+    aiProvider: {
+      async generateStructured(value) {
+        request = value;
+        return {
+          value: germanDraft,
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        stored = draft;
+        return { id: "draft-de", ...draft };
+      },
+    },
+    article: {
+      id: "article-de",
+      title: "Discovery",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [{ url: SOURCE_URL, primary: true, text: "Evidence" }],
+    languageCode: "de",
+    newsSettings: {
+      languageCode: "de",
+      topicCodes: ["science"],
+      version: 8,
+    },
+  });
+
+  assert.match(request.systemInstruction, /in German/);
+  assert.doesNotMatch(request.systemInstruction, /AI news channel/);
+  const notes = JSON.parse(stored.reviewer_notes);
+  assert.equal(notes.language_code, "de");
+  assert.equal(notes.news_settings.version, 8);
+});
+
+test("unverified warning prefix is localized for Ukrainian output", async () => {
+  const result = await generateDraft({
+    aiProvider: {
+      async generateStructured() {
+        return {
+          value: structuredDraft({
+            headline: "Неперевірена новина",
+            telegramText: `Неперевірена новина\n\nСпільнота обговорює можливу подію.\n\nДжерела:\n${SOURCE_URL}`,
+            claims: [
+              {
+                text: "Спільнота обговорює можливу подію.",
+                sourceUrl: SOURCE_URL,
+              },
+            ],
+            caveat: "Немає незалежного підтвердження.",
+          }),
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        return { id: "draft-uk", ...draft };
+      },
+    },
+    article: {
+      id: "article-uk",
+      title: "Rumor",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [
+      {
+        url: SOURCE_URL,
+        primary: false,
+        verificationStatus: "unverified_community",
+        text: "Community claim",
+      },
+    ],
+    allowUnverified: true,
+    languageCode: "uk",
+  });
+
+  assert.match(result.saved.body, /^НЕПЕРЕВІРЕНИЙ ТРЕНД/);
 });
