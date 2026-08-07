@@ -62,23 +62,48 @@ APPROVAL_POLICY=manual
 At least one of `OPENAI_API_KEY` or `GEMINI_API_KEY` is required. The default
 order uses `gpt-5.4-2026-03-05` first and Gemini second. A missing key is
 skipped, and an OpenAI authentication, quota, rate-limit, or response error
-falls through to Gemini. OpenAI requests use medium reasoning for reliable
-agentic web search, require the search tool, and explicitly enable live public
-internet access without an allowed-domain filter.
+falls through to Gemini.
 
-Every research run combines approved RSS feeds with live provider web search
-across the public internet. Direct results from newsrooms, research sites, and
-company pages are ranked with the feed candidates. Before drafting, the bot
-fetches the selected web article and grounds the summary in the extracted page;
-if a publisher blocks automated extraction, it can use the provider's
-web-grounded summary with an explicit caveat and reduced evidence level. If an
-approved primary page blocks extraction, the pipeline can still draft from
-that publisher's persisted RSS summary. Every fallback is recorded in the
-search-run metadata:
+Normal research is feeds-first and does not call a paid web-search tool. The
+PostgreSQL source registry starts with 49 verified RSS/Atom feeds across world
+news, science, nature, animals, history, culture, technology, society, and AI,
+plus the free GDELT DOC index. A run fetches only sources mapped to the selected
+topics, deduplicates their articles, and asks the configured AI provider to rank
+only those supplied candidates. Candidate ranking and final drafting use
+structured generation without web-search tools.
+
+Before drafting, the bot fetches the selected publisher page and grounds the
+summary in its extracted text. If a primary publisher blocks extraction, the
+pipeline can use that publisher's persisted feed summary. GDELT and
+automatically discovered feeds remain reduced-trust web sources until their
+direct article text is fetched.
+
+Paid search is reserved for recovery. If feeds and GDELT provide no recent
+candidate, the provider performs one low-context search for official RSS/Atom
+endpoints, validates each returned feed by downloading and parsing it, and
+saves valid sources in PostgreSQL. A successful topic search has a seven-day
+cooldown; a failed or empty search waits 24 hours. Only when that still produces
+nothing does the provider perform the one-call direct article-search fallback.
+OpenAI failures fall through to Gemini for both recovery paths. Every fallback
+and usage event is recorded in the search-run metadata and cost ledger:
 
 ```bash
 npm run pipeline:run
 ```
+
+Inspect or manage the database-backed source registry:
+
+```bash
+npm run sources -- list
+npm run sources -- add --name "Publisher" --feed "https://example.com/feed.xml" --score 80 --primary
+npm run sources -- disable --id <source-id>
+npm run sources -- enable --id <source-id>
+```
+
+The list includes source topics, consecutive failures, and quarantine expiry.
+Sources are never deleted automatically. Three consecutive fetch failures
+quarantine a source for 24 hours; five quarantine it for seven days. A later
+successful fetch clears the quarantine.
 
 Review and publish the resulting draft:
 
@@ -197,7 +222,7 @@ sequence on every merge to `main`:
 
 1. install dependencies, audit them, and run unit tests;
 2. build a clean PostgreSQL database and run integration tests;
-3. build an immutable `linux/amd64` image and push it to GHCR;
+3. build immutable `linux/amd64` and `linux/arm64` images and push them to GHCR;
 4. connect to Oracle over SSH, run migrations, replace the bot, and verify that
    the new container remains stable;
 5. restore the previous bot image if the new container does not stay running.

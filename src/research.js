@@ -6,7 +6,14 @@ import {
   hashText,
 } from "./feed.js";
 import { fetchRedditDiscoveries } from "./reddit.js";
+import { fetchGdeltDiscoveries } from "./gdelt.js";
+import { curateNewsCandidates } from "./news-curation.js";
 import { recordAiUsageEvents } from "./ai-usage.js";
+import {
+  discoverNewFeedSources,
+  markSourceFetchFailure,
+  markSourceFetchSuccess,
+} from "./source-maintenance.js";
 import {
   newsSettingsSnapshot,
   normalizeNewsSettings,
@@ -14,6 +21,9 @@ import {
 import { withRetry } from "./retry.js";
 
 const HOUR_MS = 60 * 60 * 1000;
+const FEED_CONCURRENCY = 8;
+const MAX_ENTRIES_PER_FEED = 40;
+const MAX_PERSISTED_CANDIDATES = 80;
 
 export class NoResearchCandidatesError extends Error {
   constructor(message) {
@@ -67,12 +77,76 @@ function sourceMatchesSettings(source, settings) {
     return true;
   }
   const sourceTopicCodes = source.topic_codes ?? source.topicCodes;
+  if (
+    Array.isArray(sourceTopicCodes) &&
+    sourceTopicCodes.some((code) => settings.topicCodes.includes(code))
+  ) {
+    return true;
+  }
+  const discoveredTopics = source.discovery_metadata?.custom_topics;
+  if (Array.isArray(discoveredTopics) && settings.customTopics.length) {
+    const selected = new Set(
+      settings.customTopics.map((topic) => topic.trim().toLowerCase()),
+    );
+    if (
+      discoveredTopics.some((topic) =>
+        selected.has(String(topic).trim().toLowerCase()),
+      )
+    ) {
+      return true;
+    }
+  }
   if (Array.isArray(sourceTopicCodes) && sourceTopicCodes.length) {
-    return sourceTopicCodes.some((code) => settings.topicCodes.includes(code));
+    return false;
   }
   // Existing static RSS/API sources are AI-specific. Untagged sources are
   // therefore eligible only when AI is one of the selected subjects.
   return settings.topicCodes.includes("ai");
+}
+
+function sourceUsesHost(source, expectedHost) {
+  try {
+    return new URL(source.feed_url).hostname.toLowerCase() === expectedHost;
+  } catch {
+    return false;
+  }
+}
+
+function newestFeedEntries(entries, limit = MAX_ENTRIES_PER_FEED) {
+  return [...entries]
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.publishedAt ?? "") || 0;
+      const rightTime = Date.parse(right.publishedAt ?? "") || 0;
+      return rightTime - leftTime;
+    })
+    .slice(0, limit);
+}
+
+async function mapSettledWithConcurrency(items, concurrency, operation) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    for (;;) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      try {
+        results[index] = {
+          status: "fulfilled",
+          value: await operation(items[index], index),
+        };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(Math.max(1, concurrency), items.length) },
+      worker,
+    ),
+  );
+  return results;
 }
 
 export function matchPrimarySource(url, sources) {
@@ -162,6 +236,7 @@ export async function runResearch({
   windowHours = 48,
   fetchFeedImpl = fetchFeed,
   fetchRedditImpl = fetchRedditDiscoveries,
+  fetchGdeltImpl = fetchGdeltDiscoveries,
   fetchArticleImpl = fetchArticle,
   discoveryProvider,
   retryImpl = withRetry,
@@ -186,7 +261,7 @@ export async function runResearch({
   try {
     const sources = await repository.listEnabledSources();
     const primarySources = sources.filter((source) => source.is_primary);
-    const primaryFeeds = primarySources.filter(
+    const rssSources = sources.filter(
       (source) =>
         source.source_type === "rss" &&
         sourceMatchesSettings(source, normalizedSettings),
@@ -199,20 +274,41 @@ export async function runResearch({
         source.feed_url &&
         new URL(source.feed_url).hostname.endsWith("reddit.com"),
     );
+    const gdeltSources = sources.filter(
+      (source) =>
+        !source.is_primary &&
+        (sourceMatchesSettings(source, normalizedSettings) ||
+          Boolean(normalizedSettings?.customTopics.length)) &&
+        source.source_type === "api" &&
+        source.feed_url &&
+        sourceUsesHost(source, "api.gdeltproject.org"),
+    );
 
-    if (!primaryFeeds.length && !discoveryProvider?.searchNews) {
-      throw new Error("No enabled primary RSS sources are configured");
+    if (
+      !rssSources.length &&
+      !gdeltSources.length &&
+      !discoveryProvider?.searchFeeds &&
+      !discoveryProvider?.searchNews
+    ) {
+      throw new Error("No enabled news discovery sources are configured");
     }
 
-    const settled = await Promise.allSettled(
-      primaryFeeds.map(async (source) => {
+    const settled = await mapSettledWithConcurrency(
+      rssSources,
+      FEED_CONCURRENCY,
+      async (source) => {
         const entries = await retryImpl(
           () => fetchFeedImpl(source.feed_url),
           { attempts: 3, baseDelayMs: 300 },
         );
-        await repository.markSourceChecked(source.id);
-        return entries.map((entry) => ({ ...entry, source }));
-      }),
+        await markSourceFetchSuccess(repository, source.id);
+        return newestFeedEntries(entries).map((entry) => ({
+          ...entry,
+          source,
+          publisher: source.name,
+          discoveryKind: source.is_primary ? "primary_feed" : "rss_feed",
+        }));
+      },
     );
     const directCandidates = settled.flatMap((result) =>
       result.status === "fulfilled" ? result.value : [],
@@ -223,7 +319,7 @@ export async function runResearch({
           () => fetchRedditImpl(source.feed_url),
           { attempts: 3, baseDelayMs: 300 },
         );
-        await repository.markSourceChecked(source.id);
+        await markSourceFetchSuccess(repository, source.id);
         return entries.flatMap((entry) => {
           const primarySource = matchPrimarySource(
             entry.canonicalUrl,
@@ -239,9 +335,44 @@ export async function runResearch({
         });
       }),
     );
-    const candidates = [
+    const gdeltSettled = await mapSettledWithConcurrency(
+      gdeltSources,
+      1,
+      async (source) => {
+        const entries = await retryImpl(
+          () =>
+            fetchGdeltImpl(source.feed_url, {
+              topicCodes: normalizedSettings?.topicCodes ?? ["ai"],
+              customTopics: normalizedSettings?.customTopics ?? [],
+              windowHours,
+            }),
+          { attempts: 2, baseDelayMs: 5_500 },
+        );
+        await markSourceFetchSuccess(repository, source.id);
+        return entries.map((entry) => {
+          const approvedSource = matchPrimarySource(
+            entry.canonicalUrl,
+            primarySources,
+          );
+          const discoveredSource =
+            approvedSource ?? webSourceForUrl(entry.canonicalUrl);
+          return {
+            ...entry,
+            source: discoveredSource,
+            publisher: entry.publisher ?? discoveredSource.name,
+            verificationStatus: approvedSource
+              ? "primary_source"
+              : "web_source",
+          };
+        });
+      },
+    );
+    let candidates = [
       ...directCandidates,
       ...redditSettled.flatMap((result) =>
+        result.status === "fulfilled" ? result.value : [],
+      ),
+      ...gdeltSettled.flatMap((result) =>
         result.status === "fulfilled" ? result.value : [],
       ),
     ];
@@ -249,7 +380,7 @@ export async function runResearch({
       .map((result, index) =>
         result.status === "rejected"
           ? {
-              source_id: primaryFeeds[index].id,
+              source_id: rssSources[index].id,
               error: result.reason?.message ?? String(result.reason),
             }
           : null,
@@ -267,14 +398,86 @@ export async function runResearch({
         )
         .filter(Boolean),
     );
+    feedErrors.push(
+      ...gdeltSettled
+        .map((result, index) =>
+          result.status === "rejected"
+            ? {
+                source_id: gdeltSources[index].id,
+                error: result.reason?.message ?? String(result.reason),
+              }
+            : null,
+        )
+        .filter(Boolean),
+    );
+    await Promise.all(
+      settled.map((result, index) =>
+        result.status === "rejected"
+          ? markSourceFetchFailure(
+              repository,
+              rssSources[index].id,
+              result.reason,
+            )
+          : null,
+      ),
+    );
+    await Promise.all(
+      redditSettled.map((result, index) =>
+        result.status === "rejected"
+          ? markSourceFetchFailure(
+              repository,
+              redditSources[index].id,
+              result.reason,
+            )
+          : null,
+      ),
+    );
+    await Promise.all(
+      gdeltSettled.map((result, index) =>
+        result.status === "rejected"
+          ? markSourceFetchFailure(
+              repository,
+              gdeltSources[index].id,
+              result.reason,
+            )
+          : null,
+      ),
+    );
     let ranked = rankCandidates(candidates, {
       now,
       keywords,
       windowHours,
     });
+    let sourceDiscovery = null;
     let providerDiscovery = null;
 
-    if (discoveryProvider?.searchNews) {
+    if (ranked.length === 0 && discoveryProvider?.searchFeeds) {
+      sourceDiscovery = await discoverNewFeedSources({
+        repository,
+        aiProvider: discoveryProvider,
+        newsSettings: normalizedSettings ?? {
+          languageCode: "en",
+          topicCodes: ["ai"],
+          customTopics: [],
+        },
+        fetchFeedImpl,
+        retryImpl,
+        searchRunId: run.id,
+      });
+      const discoveredCandidates = sourceDiscovery.sources.flatMap(
+        ({ source, entries }) =>
+          newestFeedEntries(entries).map((entry) => ({
+            ...entry,
+            source,
+            publisher: source.name,
+            discoveryKind: "discovered_rss_feed",
+          })),
+      );
+      candidates = [...candidates, ...discoveredCandidates];
+      ranked = rankCandidates(candidates, { now, keywords, windowHours });
+    }
+
+    if (ranked.length === 0 && discoveryProvider?.searchNews) {
       try {
         const providerRequest = {
           query,
@@ -358,6 +561,34 @@ export async function runResearch({
       }
     }
 
+    let candidateCuration = null;
+    if (ranked.length && discoveryProvider?.generateStructured) {
+      try {
+        candidateCuration = await curateNewsCandidates({
+          aiProvider: discoveryProvider,
+          candidates: ranked,
+          newsSettings: normalizedSettings ?? {
+            languageCode: "en",
+            topicCodes: ["ai"],
+            customTopics: [],
+          },
+        });
+        await recordAiUsageEvents(
+          repository,
+          candidateCuration.usageEvents,
+          {
+            channelId: normalizedSettings?.channelId ?? null,
+            searchRunId: run.id,
+          },
+        );
+        ranked = candidateCuration.candidates;
+      } catch (error) {
+        candidateCuration = {
+          error: error?.code ?? "candidate_curation_failed",
+        };
+      }
+    }
+
     if (!ranked.length) {
       throw new NoResearchCandidatesError(
         "No recent news candidates were found",
@@ -365,7 +596,7 @@ export async function runResearch({
     }
 
     const articles = [];
-    for (const candidate of ranked) {
+    for (const candidate of ranked.slice(0, MAX_PERSISTED_CANDIDATES)) {
       const verificationStatus =
         candidate.verificationStatus ??
         (candidate.unverified
@@ -515,6 +746,39 @@ export async function runResearch({
               model: providerDiscovery.model ?? null,
               count: providerDiscovery.items?.length ?? 0,
               error: providerDiscovery.error ?? null,
+            }
+          : null,
+        source_discovery: sourceDiscovery
+          ? {
+              status: sourceDiscovery.status,
+              provider: sourceDiscovery.provider ?? null,
+              model: sourceDiscovery.model ?? null,
+              count: sourceDiscovery.sources.length,
+              rejected_count: sourceDiscovery.failures?.length ?? 0,
+              error: sourceDiscovery.error ?? null,
+            }
+          : null,
+        free_discovery: {
+          feed_candidate_count:
+            directCandidates.length +
+            (sourceDiscovery?.sources ?? []).reduce(
+              (count, item) => count + item.entries.length,
+              0,
+            ),
+          reddit_candidate_count: redditSettled.flatMap((result) =>
+            result.status === "fulfilled" ? result.value : [],
+          ).length,
+          gdelt_candidate_count: gdeltSettled.flatMap((result) =>
+            result.status === "fulfilled" ? result.value : [],
+          ).length,
+        },
+        candidate_curation: candidateCuration
+          ? {
+              provider: candidateCuration.provider ?? null,
+              model: candidateCuration.model ?? null,
+              considered_count: candidateCuration.consideredCount ?? 0,
+              ranked_count: candidateCuration.rankedCount ?? 0,
+              error: candidateCuration.error ?? null,
             }
           : null,
         news_settings: settingsSnapshot,

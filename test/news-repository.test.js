@@ -98,6 +98,97 @@ test("repository rejects PostgreSQL writes that unexpectedly match no rows", asy
   );
 });
 
+test("source registry excludes active quarantine and exposes topic mappings", async () => {
+  let query;
+  const repository = new NewsRepository({
+    async query(text) {
+      query = text;
+      return { rows: [] };
+    },
+  });
+
+  assert.deepEqual(await repository.listEnabledSources(), []);
+  assert.match(query, /disabled_until is null or s\.disabled_until <= now\(\)/);
+  assert.match(query, /array_agg\(t\.name order by t\.name\)/);
+});
+
+test("source health and discovery methods preserve PostgreSQL bindings", async () => {
+  const calls = [];
+  const repository = new NewsRepository({
+    async query(text, parameters) {
+      calls.push([text, parameters]);
+      if (text.includes("claim_source_discovery")) {
+        return { rows: [{ value: true }] };
+      }
+      if (text.includes("complete_source_discovery")) {
+        return { rows: [{ value: true }] };
+      }
+      return {
+        rows: [
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            name: "Discovered",
+          },
+        ],
+      };
+    },
+  });
+
+  await repository.markSourceFetchSuccess(
+    "00000000-0000-4000-8000-000000000001",
+  );
+  await repository.markSourceFetchFailure(
+    "00000000-0000-4000-8000-000000000001",
+    "http_503",
+  );
+  assert.equal(await repository.claimSourceDiscovery("a".repeat(64)), true);
+  assert.equal(
+    await repository.completeSourceDiscovery({
+      topicKey: "a".repeat(64),
+      provider: "openai",
+      model: "gpt-5.4-2026-03-05",
+      resultCount: 2,
+    }),
+    true,
+  );
+  await repository.upsertDiscoveredSource({
+    name: "Discovered",
+    homepageUrl: "https://example.com/",
+    feedUrl: "https://example.com/feed.xml",
+    topicCodes: ["science"],
+    discoveredBy: "openai",
+    discoveryMetadata: { custom_topics: [] },
+  });
+
+  assert.deepEqual(calls, [
+    [
+      "select * from public.mark_source_fetch_success($1)",
+      ["00000000-0000-4000-8000-000000000001"],
+    ],
+    [
+      "select * from public.mark_source_fetch_failure($1, $2)",
+      ["00000000-0000-4000-8000-000000000001", "http_503"],
+    ],
+    ["select public.claim_source_discovery($1) as value", ["a".repeat(64)]],
+    [
+      "select public.complete_source_discovery($1, $2, $3, $4, $5) as value",
+      ["a".repeat(64), "openai", "gpt-5.4-2026-03-05", 2, null],
+    ],
+    [
+      "select * from public.upsert_discovered_source($1, $2, $3, $4, $5, $6, $7)",
+      [
+        "Discovered",
+        "https://example.com/",
+        "https://example.com/feed.xml",
+        65,
+        ["science"],
+        "openai",
+        { custom_topics: [] },
+      ],
+    ],
+  ]);
+});
+
 test("news settings repository methods use versioned PostgreSQL functions", async () => {
   const calls = [];
   const repository = new NewsRepository({

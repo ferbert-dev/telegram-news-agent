@@ -92,6 +92,7 @@ export function createFallbackAiProvider(
     names: available.map((provider) => provider.name),
     generateStructured: (input) => execute("generateStructured", input),
     searchNews: (input) => execute("searchNews", input),
+    searchFeeds: (input) => execute("searchFeeds", input),
   };
 }
 

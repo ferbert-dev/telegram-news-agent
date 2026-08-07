@@ -257,7 +257,7 @@ test("runResearch accepts broad web-search results and extracts the direct artic
   );
 });
 
-test("runResearch performs web search even when RSS has a recent candidate", async () => {
+test("runResearch skips paid web search when RSS has a recent candidate", async () => {
   let searchCalls = 0;
   const repository = {
     async startSearchRun() {
@@ -297,7 +297,155 @@ test("runResearch performs web search even when RSS has a recent candidate", asy
     }),
   });
 
-  assert.equal(searchCalls, 1);
+  assert.equal(searchCalls, 0);
+});
+
+test("runResearch saves a validated discovered RSS feed before article-search fallback", async () => {
+  let articleSearchCalls = 0;
+  let savedSource;
+  let finished;
+  const repository = {
+    async startSearchRun() {
+      return { id: "run-source-discovery" };
+    },
+    async listEnabledSources() {
+      return [];
+    },
+    async claimSourceDiscovery() {
+      return true;
+    },
+    async upsertDiscoveredSource(source) {
+      savedSource = source;
+      return {
+        id: "source-discovered",
+        name: source.name,
+        homepage_url: source.homepageUrl,
+        feed_url: source.feedUrl,
+        source_type: "rss",
+        reliability_score: 65,
+        is_primary: false,
+      };
+    },
+    async completeSourceDiscovery() {
+      return true;
+    },
+    async createOrResumeArticleCandidate(article) {
+      return { id: "article-discovered", ...article };
+    },
+    async saveRawContent() {},
+    async finishSearchRun(_id, details) {
+      finished = details;
+    },
+    async failSearchRun() {},
+  };
+  const result = await runResearch({
+    repository,
+    query: "History news",
+    now: NOW,
+    newsSettings: {
+      languageCode: "en",
+      topicCodes: ["history"],
+      customTopics: [],
+      version: 1,
+    },
+    discoveryProvider: {
+      async searchFeeds() {
+        return {
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+          usageEvents: [],
+          items: [
+            {
+              name: "History Publisher",
+              feedUrl: "https://history.example.org/rss.xml",
+              homepageUrl: "https://history.example.org/",
+            },
+          ],
+        };
+      },
+      async searchNews() {
+        articleSearchCalls += 1;
+        return { provider: "openai", model: "test", items: [] };
+      },
+    },
+    fetchFeedImpl: async () => [
+      candidate({
+        title: "New archaeological finding",
+        canonicalUrl: "https://history.example.org/finding",
+        contentHash: "history-hash",
+      }),
+    ],
+    fetchArticleImpl: async (url) => ({
+      text: "Direct evidence from the discovered publisher.",
+      contentHash: "history-article-hash",
+      finalUrl: url,
+    }),
+    retryImpl: (operation) => operation(),
+  });
+
+  assert.equal(articleSearchCalls, 0);
+  assert.equal(savedSource.feedUrl, "https://history.example.org/rss.xml");
+  assert.deepEqual(savedSource.topicCodes, ["history"]);
+  assert.equal(result.selected.source.id, "source-discovered");
+  assert.equal(result.selected.verificationStatus, "web_source");
+  assert.equal(finished.metadata.source_discovery.count, 1);
+});
+
+test("runResearch uses tool-free AI curation to choose among feed candidates", async () => {
+  let finished;
+  let curationRequest;
+  const repository = {
+    async startSearchRun() {
+      return { id: "run-feed-curation" };
+    },
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(article) {
+      return { id: `article-${article.title}`, ...article };
+    },
+    async saveRawContent() {},
+    async finishSearchRun(_id, details) {
+      finished = details;
+    },
+    async failSearchRun() {},
+  };
+  const result = await runResearch({
+    repository,
+    query: "AI news",
+    now: NOW,
+    fetchFeedImpl: async () => [
+      candidate(),
+      candidate({
+        title: "More important independent discovery",
+        canonicalUrl: "https://example.com/important",
+        contentHash: "important-hash",
+      }),
+    ],
+    discoveryProvider: {
+      async generateStructured(request) {
+        curationRequest = request;
+        return {
+          value: { rankedCandidateIds: ["candidate-2"] },
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+          usageEvents: [],
+        };
+      },
+    },
+    fetchArticleImpl: async (url) => ({
+      text: `Evidence from ${url}`,
+      contentHash: "article-hash",
+      finalUrl: url,
+    }),
+  });
+
+  assert.equal(curationRequest.usageOperation, "feed_candidate_curation");
+  assert.equal(result.selected.title, "More important independent discovery");
+  assert.equal(finished.metadata.provider_discovery, null);
+  assert.equal(finished.metadata.candidate_curation.provider, "openai");
+  assert.equal(finished.metadata.free_discovery.feed_candidate_count, 2);
 });
 
 test("non-AI settings skip static AI feeds and allow provider-only research", async () => {
@@ -372,6 +520,75 @@ test("non-AI settings skip static AI feeds and allow provider-only research", as
   assert.equal(rawWrites[1].language_code, null);
 });
 
+test("custom-only settings use free GDELT discovery before paid providers", async () => {
+  let gdeltRequest;
+  let providerCalls = 0;
+  const gdeltSource = {
+    id: "source-gdelt",
+    name: "GDELT DOC 2.0",
+    homepage_url: "https://www.gdeltproject.org/",
+    feed_url: "https://api.gdeltproject.org/api/v2/doc/doc",
+    source_type: "api",
+    reliability_score: 75,
+    is_primary: false,
+    topic_codes: ["world", "science"],
+  };
+  const repository = {
+    async startSearchRun() {
+      return { id: "run-custom-gdelt" };
+    },
+    async listEnabledSources() {
+      return [gdeltSource];
+    },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(article) {
+      return { id: "article-custom-gdelt", ...article };
+    },
+    async saveRawContent() {},
+    async finishSearchRun() {},
+    async failSearchRun() {},
+  };
+
+  const result = await runResearch({
+    repository,
+    query: "Ocean exploration",
+    now: NOW,
+    newsSettings: {
+      languageCode: "en",
+      topicCodes: [],
+      customTopics: ["Ocean exploration"],
+      version: 1,
+    },
+    fetchGdeltImpl: async (_url, options) => {
+      gdeltRequest = options;
+      return [
+        candidate({
+          title: "Ocean expedition result",
+          canonicalUrl: "https://ocean.example.org/expedition",
+          contentHash: "ocean-hash",
+          publisher: "Ocean Institute",
+        }),
+      ];
+    },
+    discoveryProvider: {
+      async searchNews() {
+        providerCalls += 1;
+        return { provider: "openai", model: "test", items: [] };
+      },
+    },
+    fetchArticleImpl: async (url) => ({
+      text: "Direct ocean research evidence.",
+      contentHash: "ocean-article-hash",
+      finalUrl: url,
+    }),
+    retryImpl: (operation) => operation(),
+  });
+
+  assert.deepEqual(gdeltRequest.customTopics, ["Ocean exploration"]);
+  assert.equal(providerCalls, 0);
+  assert.equal(result.selected.title, "Ocean expedition result");
+});
+
 test("runResearch uses a web-grounded search summary when the publisher blocks extraction", async () => {
   const repository = {
     async startSearchRun() {
@@ -425,14 +642,14 @@ test("runResearch uses a web-grounded search summary when the publisher blocks e
   assert.equal(result.extractionErrors.length, 1);
 });
 
-test("runResearch fails closed without primary sources", async () => {
+test("runResearch fails closed without any discovery sources", async () => {
   let failedMessage;
   const repository = {
     async startSearchRun() {
       return { id: "run-1" };
     },
     async listEnabledSources() {
-      return [{ ...PRIMARY_SOURCE, is_primary: false }];
+      return [];
     },
     async failSearchRun(_id, error) {
       failedMessage = error.message;
@@ -441,9 +658,9 @@ test("runResearch fails closed without primary sources", async () => {
 
   await assert.rejects(
     runResearch({ repository, query: "AI news", now: NOW }),
-    /No enabled primary RSS sources/,
+    /No enabled news discovery sources/,
   );
-  assert.equal(failedMessage, "No enabled primary RSS sources are configured");
+  assert.equal(failedMessage, "No enabled news discovery sources are configured");
 });
 
 test("runResearch does not reset or redraft an existing canonical URL", async () => {

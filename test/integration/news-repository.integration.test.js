@@ -26,6 +26,7 @@ test(
     const promptMessageId = idBase + 2;
     const previewMessageId = idBase + 3;
     let source;
+    let discoveredSource;
     let searchRun;
     let article;
     let sessionId;
@@ -48,6 +49,59 @@ test(
       assert.equal((await repository.setSourceEnabled(source.id, false)).enabled, false);
       assert.equal((await repository.setSourceEnabled(source.id, true)).enabled, true);
       assert.ok((await repository.markSourceChecked(source.id)).last_checked_at);
+      await repository.markSourceFetchFailure(source.id, "http_503");
+      await repository.markSourceFetchFailure(source.id, "http_503");
+      const quarantined = await repository.markSourceFetchFailure(
+        source.id,
+        "http_503",
+      );
+      assert.equal(quarantined.consecutive_failures, 3);
+      assert.ok(quarantined.disabled_until);
+      assert.equal(
+        (await repository.listEnabledSources()).some(
+          (candidate) => candidate.id === source.id,
+        ),
+        false,
+      );
+      const healthyAgain = await repository.markSourceFetchSuccess(source.id);
+      assert.equal(healthyAgain.consecutive_failures, 0);
+      assert.equal(healthyAgain.disabled_until, null);
+
+      const sourceDiscoveryKey = suffix.replaceAll("-", "").padEnd(64, "0");
+      assert.equal(
+        await repository.claimSourceDiscovery(sourceDiscoveryKey),
+        true,
+      );
+      assert.equal(
+        await repository.claimSourceDiscovery(sourceDiscoveryKey),
+        false,
+      );
+      discoveredSource = await repository.upsertDiscoveredSource({
+        name: `Discovered ${suffix}`,
+        homepageUrl: "https://discovered.integration.test/",
+        feedUrl: `https://discovered.integration.test/${suffix}.xml`,
+        reliabilityScore: 65,
+        topicCodes: ["science"],
+        discoveredBy: "openai",
+        discoveryMetadata: { custom_topics: ["Ocean exploration"] },
+      });
+      assert.equal(discoveredSource.discovered_by, "openai");
+      assert.ok(
+        (await repository.listEnabledSources()).some(
+          (candidate) =>
+            candidate.id === discoveredSource.id &&
+            candidate.topic_codes.includes("science"),
+        ),
+      );
+      assert.equal(
+        await repository.completeSourceDiscovery({
+          topicKey: sourceDiscoveryKey,
+          provider: "openai",
+          model: "integration-model",
+          resultCount: 1,
+        }),
+        true,
+      );
 
       const defaultSettings = await repository.getOrCreateNewsSettings({
         channelId: settingsChannel,
@@ -390,6 +444,16 @@ test(
           .query("delete from public.sources where id = $1", [source.id])
           .catch(() => {});
       }
+      if (discoveredSource) {
+        await pool
+          .query("delete from public.sources where id = $1", [discoveredSource.id])
+          .catch(() => {});
+      }
+      await pool
+        .query("delete from public.source_discovery_state where topic_key like $1", [
+          `${suffix.replaceAll("-", "")}%`,
+        ])
+        .catch(() => {});
       await pool
         .query("delete from public.pipeline_leases where name = $1", [leaseName])
         .catch(() => {});
