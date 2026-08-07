@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-27
+Last updated: 2026-08-07
 
 ## Project
 
@@ -23,14 +23,16 @@ Last updated: 2026-06-27
 - First ticket exists at `tickets/0001-bootstrap-telegram-news-channel.md`.
 - Detailed handoff from the archived thread is in `docs/thread-handoff-2026-06-26.md`.
 - Telegram posting works through `@mhonest_bot` to `@HonestAINews`.
-- Supabase project `telegram-news-agent` is active:
+- The former Supabase project endpoint no longer resolves as of 2026-08-07, so
+  its historical rows could not be exported during the Oracle migration:
   - Project ref: `ppoftyveyugcosskjidq`
   - Region: `eu-central-2`
   - API URL: `https://ppoftyveyugcosskjidq.supabase.co`
-- The Supabase content-memory schema contains sources, topics, search runs,
-  articles, raw content, drafts, and published-post records.
-- Four approved primary-source RSS feeds are configured: OpenAI, Google
-  DeepMind, Google AI, and Microsoft Research.
+- PostgreSQL now runs privately in Docker on Oracle and contains the content
+  memory schema for sources, topics, search runs, articles, raw content,
+  drafts, and published-post records.
+- Four approved primary-source RSS feeds are seeded by migration: OpenAI,
+  Google DeepMind, Google AI, and Microsoft Research.
 - The Node runtime now supports source management, 48-hour research and
   ranking, grounded Gemini draft generation, explicit approval, and idempotent
   Telegram publication.
