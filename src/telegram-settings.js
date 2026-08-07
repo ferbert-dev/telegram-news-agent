@@ -7,6 +7,7 @@ import {
 const CALLBACK_PREFIX = "cfg";
 const CALLBACK_LIMIT_BYTES = 64;
 const INPUT_TTL_MS = 15 * 60 * 1000;
+const DEFAULT_SETTINGS_TIME_ZONE = "Europe/Madrid";
 const PAGES = new Set([
   "home",
   "language",
@@ -84,6 +85,9 @@ export function createSettingsCallback(action, value, version) {
       if (!INTERVALS.has(interval)) throw new Error("Invalid schedule interval");
       return callbackData(["i", interval, version]);
     }
+    case "status":
+      if (value !== "applied") throw new Error("Invalid settings status");
+      return callbackData(["s", "ok", version]);
     default:
       throw new Error("Invalid settings callback action");
   }
@@ -136,6 +140,9 @@ export function parseSettingsCallback(data) {
   if (code === "i" && INTERVALS.has(Number(rawValue))) {
     return { action: "interval", value: Number(rawValue), version };
   }
+  if (code === "s" && rawValue === "ok") {
+    return { action: "status", value: "applied", version };
+  }
   return null;
 }
 
@@ -187,22 +194,42 @@ function topicLabel(code) {
   return TOPIC_PRESETS[code]?.label ?? code;
 }
 
-export function renderSettingsText(row) {
+function formatNextRun(value, timeZone) {
+  if (!value) return "Not scheduled";
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "Unavailable";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
+  }).format(date);
+}
+
+export function renderSettingsText(
+  row,
+  { timeZone = DEFAULT_SETTINGS_TIME_ZONE } = {},
+) {
   const settings = normalizeSettings(row);
   const topics = settings.topicCodes.map(topicLabel).join(", ") || "None";
   const custom = settings.customTopics.join(", ") || "None";
-  const nextRun = settings.nextRunAt
-    ? new Date(settings.nextRunAt).toISOString()
-    : "Not scheduled";
+  const nextRun = formatNextRun(settings.nextRunAt, timeZone);
   return [
     "News settings",
+    "✅ Settings saved and active",
     "",
     `Language: ${languageLabel(settings.languageCode)}`,
     `Topics: ${topics}`,
     `Custom topics: ${custom}`,
-    `Publishing: ${settings.approvalPolicy === "automatic" ? "Automatic" : "Review required"}`,
+    `Publishing: ${settings.approvalPolicy === "automatic" ? "Auto-publish enabled ⚠️" : "Review required"}`,
     `Frequency: ${intervalLabel(settings.scheduleIntervalMinutes)}`,
-    `Next run: ${nextRun}`,
+    `Next run (${timeZone}): ${nextRun}`,
+    "",
+    "Each change is applied immediately.",
   ].join("\n");
 }
 
@@ -272,27 +299,70 @@ export function renderSettingsKeyboard(row, page = "home") {
           version,
         ),
       ],
-      [button("Enable automatic publishing…", "view", "automatic", version)],
+      [
+        button(
+          settings.approvalPolicy === "automatic"
+            ? "Auto-publish: Enabled ⚠️"
+            : "Enable automatic publishing…",
+          "view",
+          "automatic",
+          version,
+        ),
+      ],
       [button("‹ Back", "view", "home", version)],
     ];
   }
   if (page === "automatic") {
+    if (settings.approvalPolicy === "automatic") {
+      return [
+        [button("Disable auto-publish", "approval", "manual", version)],
+        [button("‹ Back", "view", "approval", version)],
+      ];
+    }
     return [
-      [button("⚠️ Enable auto-publish", "approval", "automatic", version)],
+      [button("Enable auto-publish ⚠️", "approval", "automatic", version)],
       [button("Cancel", "view", "approval", version)],
     ];
   }
   if (page === "frequency") {
+    const selectedInterval = settings.scheduleIntervalMinutes;
     return [
       [
-        button("Every hour", "interval", 60, version),
-        button("Every 6 hours", "interval", 360, version),
+        button(
+          `${selectedInterval === 60 ? "✅ " : ""}Every hour`,
+          "interval",
+          60,
+          version,
+        ),
+        button(
+          `${selectedInterval === 360 ? "✅ " : ""}Every 6 hours`,
+          "interval",
+          360,
+          version,
+        ),
       ],
       [
-        button("Every 12 hours", "interval", 720, version),
-        button("Every 24 hours", "interval", 1440, version),
+        button(
+          `${selectedInterval === 720 ? "✅ " : ""}Every 12 hours`,
+          "interval",
+          720,
+          version,
+        ),
+        button(
+          `${selectedInterval === 1440 ? "✅ " : ""}Every 24 hours`,
+          "interval",
+          1440,
+          version,
+        ),
       ],
-      [button("Pause automatic search", "interval", 0, version)],
+      [
+        button(
+          `${selectedInterval == null ? "✅ " : ""}Pause automatic search`,
+          "interval",
+          0,
+          version,
+        ),
+      ],
       [button("‹ Back", "view", "home", version)],
     ];
   }
@@ -302,6 +372,7 @@ export function renderSettingsKeyboard(row, page = "home") {
     [button("3 · Custom topics", "view", "custom", version)],
     [button("4 · Publishing", "view", "approval", version)],
     [button("5 · Frequency", "view", "frequency", version)],
+    [button("✅ All changes applied", "status", "applied", version)],
   ];
 }
 
@@ -319,7 +390,9 @@ async function editSettingsMessage({
 }) {
   const pageNotice =
     page === "automatic"
-      ? "\n\nWarning: automatic publishing sends new articles to the channel without review."
+      ? normalizeSettings(settings).approvalPolicy === "automatic"
+        ? "\n\nAuto-publish is enabled ⚠️ New articles are sent without review."
+        : "\n\nWarning: automatic publishing sends new articles to the channel without review."
       : page === "frequency"
         ? "\n\nCost note: every-hour search can consume provider and web-search credits quickly."
         : "";
@@ -397,6 +470,11 @@ export async function handleSettingsCallback(
     }
     const current = normalizeSettings(currentRow);
 
+    if (parsed.action === "status") {
+      await answer("Settings are saved and active.");
+      return { auditResult: "Confirmed that news settings are saved and active." };
+    }
+
     if (parsed.action === "view") {
       await editSettingsMessage({
         token,
@@ -406,7 +484,11 @@ export async function handleSettingsCallback(
         settings: currentRow,
         page: parsed.value,
       });
-      await answer("Settings opened.");
+      await answer(
+        parsed.value === "home"
+          ? "Settings are saved and active."
+          : "Settings opened.",
+      );
       return { auditResult: `Opened settings page ${parsed.value}.` };
     }
 
@@ -529,7 +611,7 @@ export async function handleSettingsCallback(
       settings: updated,
       page: returnPage,
     });
-    await answer("Saved.");
+    await answer("Saved and applied.");
     return { auditResult: `Updated news settings (${parsed.action}).` };
   } catch (error) {
     await answer("The settings change could not be completed.", true).catch(() => {});

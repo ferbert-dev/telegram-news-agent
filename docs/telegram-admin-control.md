@@ -35,6 +35,10 @@ private admin chat to choose language, preset/custom topics, publishing policy,
 and frequency. The choices are stored in `news_bot_settings`, and every manual
 or scheduled run reads one complete versioned snapshot before research begins.
 The safe default is English + broad topics + review required + paused.
+Every menu choice is persisted immediately. The menu shows a saved/active
+status and marks the currently selected interval; there is no separate batch
+of unsaved settings. `next_run_at` remains a PostgreSQL `timestamptz`, while
+the Telegram UI displays it in `Europe/Madrid` with CET/CEST applied by date.
 
 Frequency choices are paused, 1 hour, 6 hours, 12 hours, and 24 hours. A due row
 is claimed atomically in PostgreSQL, so a process restart or a second transient

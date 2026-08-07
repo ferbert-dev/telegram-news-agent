@@ -126,7 +126,11 @@ The native Telegram inline menu writes a versioned configuration to PostgreSQL;
 no public web UI or additional Oracle port is required. Defaults are the broad
 topic mix, English, review required, and automatic search paused. Enabling
 automatic publication requires a separate confirmation screen. Selecting the
-one-hour interval can consume provider search/tool credits quickly.
+one-hour interval can consume provider search/tool credits quickly. Every menu
+change is saved and applied immediately; the home screen and selected-option
+checkmarks show the active configuration. Scheduler timestamps remain stored
+as PostgreSQL `timestamptz` values and are displayed in `Europe/Madrid` with
+automatic CET/CEST daylight-saving handling.
 
 Send `/news` to run immediately with the saved configuration. The command,
 settings actions, and review callbacks recheck that the sender is a current
