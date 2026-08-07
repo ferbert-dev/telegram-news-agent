@@ -123,6 +123,40 @@ test(
         "society",
       ]);
 
+      const defaultFeatures = await repository.getOrCreateNewsFeatureFlags({
+        channelId: settingsChannel,
+        updatedBy: settingsUserId,
+      });
+      const articleTagsFeature = defaultFeatures.find(
+        (feature) => feature.feature_key === "article_tags",
+      );
+      assert.equal(articleTagsFeature.state, "off");
+      const collectingTags = await repository.updateNewsFeatureFlag({
+        channelId: settingsChannel,
+        featureKey: "article_tags",
+        state: "collect",
+        updatedBy: settingsUserId,
+        expectedVersion: articleTagsFeature.version,
+      });
+      assert.equal(collectingTags.state, "collect");
+      assert.equal(collectingTags.version, articleTagsFeature.version + 1);
+      assert.equal(
+        await repository.updateNewsFeatureFlag({
+          channelId: settingsChannel,
+          featureKey: "article_tags",
+          state: "enabled",
+          updatedBy: settingsUserId,
+          expectedVersion: articleTagsFeature.version,
+        }),
+        null,
+      );
+      const germanTags = await repository.listEnabledArticleTags("de");
+      assert.ok(
+        germanTags.some(
+          (tag) => tag.code === "science" && tag.hashtag === "#Wissenschaft",
+        ),
+      );
+
       const updatedSettings = await repository.updateNewsSettings({
         channelId: settingsChannel,
         reviewChatId,
@@ -206,6 +240,42 @@ test(
       });
       assert.equal(article.status, "discovered");
 
+      const articleTopics = await repository.replaceArticleTopics({
+        articleId: article.id,
+        assignments: [
+          { code: "science", confidence: 0.95 },
+          { code: "space", confidence: 0.8 },
+        ],
+        assignedModel: "integration-tagger",
+      });
+      assert.equal(articleTopics.length, 2);
+      assert.ok(
+        articleTopics.every(
+          (assignment) =>
+            assignment.assignment_source === "ai" &&
+            assignment.assigned_model === "integration-tagger",
+        ),
+      );
+      await assert.rejects(
+        repository.replaceArticleTopics({
+          articleId: article.id,
+          assignments: [
+            { code: "ai", confidence: 0.9 },
+            { code: "world", confidence: 0.8 },
+            { code: "science", confidence: 0.7 },
+            { code: "space", confidence: 0.6 },
+          ],
+        }),
+        /At most 3 article topics may be assigned/,
+      );
+      await assert.rejects(
+        repository.replaceArticleTopics({
+          articleId: article.id,
+          assignments: [{ code: "science" }],
+        }),
+        /requires a code and numeric confidence/,
+      );
+
       const usageResponseId = `integration-${suffix}`;
       const usage = await repository.recordAiUsage({
         provider: "openai",
@@ -253,13 +323,52 @@ test(
       });
       assert.equal(raw.article_id, article.id);
 
+      await assert.rejects(
+        repository.createReviewDraft({
+          article_id: article.id,
+          body: "This draft must roll back with its invalid topic assignment.",
+          model: "integration-model",
+          prompt_version: "integration-v1",
+          topic_assignments: [{ code: "not-in-the-catalog", confidence: 0.9 }],
+          topic_assignment_source: "ai",
+          topic_assigned_model: "integration-transactional-tagger",
+        }),
+        /Assignments must reference enabled topic codes/,
+      );
+      const rolledBackDraft = await pool.query(
+        `select article.status,
+                (select count(*)::integer from public.drafts where article_id = article.id) as draft_count
+         from public.articles as article
+         where article.id = $1`,
+        [article.id],
+      );
+      assert.equal(rolledBackDraft.rows[0].status, "discovered");
+      assert.equal(rolledBackDraft.rows[0].draft_count, 0);
+
       const draft = await repository.createReviewDraft({
         article_id: article.id,
         body: "Short grounded integration draft.",
         model: "integration-model",
         prompt_version: "integration-v1",
+        topic_assignments: [{ code: "science", confidence: 0.99 }],
+        topic_assignment_source: "ai",
+        topic_assigned_model: "integration-transactional-tagger",
       });
       assert.equal(draft.status, "review");
+      const persistedTopics = await pool.query(
+        `select topic.name, article_topic.relevance_score,
+                article_topic.assigned_model
+         from public.article_topics as article_topic
+         join public.topics as topic on topic.id = article_topic.topic_id
+         where article_topic.article_id = $1`,
+        [article.id],
+      );
+      assert.equal(persistedTopics.rows.length, 1);
+      assert.equal(persistedTopics.rows[0].name, "science");
+      assert.equal(
+        persistedTopics.rows[0].assigned_model,
+        "integration-transactional-tagger",
+      );
       assert.equal((await repository.getDraft(draft.id)).articles.id, article.id);
       assert.ok(
         (await repository.listDrafts()).some(

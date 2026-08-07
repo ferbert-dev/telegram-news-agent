@@ -9,6 +9,7 @@ import {
   parseStatsCommand,
   parseReviewCallback,
 } from "../src/telegram-control.js";
+import { createLabsCallback } from "../src/telegram-labs.js";
 import { publishApprovedDraft } from "../src/publish.js";
 import { TelegramError } from "../src/telegram.js";
 
@@ -174,6 +175,148 @@ test("/stats is private, admin-only, and does not start research", async () => {
     )[1].text,
     /Estimated list cost/,
   );
+});
+
+test("/labs is claimed, audited, private-admin routed, and does not start research", async () => {
+  let ran = false;
+  let claimedKind;
+  const { calls, dependencies } = fixture({
+    repository: {
+      async claimTelegramUpdate(_updateId, updateKind) {
+        claimedKind = updateKind;
+        return {
+          claimed: true,
+          claim_token: "claim-labs",
+          claim_status: "claimed",
+        };
+      },
+      async getNewsSettings() {
+        return null;
+      },
+      async getOrCreateNewsSettings(payload) {
+        calls.push(["getOrCreateSettings", payload]);
+        return { telegram_channel_id: payload.channelId };
+      },
+      async getOrCreateNewsFeatureFlags(payload) {
+        calls.push(["getOrCreateFlags", payload]);
+        return [
+          {
+            telegram_channel_id: "@channel",
+            feature_key: "article_tags",
+            state: "off",
+            config: {},
+            version: 1,
+            updated_by: payload.updatedBy,
+          },
+        ];
+      },
+    },
+    dependencies: {
+      runNews: async () => {
+        ran = true;
+      },
+    },
+  });
+
+  const result = await handleControlUpdate(
+    commandUpdate({ text: "/labs@mhonest_bot" }),
+    dependencies,
+  );
+
+  assert.equal(result.handled, true);
+  assert.equal(claimedKind, "labs_command");
+  assert.equal(ran, false);
+  assert.deepEqual(calls.find(([name]) => name === "getOrCreateFlags")[1], {
+    channelId: "@channel",
+    updatedBy: 5,
+  });
+  assert.match(
+    calls.find(
+      ([name, body]) => name === "sendMessage" && /Experimental Labs/.test(body.text),
+    )[1].text,
+    /Article tags: Off/,
+  );
+});
+
+test("/labs command and callbacks reject non-private or non-admin actors", async () => {
+  for (const update of [
+    commandUpdate({ text: "/labs", chat: { id: 9, type: "group" } }),
+    commandUpdate({ text: "/labs extra" }),
+  ]) {
+    const { dependencies } = fixture();
+    await assert.rejects(handleControlUpdate(update, dependencies));
+  }
+
+  let mutated = false;
+  const { dependencies } = fixture({
+    repository: {
+      async getNewsFeatureFlags() {
+        throw new Error("must not read flags before authorization");
+      },
+      async updateNewsFeatureFlag() {
+        mutated = true;
+      },
+    },
+    callTelegram: async (_token, method) => {
+      if (method === "getChatMember") return { status: "member" };
+      return true;
+    },
+  });
+  await assert.rejects(
+    handleControlUpdate(
+      callbackUpdate(createLabsCallback("state", "enabled", 1)),
+      dependencies,
+    ),
+    (error) => error.code === "forbidden",
+  );
+  assert.equal(mutated, false);
+});
+
+test("Labs callback is claimed and routes the authorized versioned mutation", async () => {
+  let claimedKind;
+  let updatedPayload;
+  const current = {
+    telegram_channel_id: "@channel",
+    feature_key: "article_tags",
+    state: "off",
+    config: {},
+    version: 4,
+    updated_by: 5,
+  };
+  const { dependencies } = fixture({
+    repository: {
+      async claimTelegramUpdate(_updateId, updateKind) {
+        claimedKind = updateKind;
+        return {
+          claimed: true,
+          claim_token: "claim-labs-callback",
+          claim_status: "claimed",
+        };
+      },
+      async getNewsFeatureFlags() {
+        return [current];
+      },
+      async updateNewsFeatureFlag(payload) {
+        updatedPayload = payload;
+        return { ...current, state: payload.state, version: 5 };
+      },
+    },
+  });
+
+  const result = await handleControlUpdate(
+    callbackUpdate(createLabsCallback("state", "collect", 4)),
+    dependencies,
+  );
+
+  assert.equal(result.handled, true);
+  assert.equal(claimedKind, "labs_callback");
+  assert.deepEqual(updatedPayload, {
+    channelId: "@channel",
+    featureKey: "article_tags",
+    state: "collect",
+    updatedBy: 5,
+    expectedVersion: 4,
+  });
 });
 
 test("/news requires private admin and persists a bound 24h session", async () => {

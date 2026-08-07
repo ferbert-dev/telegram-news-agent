@@ -2,9 +2,51 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildDraftEvidence,
+  loadArticleTagging,
   runPipeline,
   startPipelineLeaseHeartbeat,
 } from "../src/pipeline.js";
+
+test("article tagging defaults off without a persisted channel feature", async () => {
+  assert.deepEqual(
+    await loadArticleTagging({
+      repository: {},
+      newsSettings: { languageCode: "en" },
+    }),
+    { state: "off", catalog: [] },
+  );
+});
+
+test("article tagging loads the localized catalog only for active modes", async () => {
+  const calls = [];
+  const repository = {
+    async getNewsFeatureFlags(channelId) {
+      calls.push(["flags", channelId]);
+      return [{ feature_key: "article_tags", state: "collect" }];
+    },
+    async listEnabledArticleTags(languageCode) {
+      calls.push(["catalog", languageCode]);
+      return [{ code: "science", label: "Wissenschaft", hashtag: "#Wissenschaft" }];
+    },
+  };
+
+  assert.deepEqual(
+    await loadArticleTagging({
+      repository,
+      newsSettings: { channelId: "@channel", languageCode: "de" },
+    }),
+    {
+      state: "collect",
+      catalog: [
+        { code: "science", label: "Wissenschaft", hashtag: "#Wissenschaft" },
+      ],
+    },
+  );
+  assert.deepEqual(calls, [
+    ["flags", "@channel"],
+    ["catalog", "de"],
+  ]);
+});
 
 test("unverified Reddit trends allow only the linked page and discussion URL", () => {
   const evidence = buildDraftEvidence({
@@ -150,6 +192,22 @@ test("runPipeline researches and creates a review draft without publishing", asy
 
 test("runPipeline carries configured topics and language through research and drafting", async () => {
   const repository = repositoryFixture();
+  let savedAssignments;
+  repository.getNewsFeatureFlags = async () => [
+    { feature_key: "article_tags", state: "enabled" },
+  ];
+  repository.listEnabledArticleTags = async () => [
+    {
+      code: "science",
+      label: "Wissenschaft",
+      description: "Science and discoveries",
+      hashtag: "#Wissenschaft",
+    },
+  ];
+  repository.createReviewDraft = async (draft) => {
+    savedAssignments = draft.topic_assignments;
+    return { ...draft, id: "draft-1" };
+  };
   let searchRequest;
   let curationRequest;
   let draftRequest;
@@ -183,6 +241,7 @@ test("runPipeline carries configured topics and language through research and dr
           ],
           sourceUrls: ["https://example.com/news"],
           caveat: "Bisher liegt nur diese Quelle vor.",
+          topicTags: [{ code: "science", confidence: 0.92 }],
         },
       };
     },
@@ -194,6 +253,7 @@ test("runPipeline carries configured topics and language through research and dr
     editor: { key: "anna", name: "Anna Beispiel" },
     ownerId: "00000000-0000-4000-8000-000000000001",
     newsSettings: {
+      channelId: "@channel",
       languageCode: "de",
       topicCodes: ["ai", "nature"],
       customTopics: [],
@@ -224,7 +284,19 @@ test("runPipeline carries configured topics and language through research and dr
     "Nature and environment",
   ]);
   assert.match(draftRequest.systemInstruction, /in German/);
+  assert.deepEqual(draftRequest.input.articleTagging.catalog, [
+    {
+      code: "science",
+      label: "Wissenschaft",
+      description: "Science and discoveries",
+    },
+  ]);
   assert.match(result.preview, /aufbereitet von Anna Beispiel/);
+  assert.match(result.preview, /#Wissenschaft$/);
+  assert.deepEqual(savedAssignments, [
+    { code: "science", confidence: 0.92 },
+  ]);
+  assert.equal(result.features.articleTags, "enabled");
   assert.equal(result.settings.version, 5);
   assert.equal(result.settings.languageCode, "de");
 });

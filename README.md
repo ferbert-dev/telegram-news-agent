@@ -181,6 +181,17 @@ so the dashboard labels the amount as an estimate rather than the actual bill.
 The current source for the snapshot is the official
 [OpenAI API pricing page](https://developers.openai.com/api/docs/pricing).
 
+Send `/labs` in the private admin chat to control experimental features without
+redeploying the bot. Article tags have three versioned per-channel states:
+`Off` keeps the legacy pipeline path, `Collect only` stores up to three
+database-backed tag assignments without changing the public draft body, and
+`Enabled` also appends the localized hashtags to new drafts. The tag catalogue,
+translations, relevance scores, and article relationships are stored in
+PostgreSQL; the model can select only enabled catalogue codes and cannot create
+public hashtag text. Labs changes apply immediately and `Done & close` removes
+the inline keyboard. Story connections are intentionally left as a planned V2
+feature until the tag history has been evaluated.
+
 New drafts include a localized editorial credit for `NEWS_EDITOR_NAME` and store
 the stable `NEWS_EDITOR_KEY` in draft/publication metadata. The defaults identify
 the first editor as `Михаил Онест`; changing both environment values later adds

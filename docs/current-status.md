@@ -40,6 +40,10 @@ Last updated: 2026-08-07
   preset/custom topic mix, review-required versus automatic publication, and a
   paused/1h/6h/12h/24h database-backed schedule. Safe defaults remain broad,
   English, manual review, and paused.
+- Private admin `/labs` controls experimental, per-channel feature flags. The
+  first V1 flag classifies articles against a PostgreSQL tag catalogue in
+  Off/Collect/Enabled modes; story connections remain disabled pending tag
+  quality evaluation.
 - Normal runs use RSS/Atom and GDELT first, then perform tool-free AI candidate
   curation. Provider web search runs only when the free layer is empty: it first
   finds and validates reusable RSS sources for PostgreSQL, then uses a bounded
