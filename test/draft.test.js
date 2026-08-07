@@ -116,7 +116,8 @@ test("generateDraft stores a review draft and advances article state", async () 
     async createReviewDraft(draft) {
       writes.push(draft);
       assert.equal(draft.status, "review");
-      assert.equal(draft.body, TELEGRAM_TEXT);
+      assert.match(draft.body, /Found and prepared for you by Михаил Онест/);
+      assert.match(draft.body, /Source:\nhttps:\/\/example\.com\/primary$/);
       return { id: "draft-1", ...draft };
     },
   };

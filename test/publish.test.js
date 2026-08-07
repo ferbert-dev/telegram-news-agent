@@ -11,10 +11,16 @@ test("publishApprovedDraft records a claimed draft after Telegram accepts it", a
     },
     async claimDraftForPublication(id) {
       calls.push(["claim", id]);
-      return { id, body: "Approved article" };
+      return {
+        id,
+        body: "Approved article",
+        reviewer_notes: JSON.stringify({
+          editor: { key: "mikhail-onest", name: "Михаил Онест" },
+        }),
+      };
     },
     async finalizeDraftPublication(details) {
-      calls.push(["finalize", details.messageId]);
+      calls.push(["finalize", details.messageId, details.metadata.editor]);
       return { telegram_message_id: details.messageId };
     },
   };
@@ -29,7 +35,11 @@ test("publishApprovedDraft records a claimed draft after Telegram accepts it", a
   assert.equal(result.publication.telegram_message_id, 42);
   assert.deepEqual(calls, [
     ["claim", "draft-1"],
-    ["finalize", 42],
+    [
+      "finalize",
+      42,
+      { key: "mikhail-onest", name: "Михаил Онест" },
+    ],
   ]);
 });
 

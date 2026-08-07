@@ -9,6 +9,7 @@ import {
   parseSettingsCommand,
   showSettings,
 } from "./telegram-settings.js";
+import { showUsageDashboard } from "./telegram-stats.js";
 
 const CALLBACK_PATTERN = /^news:([pr]):([a-f0-9]{32,64})$/;
 const ADMIN_STATUSES = new Set(["creator", "administrator"]);
@@ -52,6 +53,16 @@ export function parseNewsCommand(text) {
   };
 }
 
+export function parseStatsCommand(text) {
+  if (typeof text !== "string") return null;
+  const match = /^\/stats(?:@([A-Za-z0-9_]+))?(\s.*)?$/i.exec(text.trim());
+  if (!match) return null;
+  return {
+    botUsername: match[1] ?? null,
+    malformed: Boolean(match[2]?.trim()),
+  };
+}
+
 export function createReviewCallback(action, sessionId) {
   const code = action === "publish" ? "p" : action === "reject" ? "r" : null;
   if (!code || !/^[a-f0-9]{32,64}$/.test(sessionId)) {
@@ -84,6 +95,12 @@ export function classifyControlUpdate(update, botUsername, botId) {
     return addressedElsewhere(settingsCommand, botUsername)
       ? null
       : { kind: "settings_command", command: settingsCommand };
+  }
+  const statsCommand = parseStatsCommand(update?.message?.text);
+  if (statsCommand) {
+    return addressedElsewhere(statsCommand, botUsername)
+      ? null
+      : { kind: "stats_command", command: statsCommand };
   }
   const command = parseNewsCommand(update?.message?.text);
   if (command) {
@@ -134,6 +151,7 @@ function auditDetails(classification, update) {
       settings_command: "Telegram admin - /settings",
       settings_callback: "Telegram admin - settings callback",
       settings_input: "Telegram admin - settings input",
+      stats_command: "Telegram admin - /stats",
     }[classification.kind],
     objective: `Process ${classification.kind} update ${update.update_id} from Telegram user ${actorId}.`,
   };
@@ -146,6 +164,7 @@ function updateKind(classification) {
     settings_command: "settings_command",
     settings_callback: "settings_callback",
     settings_input: "settings_input",
+    stats_command: "stats_command",
   }[classification.kind];
 }
 
@@ -239,6 +258,12 @@ export async function handleControlUpdate(
             classification.callback,
             { token, channelId, repository, callTelegram, now },
           );
+        } else if (classification.kind === "stats_command") {
+          value = await handleStatsCommand(
+            update.message,
+            classification.command,
+            { token, channelId, repository, callTelegram, now },
+          );
         } else {
           value = await handleSettingsControlInput(update.message, {
             token,
@@ -279,6 +304,27 @@ export async function handleControlUpdate(
         error instanceof ControlError ? error.code : "internal_error",
     },
   );
+}
+
+async function handleStatsCommand(
+  message,
+  command,
+  { token, channelId, repository, callTelegram, now },
+) {
+  const chatId = requirePrivateChat(message);
+  if (command.malformed) {
+    throw new ControlError("malformed_command", "Malformed /stats command");
+  }
+  await requireAdmin(message, { token, channelId, callTelegram });
+  await showUsageDashboard({
+    token,
+    channelId,
+    chatId,
+    repository,
+    callTelegram,
+    now,
+  });
+  return { auditResult: "Displayed the daily AI usage and cost dashboard." };
 }
 
 async function requireAdmin(message, dependencies) {

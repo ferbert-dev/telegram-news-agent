@@ -449,6 +449,128 @@ export class NewsRepository {
     );
   }
 
+  async recordAiUsage({
+    provider,
+    providerResponseId = null,
+    model,
+    operation,
+    telegramChannelId = null,
+    searchRunId = null,
+    articleId = null,
+    inputTokens = 0,
+    cachedInputTokens = 0,
+    outputTokens = 0,
+    reasoningTokens = 0,
+    webSearchCalls = 0,
+    estimatedCostUsd = null,
+    pricingSnapshot = null,
+  }) {
+    const result = await this.query(
+      "Record AI usage",
+      `insert into public.ai_usage_events (
+        provider, provider_response_id, model, operation, telegram_channel_id,
+        search_run_id, article_id, input_tokens, cached_input_tokens,
+        output_tokens, reasoning_tokens, web_search_calls,
+        estimated_cost_usd, pricing_snapshot
+      ) values (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+      ) on conflict (provider, provider_response_id) do update
+        set provider_response_id = excluded.provider_response_id
+      returning *`,
+      [
+        provider,
+        providerResponseId,
+        model,
+        operation,
+        telegramChannelId,
+        searchRunId,
+        articleId,
+        inputTokens,
+        cachedInputTokens,
+        outputTokens,
+        reasoningTokens,
+        webSearchCalls,
+        estimatedCostUsd,
+        pricingSnapshot,
+      ],
+    );
+    return this.one(result, "Record AI usage");
+  }
+
+  async getDailyUsageDashboard({
+    channelId,
+    now: currentTime = new Date().toISOString(),
+    timeZone = "Europe/Madrid",
+    postLimit = 5,
+  }) {
+    const bounds = `select
+      date_trunc('day', $2::timestamptz at time zone $3) at time zone $3 as period_start,
+      (date_trunc('day', $2::timestamptz at time zone $3) + interval '1 day') at time zone $3 as period_end`;
+    const summaryResult = await this.query(
+      "Get daily AI usage summary",
+      `with bounds as (${bounds}),
+       usage_summary as (
+       select
+         bounds.period_start,
+         bounds.period_end,
+         count(u.id)::bigint as request_count,
+         coalesce(sum(u.input_tokens), 0)::bigint as input_tokens,
+         coalesce(sum(u.cached_input_tokens), 0)::bigint as cached_input_tokens,
+         coalesce(sum(u.output_tokens), 0)::bigint as output_tokens,
+         coalesce(sum(u.reasoning_tokens), 0)::bigint as reasoning_tokens,
+         coalesce(sum(u.web_search_calls), 0)::bigint as web_search_calls,
+         count(u.estimated_cost_usd)::bigint as priced_request_count,
+         coalesce(sum(u.estimated_cost_usd), 0)::numeric(16, 8) as estimated_cost_usd,
+         min(u.created_at) as tracking_started_at
+       from bounds
+       left join public.ai_usage_events u
+         on u.telegram_channel_id = $1
+        and u.created_at >= bounds.period_start
+        and u.created_at < bounds.period_end
+       group by bounds.period_start, bounds.period_end
+       )
+       select
+         usage_summary.*,
+         (
+           select count(*)::bigint
+           from public.published_posts p
+           where p.telegram_channel_id = $1
+             and p.published_at >= usage_summary.period_start
+             and p.published_at < usage_summary.period_end
+         ) as published_post_count
+       from usage_summary`,
+      [channelId, currentTime, timeZone],
+    );
+    const postsResult = await this.query(
+      "Get daily publication cost summary",
+      `with bounds as (${bounds})
+       select
+         p.telegram_message_id,
+         p.published_at,
+         coalesce(p.metadata #>> '{editor,name}', 'Unknown editor') as editor_name,
+         count(u.id)::bigint as usage_request_count,
+         coalesce(sum(u.estimated_cost_usd), 0)::numeric(16, 8) as estimated_cost_usd
+       from bounds
+       join public.published_posts p
+         on p.telegram_channel_id = $1
+        and p.published_at >= bounds.period_start
+        and p.published_at < bounds.period_end
+       join public.drafts d on d.id = p.draft_id
+       join public.articles a on a.id = d.article_id
+       left join public.ai_usage_events u
+         on u.telegram_channel_id = p.telegram_channel_id
+        and (u.article_id = a.id or u.search_run_id = a.search_run_id)
+       group by p.telegram_message_id, p.published_at, editor_name
+       order by p.published_at desc
+       limit $4`,
+      [channelId, currentTime, timeZone, postLimit],
+    );
+    return {
+      summary: this.one(summaryResult, "Get daily AI usage summary"),
+      posts: postsResult.rows,
+    };
+  }
+
   async acquirePipelineLease(name, ownerId, ttlSeconds = 900) {
     return this.functionScalar(
       "acquire_pipeline_lease",

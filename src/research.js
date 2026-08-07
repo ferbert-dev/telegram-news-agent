@@ -6,6 +6,7 @@ import {
   hashText,
 } from "./feed.js";
 import { fetchRedditDiscoveries } from "./reddit.js";
+import { recordAiUsageEvents } from "./ai-usage.js";
 import {
   newsSettingsSnapshot,
   normalizeNewsSettings,
@@ -286,6 +287,10 @@ export async function runResearch({
           providerRequest.customTopics = [...normalizedSettings.customTopics];
         }
         providerDiscovery = await discoveryProvider.searchNews(providerRequest);
+        await recordAiUsageEvents(repository, providerDiscovery.usageEvents, {
+          channelId: normalizedSettings?.channelId ?? null,
+          searchRunId: run.id,
+        });
         const seenWebPublishers = new Set();
         const providerCandidates = providerDiscovery.items.flatMap(
           (item, searchRank) => {

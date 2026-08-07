@@ -54,6 +54,14 @@ test("OpenAI adapter uses Responses structured output and web search", async () 
         calls.push(request);
         return request.tools
           ? {
+              id: "resp_search",
+              output: [{ type: "web_search_call" }],
+              usage: {
+                input_tokens: 100,
+                input_tokens_details: { cached_tokens: 10 },
+                output_tokens: 20,
+                output_tokens_details: { reasoning_tokens: 5 },
+              },
               output_parsed: {
                 items: [
                   {
@@ -64,7 +72,16 @@ test("OpenAI adapter uses Responses structured output and web search", async () 
                 ],
               },
             }
-          : { output_parsed: { status: "OK" } };
+          : {
+              id: "resp_draft",
+              usage: {
+                input_tokens: 50,
+                input_tokens_details: { cached_tokens: 0 },
+                output_tokens: 10,
+                output_tokens_details: { reasoning_tokens: 2 },
+              },
+              output_parsed: { status: "OK" },
+            };
       },
     },
   };
@@ -93,6 +110,9 @@ test("OpenAI adapter uses Responses structured output and web search", async () 
 
   assert.equal(generated.value.status, "OK");
   assert.equal(discovered.items.length, 1);
+  assert.equal(generated.usageEvents[0].inputTokens, 50);
+  assert.equal(discovered.usageEvents[0].webSearchCalls, 1);
+  assert.equal(discovered.usageEvents[0].estimatedCostUsd, 0.0105275);
   assert.equal(calls[0].store, false);
   assert.deepEqual(calls[0].reasoning, { effort: "medium" });
   assert.deepEqual(calls[1].tools, [

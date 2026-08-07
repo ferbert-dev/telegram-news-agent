@@ -6,6 +6,7 @@ import {
   deliverReviewDraft,
   handleControlUpdate,
   parseNewsCommand,
+  parseStatsCommand,
   parseReviewCallback,
 } from "../src/telegram-control.js";
 import { publishApprovedDraft } from "../src/publish.js";
@@ -116,6 +117,11 @@ test("command and opaque callbacks are strictly parsed and bounded", () => {
   assert.equal(parseNewsCommand("hello"), null);
   assert.equal(parseNewsCommand("/newsletter"), null);
   assert.equal(parseNewsCommand("/news extra").malformed, true);
+  assert.deepEqual(parseStatsCommand("/stats@mhonest_bot"), {
+    botUsername: "mhonest_bot",
+    malformed: false,
+  });
+  assert.equal(parseStatsCommand("/stats today").malformed, true);
   const callback = createReviewCallback("publish", SESSION_ID);
   assert.ok(Buffer.byteLength(callback) <= 64);
   assert.deepEqual(parseReviewCallback(callback), {
@@ -126,6 +132,47 @@ test("command and opaque callbacks are strictly parsed and bounded", () => {
   assert.equal(
     classifyControlUpdate(commandUpdate({ text: "/news@other_bot" }), "mhonest_bot"),
     null,
+  );
+});
+
+test("/stats is private, admin-only, and does not start research", async () => {
+  let ran = false;
+  const { calls, dependencies } = fixture({
+    repository: {
+      async getDailyUsageDashboard() {
+        return {
+          summary: {
+            request_count: "1",
+            input_tokens: "100",
+            cached_input_tokens: "0",
+            output_tokens: "20",
+            reasoning_tokens: "5",
+            web_search_calls: "1",
+            priced_request_count: "1",
+            estimated_cost_usd: "0.01055000",
+          },
+          posts: [],
+        };
+      },
+    },
+    dependencies: {
+      runNews: async () => {
+        ran = true;
+      },
+    },
+  });
+  const result = await handleControlUpdate(
+    commandUpdate({ text: "/stats" }),
+    dependencies,
+  );
+
+  assert.equal(result.handled, true);
+  assert.equal(ran, false);
+  assert.match(
+    calls.find(
+      ([name, body]) => name === "sendMessage" && /AI usage today/.test(body.text),
+    )[1].text,
+    /Estimated list cost/,
   );
 });
 

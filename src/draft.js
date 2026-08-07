@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { recordAiUsageEvents } from "./ai-usage.js";
+import { appendEditorCredit, DEFAULT_NEWS_EDITOR } from "./editor.js";
 import { LANGUAGE_OPTIONS, newsSettingsSnapshot } from "./news-settings.js";
 import { validateMessage } from "./telegram.js";
 
@@ -175,6 +177,7 @@ export async function generateDraft({
   lease,
   languageCode = "en",
   newsSettings,
+  editor = DEFAULT_NEWS_EDITOR,
 }) {
   if (!article?.id) {
     throw new Error("Article is required for draft generation");
@@ -253,6 +256,12 @@ export async function generateDraft({
     generated = { value, provider: "gemini", model };
   }
 
+  await recordAiUsageEvents(repository, generated.usageEvents, {
+    channelId: newsSettings?.channelId ?? null,
+    searchRunId: article.search_run_id ?? null,
+    articleId: article.id,
+  });
+
   const grounded = validateGroundedDraft(generated.value, evidence, {
     languageCode,
   });
@@ -265,9 +274,13 @@ export async function generateDraft({
           : `${unverifiedPrefix}\n\n${grounded.telegramText}`,
       })
     : grounded;
+  const creditedDraft = TelegramDraft.parse({
+    ...draft,
+    telegramText: appendEditorCredit(draft.telegramText, editor, languageCode),
+  });
   const saved = await repository.createReviewDraft({
     article_id: article.id,
-    body: draft.telegramText,
+    body: creditedDraft.telegramText,
     status: "review",
     model: generated.model,
     prompt_version: unverified
@@ -278,11 +291,12 @@ export async function generateDraft({
           ? "telegram-web-grounded-v1"
           : "telegram-grounded-v2",
     reviewer_notes: JSON.stringify({
-      headline: draft.headline,
-      claims: draft.claims,
-      source_urls: draft.sourceUrls,
-      caveat: draft.caveat,
+      headline: creditedDraft.headline,
+      claims: creditedDraft.claims,
+      source_urls: creditedDraft.sourceUrls,
+      caveat: creditedDraft.caveat,
       provider: generated.provider,
+      editor,
       verification_status: verificationStatus,
       language_code: languageCode,
       news_settings: newsSettings ? newsSettingsSnapshot(newsSettings) : null,
@@ -292,7 +306,7 @@ export async function generateDraft({
   });
 
   return {
-    draft,
+    draft: creditedDraft,
     saved,
     provider: generated.provider,
     model: generated.model,

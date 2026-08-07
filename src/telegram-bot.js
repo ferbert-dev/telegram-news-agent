@@ -4,6 +4,7 @@ import {
   createDatabaseClient,
 } from "./database.js";
 import { createAiProvider } from "./ai-provider.js";
+import { getNewsEditor } from "./editor.js";
 import { NewsRepository } from "./news-repository.js";
 import {
   getNotionAuditConfig,
@@ -36,6 +37,7 @@ const databaseClient = createDatabaseClient();
 const repository = new NewsRepository(databaseClient);
 const auditLogger = new NotionAuditLogger(getNotionAuditConfig());
 const aiProvider = createAiProvider();
+const editor = getNewsEditor();
 const bot = await callTelegram(token, "getMe", {});
 const controller = new AbortController();
 let stopping = false;
@@ -55,6 +57,10 @@ await callTelegram(token, "setMyCommands", {
       command: "settings",
       description: "Configure language, topics, publishing, and schedule",
     },
+    {
+      command: "stats",
+      description: "Show today's AI usage and estimated cost",
+    },
   ],
 });
 
@@ -71,6 +77,7 @@ async function runNews({ updateId, userId, chatId }) {
     aiProvider,
     settings,
     telegram: { token, channelId },
+    editor,
   });
 }
 
@@ -81,6 +88,7 @@ async function runScheduledNews(settings) {
     aiProvider,
     settings: { ...settings, approvalPolicy: "manual" },
     telegram: { token, channelId },
+    editor,
   });
 }
 

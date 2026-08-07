@@ -152,6 +152,42 @@ test(
       });
       assert.equal(article.status, "discovered");
 
+      const usageResponseId = `integration-${suffix}`;
+      const usage = await repository.recordAiUsage({
+        provider: "openai",
+        providerResponseId: usageResponseId,
+        model: "gpt-5.4-2026-03-05",
+        operation: "news_search",
+        telegramChannelId: settingsChannel,
+        searchRunId: searchRun.id,
+        articleId: article.id,
+        inputTokens: 100,
+        cachedInputTokens: 10,
+        outputTokens: 20,
+        reasoningTokens: 5,
+        webSearchCalls: 1,
+        estimatedCostUsd: 0.0105275,
+        pricingSnapshot: { tier: "standard" },
+      });
+      assert.equal(usage.provider_response_id, usageResponseId);
+      assert.equal(
+        (
+          await repository.recordAiUsage({
+            provider: "openai",
+            providerResponseId: usageResponseId,
+            model: "gpt-5.4-2026-03-05",
+            operation: "news_search",
+          })
+        ).id,
+        usage.id,
+      );
+      const usageDashboard = await repository.getDailyUsageDashboard({
+        channelId: settingsChannel,
+      });
+      assert.equal(Number(usageDashboard.summary.request_count), 1);
+      assert.equal(Number(usageDashboard.summary.input_tokens), 100);
+      assert.equal(Number(usageDashboard.summary.published_post_count), 0);
+
       const raw = await repository.saveRawContent({
         article_id: article.id,
         content: "Verified integration evidence.",
@@ -302,6 +338,11 @@ test(
         "completed",
       );
     } finally {
+      await pool
+        .query("delete from public.ai_usage_events where telegram_channel_id = $1", [
+          settingsChannel,
+        ])
+        .catch(() => {});
       await pool
         .query("delete from public.notion_audit_outbox where notion_page_id = $1", [
           `integration-${suffix}`,

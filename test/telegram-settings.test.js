@@ -7,6 +7,7 @@ import {
   isSettingsInputReply,
   parseSettingsCallback,
   parseSettingsCommand,
+  renderAppliedSettingsText,
   renderSettingsKeyboard,
   renderSettingsText,
   showSettings,
@@ -122,9 +123,10 @@ test("home UI presents settings in language-topic-custom-approval-frequency orde
       "3 · Custom topics",
       "4 · Publishing",
       "5 · Frequency",
-      "✅ All changes applied",
+      "✅ Apply & close settings",
     ],
   );
+  assert.equal(keyboard.at(-1)[0].style, "success");
   const text = renderSettingsText(BASE_ROW);
   assert.match(text, /Language: English/);
   assert.match(text, /Publishing: Review required/);
@@ -162,7 +164,7 @@ test("showSettings persists the review chat and sends the inline UI", async () =
   assert.equal(calls[1][1].reply_markup.inline_keyboard.length, 6);
 });
 
-test("applied status button confirms persistence without rewriting the message", async () => {
+test("applied status button replaces controls with an applied summary", async () => {
   const flow = callbackFixture();
   const result = await handleSettingsCallback(
     flow.callback,
@@ -176,12 +178,17 @@ test("applied status button confirms persistence without rewriting the message",
     },
   );
 
-  assert.match(result.auditResult, /saved and active/i);
-  assert.equal(flow.calls.some(([name]) => name === "editMessageText"), false);
+  assert.match(result.auditResult, /closed/i);
+  const edit = flow.calls.find(([name]) => name === "editMessageText")[1];
+  assert.match(edit.text, /^✅ Settings applied/);
+  assert.match(edit.text, /Language: English/);
+  assert.match(edit.text, /Topics: World events, Science and discoveries/);
+  assert.deepEqual(edit.reply_markup, { inline_keyboard: [] });
   assert.equal(
     flow.calls.find(([name]) => name === "answerCallbackQuery")[1].text,
-    "Settings are saved and active.",
+    "Settings applied. Menu closed.",
   );
+  assert.match(renderAppliedSettingsText(BASE_ROW), /Send \/settings/);
 });
 
 test("language mutation is explicit, versioned, redraws, and answers callback", async () => {
@@ -226,6 +233,37 @@ test("stale mutation does not toggle state and refreshes the latest settings", a
   assert.match(answer.text, /refreshed/i);
   assert.equal(answer.show_alert, true);
   assert.equal(flow.row().schedule_interval_minutes, null);
+});
+
+test("stale rapid tap completes when Telegram says the refreshed menu is unchanged", async () => {
+  const flow = callbackFixture({ stale: true });
+  const callTelegram = async (token, method, body) => {
+    flow.calls.push([method, body]);
+    if (method === "editMessageText") {
+      throw new Error(
+        "Telegram editMessageText failed: Bad Request: message is not modified",
+      );
+    }
+    return flow.callTelegram(token, method, body);
+  };
+
+  const result = await handleSettingsCallback(
+    flow.callback,
+    parseSettingsCallback(createSettingsCallback("interval", 60, 2)),
+    {
+      token: "token",
+      channelId: "@channel",
+      userId: 5,
+      repository: flow.repository,
+      callTelegram,
+    },
+  );
+
+  assert.match(result.auditResult, /stale/i);
+  assert.equal(
+    flow.calls.find(([name]) => name === "answerCallbackQuery")[1].text,
+    "Settings changed elsewhere; refreshed.",
+  );
 });
 
 test("frequency cannot be re-enabled while publication reconciliation is pending", async () => {
@@ -355,6 +393,23 @@ test("frequency page marks the currently applied interval", () => {
 
   const paused = renderSettingsKeyboard(BASE_ROW, "frequency");
   assert.equal(paused[2][0].text, "✅ Pause automatic search");
+});
+
+test("selected topics use Telegram's native pill color styles", () => {
+  const keyboard = renderSettingsKeyboard(BASE_ROW, "topics");
+  const buttons = keyboard.flat();
+  assert.equal(
+    buttons.find(({ text }) => text.includes("World events")).style,
+    "primary",
+  );
+  assert.equal(
+    buttons.find(({ text }) => text.includes("Technology and innovation")).style,
+    undefined,
+  );
+  assert.equal(
+    buttons.find(({ text }) => text.includes("Broad mix")).style,
+    undefined,
+  );
 });
 
 test("custom topic prompt uses ForceReply and persists an exact expiring binding", async () => {

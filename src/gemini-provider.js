@@ -4,6 +4,7 @@ import {
   NewsDiscovery,
 } from "./ai-news-discovery.js";
 import { LANGUAGE_OPTIONS } from "./news-settings.js";
+import { geminiUsageEvent } from "./ai-usage.js";
 
 export function getGeminiProviderConfig(env = process.env) {
   const apiKey = env.GEMINI_API_KEY?.trim();
@@ -38,6 +39,7 @@ export function createGeminiProvider(
     input,
     zodSchema,
     jsonSchema,
+    usageOperation = "structured_generation",
   }) => {
     const response = await gemini.models.generateContent({
       model: config.model,
@@ -55,6 +57,12 @@ export function createGeminiProvider(
       value: zodSchema.parse(parseJsonText(response.text)),
       provider: "gemini",
       model: config.model,
+      usageEvents: [
+        geminiUsageEvent(response, {
+          model: config.model,
+          operation: usageOperation,
+        }),
+      ].filter(Boolean),
     };
   };
 
@@ -93,6 +101,12 @@ export function createGeminiProvider(
       }
 
       let parsed;
+      const usageEvents = [
+        geminiUsageEvent(response, {
+          model: config.model,
+          operation: "news_search",
+        }),
+      ].filter(Boolean);
       try {
         parsed = NewsDiscovery.parse(parseJsonText(response.text));
       } catch {
@@ -102,14 +116,17 @@ export function createGeminiProvider(
           input: { searchAnswer: response.text },
           zodSchema: NewsDiscovery,
           jsonSchema: NEWS_DISCOVERY_JSON_SCHEMA,
+          usageOperation: "search_normalization",
         });
         parsed = normalized.value;
+        usageEvents.push(...(normalized.usageEvents ?? []));
       }
 
       return {
         ...parsed,
         provider: "gemini",
         model: config.model,
+        usageEvents,
       };
     },
   };
