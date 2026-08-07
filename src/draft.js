@@ -14,6 +14,37 @@ export const TelegramDraft = z.object({
   caveat: z.string().min(1).max(500),
 });
 
+export const TELEGRAM_DRAFT_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: "string" },
+    telegramText: { type: "string" },
+    claims: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+          sourceUrl: { type: "string" },
+        },
+        required: ["text", "sourceUrl"],
+      },
+    },
+    sourceUrls: {
+      type: "array",
+      items: { type: "string" },
+    },
+    caveat: { type: "string" },
+  },
+  required: [
+    "headline",
+    "telegramText",
+    "claims",
+    "sourceUrls",
+    "caveat",
+  ],
+};
+
 const VERIFIED_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
 Use only the supplied primary-source evidence. Do not add facts from memory.
 Write like one person explaining the news to another person. Use simple B1
@@ -92,6 +123,7 @@ export function validateGroundedDraft(draft, evidence) {
 }
 
 export async function generateDraft({
+  aiProvider,
   client,
   model,
   repository,
@@ -112,67 +144,51 @@ export async function generateDraft({
   }
   const unverified = evidence.some((item) => !item.primary);
 
-  const response = await client.models.generateContent({
-    model,
-    contents: JSON.stringify({
-      task: "Create one review-ready Telegram article.",
-      article: {
-        title: article.title,
-        url: article.canonical_url,
-        publishedAt: article.published_at,
-      },
-      evidence,
-    }),
-    config: {
+  const input = {
+    task: "Create one review-ready Telegram article.",
+    article: {
+      title: article.title,
+      url: article.canonical_url,
+      publishedAt: article.published_at,
+    },
+    evidence,
+  };
+  let generated;
+  if (aiProvider) {
+    generated = await aiProvider.generateStructured({
       systemInstruction: unverified
         ? UNVERIFIED_SYSTEM_PROMPT
         : VERIFIED_SYSTEM_PROMPT,
-      responseMimeType: "application/json",
-      responseJsonSchema: {
-        type: "object",
-        properties: {
-          headline: { type: "string" },
-          telegramText: { type: "string" },
-          claims: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                text: { type: "string" },
-                sourceUrl: { type: "string" },
-              },
-              required: ["text", "sourceUrl"],
-            },
-          },
-          sourceUrls: {
-            type: "array",
-            items: { type: "string" },
-          },
-          caveat: { type: "string" },
-        },
-        required: [
-          "headline",
-          "telegramText",
-          "claims",
-          "sourceUrls",
-          "caveat",
-        ],
+      input,
+      zodSchema: TelegramDraft,
+      jsonSchema: TELEGRAM_DRAFT_JSON_SCHEMA,
+      schemaName: "telegram_news_draft",
+    });
+  } else {
+    const response = await client.models.generateContent({
+      model,
+      contents: JSON.stringify(input),
+      config: {
+        systemInstruction: unverified
+          ? UNVERIFIED_SYSTEM_PROMPT
+          : VERIFIED_SYSTEM_PROMPT,
+        responseMimeType: "application/json",
+        responseJsonSchema: TELEGRAM_DRAFT_JSON_SCHEMA,
       },
-    },
-  });
-
-  if (!response.text) {
-    throw new Error("Gemini returned no structured draft");
+    });
+    if (!response.text) {
+      throw new Error("Gemini returned no structured draft");
+    }
+    let value;
+    try {
+      value = JSON.parse(response.text);
+    } catch {
+      throw new Error("Gemini returned invalid JSON");
+    }
+    generated = { value, provider: "gemini", model };
   }
 
-  let output;
-  try {
-    output = JSON.parse(response.text);
-  } catch {
-    throw new Error("Gemini returned invalid JSON");
-  }
-
-  const grounded = validateGroundedDraft(output, evidence);
+  const grounded = validateGroundedDraft(generated.value, evidence);
   const draft = unverified
     ? TelegramDraft.parse({
         ...grounded,
@@ -185,7 +201,7 @@ export async function generateDraft({
     article_id: article.id,
     body: draft.telegramText,
     status: "review",
-    model,
+    model: generated.model,
     prompt_version: unverified
       ? "telegram-unverified-trend-v2"
       : "telegram-grounded-v2",
@@ -194,11 +210,17 @@ export async function generateDraft({
       claims: draft.claims,
       source_urls: draft.sourceUrls,
       caveat: draft.caveat,
+      provider: generated.provider,
       verification_status: unverified ? "unverified" : "primary_source",
     }),
     lease_name: lease?.name,
     lease_owner_id: lease?.ownerId,
   });
 
-  return { draft, saved };
+  return {
+    draft,
+    saved,
+    provider: generated.provider,
+    model: generated.model,
+  };
 }

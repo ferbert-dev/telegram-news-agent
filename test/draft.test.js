@@ -133,6 +133,37 @@ test("generateDraft stores a review draft and advances article state", async () 
   assert.equal(writes[0].lease_name, "daily");
 });
 
+test("generateDraft records the provider and actual fallback model", async () => {
+  let stored;
+  const result = await generateDraft({
+    aiProvider: {
+      async generateStructured() {
+        return {
+          value: structuredDraft(),
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        stored = draft;
+        return { id: "draft-provider", ...draft };
+      },
+    },
+    article: {
+      id: "article-provider",
+      title: "Primary announcement",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [{ url: SOURCE_URL, primary: true, text: "Evidence" }],
+  });
+
+  assert.equal(result.provider, "gemini");
+  assert.equal(stored.model, "gemini-2.5-flash");
+  assert.equal(JSON.parse(stored.reviewer_notes).provider, "gemini");
+});
+
 test("generateDraft fails before API use when evidence is not primary", async () => {
   await assert.rejects(
     generateDraft({

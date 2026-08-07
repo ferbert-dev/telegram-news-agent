@@ -91,6 +91,7 @@ export function startPipelineLeaseHeartbeat({
 
 export async function runPipeline({
   repository,
+  aiProvider,
   aiClient,
   model,
   query = "important AI developments",
@@ -133,11 +134,13 @@ export async function runPipeline({
       windowHours,
       fetchFeedImpl,
       fetchArticleImpl,
+      discoveryProvider: aiProvider,
       now,
     });
     heartbeat.assertOwned();
     const selected = research.selected;
     const generated = await generateDraft({
+      aiProvider,
       client: aiClient,
       model,
       repository,
@@ -153,6 +156,8 @@ export async function runPipeline({
       article: selected.article,
       draft: generated.saved,
       preview: generated.draft.telegramText,
+      provider: generated.provider,
+      model: generated.model,
       feedErrors: research.feedErrors,
     };
   } finally {

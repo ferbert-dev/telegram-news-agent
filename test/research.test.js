@@ -129,6 +129,106 @@ test("runResearch persists candidates and completes the run", async () => {
   assert.equal(result.selected.evidenceText, "Extracted primary article evidence.");
 });
 
+test("runResearch falls back to persisted primary RSS evidence when pages block extraction", async () => {
+  let finished;
+  const repository = {
+    async startSearchRun() {
+      return { id: "run-feed-fallback" };
+    },
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(article) {
+      return { id: "article-feed-fallback", ...article };
+    },
+    async saveRawContent() {},
+    async finishSearchRun(_id, details) {
+      finished = details;
+    },
+    async failSearchRun() {},
+  };
+
+  const result = await runResearch({
+    repository,
+    query: "AI news",
+    now: NOW,
+    fetchFeedImpl: async () => [candidate()],
+    fetchArticleImpl: async () => {
+      throw new Error("Primary page request failed with HTTP 403");
+    },
+    retryImpl: (operation) => operation(),
+  });
+
+  assert.equal(result.selected.evidenceKind, "primary_feed_summary");
+  assert.equal(result.selected.evidenceText, candidate().summary);
+  assert.equal(result.extractionErrors.length, 1);
+  assert.equal(
+    finished.metadata.selected_evidence_kind,
+    "primary_feed_summary",
+  );
+});
+
+test("runResearch uses provider web search only when feeds have no recent candidates", async () => {
+  const saved = [];
+  let searchCalls = 0;
+  const repository = {
+    async startSearchRun() {
+      return { id: "run-provider-search" };
+    },
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(article) {
+      saved.push(article);
+      return { id: "article-provider-search", ...article };
+    },
+    async saveRawContent() {},
+    async finishSearchRun() {},
+    async failSearchRun() {},
+  };
+
+  const result = await runResearch({
+    repository,
+    query: "AI news",
+    now: NOW,
+    fetchFeedImpl: async () => [],
+    discoveryProvider: {
+      async searchNews() {
+        searchCalls += 1;
+        return {
+          provider: "gemini",
+          model: "gemini-2.5-flash",
+          items: [
+            {
+              title: "Provider discovery",
+              url: "https://example.com/provider-news",
+              summary: "A verified official-source result.",
+              publishedAt: "2026-06-26T20:00:00Z",
+            },
+            {
+              title: "Unapproved domain",
+              url: "https://aggregator.invalid/story",
+              summary: "This must be rejected.",
+              publishedAt: "2026-06-26T20:00:00Z",
+            },
+          ],
+        };
+      },
+    },
+    fetchArticleImpl: async () => {
+      throw new Error("blocked");
+    },
+    retryImpl: (operation) => operation(),
+  });
+
+  assert.equal(searchCalls, 1);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].metadata.discovery_kind, "gemini_web_search");
+  assert.equal(result.selected.evidenceKind, "primary_feed_summary");
+});
+
 test("runResearch fails closed without primary sources", async () => {
   let failedMessage;
   const repository = {

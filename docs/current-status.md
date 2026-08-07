@@ -34,8 +34,14 @@ Last updated: 2026-08-07
 - Four approved primary-source RSS feeds are seeded by migration: OpenAI,
   Google DeepMind, Google AI, and Microsoft Research.
 - The Node runtime now supports source management, 48-hour research and
-  ranking, grounded Gemini draft generation, explicit approval, and idempotent
-  Telegram publication.
+  ranking, extensible OpenAI/Gemini generation with ordered fallback, explicit
+  approval, and idempotent Telegram publication.
+- RSS is the first discovery path. AI-provider web search is available when
+  approved feeds have no recent candidates, with an allowlist check against
+  configured primary-source domains.
+- When an approved publisher blocks primary-page extraction, the pipeline can
+  use its already-persisted RSS summary as reduced first-party evidence instead
+  of failing before draft generation.
 - The production database has atomic draft workflow functions and an expiring
   pipeline lease to prevent concurrent scheduled runs.
 - Live research verification succeeded on 2026-06-27:
@@ -82,7 +88,7 @@ Scheduled routine
 1. Use the operating loop in `docs/agent-operating-manual.md` for every new task.
 2. Add the local PostgreSQL `DATABASE_URL` to `.env`. Never commit database
    credentials.
-3. Add `GEMINI_API_KEY` to local `.env`.
+3. Add at least one of `OPENAI_API_KEY` or `GEMINI_API_KEY` to local `.env`.
 4. Add the Notion HTTP integration values `NOTION_API_KEY`,
    `NOTION_AGENT_RUNS_DATA_SOURCE_ID`, and `NOTION_PIPELINE_AGENT_PAGE_ID`.
 5. Run `npm run pipeline:run`, review the generated draft, and publish it with
@@ -94,6 +100,9 @@ Scheduled routine
 ```text
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHANNEL_ID=
+AI_PROVIDER_ORDER=openai,gemini
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.6
 GEMINI_API_KEY=
 NOTION_API_KEY=
 NOTION_AGENT_RUNS_DATA_SOURCE_ID=8eef7282-532e-4cf9-b309-bf09f9e9afeb

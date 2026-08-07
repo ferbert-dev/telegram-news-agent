@@ -61,6 +61,9 @@ TELEGRAM_CHANNEL_ID=<channel-id-or-handle>
 TELEGRAM_UPDATE_MODE=polling
 TELEGRAM_POLLING_MIGRATE_WEBHOOK=false
 APPROVAL_POLICY=manual
+AI_PROVIDER_ORDER=openai,gemini
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.6
 GEMINI_API_KEY=<secret>
 GEMINI_MODEL=gemini-2.5-flash
 NOTION_API_KEY=<secret>
@@ -68,6 +71,11 @@ NOTION_AGENT_RUNS_DATA_SOURCE_ID=<id>
 NOTION_PIPELINE_AGENT_PAGE_ID=<id>
 NOTION_PIPELINE_TICKET_PAGE_ID=
 ```
+
+At least one provider key must be non-empty. With the order above, OpenAI is
+used when configured and healthy; otherwise the bot automatically continues
+with Gemini. Leaving `OPENAI_API_KEY` empty is valid. Keep provider keys only in
+this secret, never in the repository.
 
 Generate both database passwords independently. Hex values avoid URL-encoding
 ambiguity in the internal PostgreSQL connection string. `DATABASE_URL` is not

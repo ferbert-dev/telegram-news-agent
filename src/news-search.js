@@ -14,6 +14,7 @@ const SEARCH_TIERS = [
 export async function runTieredNewsSearch({
   runWorkflow,
   repository,
+  aiProvider,
   aiClient,
   model,
 }) {
@@ -24,6 +25,7 @@ export async function runTieredNewsSearch({
       const result = await runWorkflow({
         approvalPolicy: "manual",
         repository,
+        aiProvider,
         aiClient,
         model,
         query: tier.query,
@@ -53,6 +55,7 @@ export async function runTieredNewsSearch({
 export async function runCheckpointedNewsSearch({
   updateId,
   repository,
+  aiProvider,
   aiClient,
   model,
   runWorkflow,
@@ -72,6 +75,7 @@ export async function runCheckpointedNewsSearch({
     const { result, tier } = await runTieredNewsSearch({
       runWorkflow,
       repository,
+      aiProvider,
       aiClient,
       model,
     });
