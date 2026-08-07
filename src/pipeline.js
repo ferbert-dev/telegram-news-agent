@@ -120,6 +120,7 @@ export async function runPipeline({
   setIntervalImpl,
   clearIntervalImpl,
   newsSettings,
+  editor,
 }) {
   const normalizedSettings = normalizeNewsSettings(newsSettings);
   const settingsSnapshot = newsSettingsSnapshot(normalizedSettings);
@@ -167,6 +168,7 @@ export async function runPipeline({
       lease: { name: leaseName, ownerId },
       languageCode: normalizedSettings.languageCode,
       newsSettings: settingsSnapshot,
+      editor,
     });
     heartbeat.assertOwned();
 

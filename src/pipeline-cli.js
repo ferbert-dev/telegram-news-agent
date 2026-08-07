@@ -9,6 +9,7 @@ import {
 } from "./notion-audit.js";
 import { getTelegramConfig } from "./telegram.js";
 import { getApprovalPolicy, runWorkflow } from "./workflow.js";
+import { getNewsEditor } from "./editor.js";
 
 function value(args, name, fallback) {
   const index = args.indexOf(name);
@@ -29,6 +30,7 @@ const query = value(args, "--query", "important AI developments");
 const approvalPolicy = getApprovalPolicy();
 const auditLogger = new NotionAuditLogger(getNotionAuditConfig());
 const repository = new NewsRepository(createDatabaseClient());
+const editor = getNewsEditor();
 await backfillNotionAudits(auditLogger, repository);
 const result = await withNotionAudit(
   auditLogger,
@@ -47,6 +49,7 @@ const result = await withNotionAudit(
       query,
       keywords,
       windowHours,
+      editor,
       telegram:
         approvalPolicy === "automatic" ? getTelegramConfig() : undefined,
     });

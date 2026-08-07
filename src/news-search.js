@@ -15,6 +15,7 @@ export async function runTieredNewsSearch({
   settings,
   telegram,
   sendMessage,
+  editor,
 }) {
   let lastEmptyResult;
   const normalizedSettings = normalizeNewsSettings(settings);
@@ -34,6 +35,7 @@ export async function runTieredNewsSearch({
         keywords: tier.keywords,
         windowHours: tier.windowHours,
         newsSettings: settingsSnapshot,
+        editor,
       });
       return { result, tier };
     } catch (error) {
@@ -58,6 +60,7 @@ export async function runCheckpointedNewsSearch({
   telegram,
   sendMessage,
   publishDraft = publishApprovedDraft,
+  editor,
 }) {
   const existing = await repository.getTelegramNewsCheckpoint(updateId);
   if (existing) {
@@ -104,6 +107,7 @@ export async function runCheckpointedNewsSearch({
       settings: pipelineSettings,
       telegram,
       sendMessage,
+      editor,
     });
     const checkpoint = await repository.saveTelegramNewsCheckpoint({
       update_id: updateId,

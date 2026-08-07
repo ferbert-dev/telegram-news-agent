@@ -233,8 +233,25 @@ export function renderSettingsText(
   ].join("\n");
 }
 
-function button(text, action, value, version) {
-  return { text, callback_data: createSettingsCallback(action, value, version) };
+export function renderAppliedSettingsText(
+  row,
+  { timeZone = DEFAULT_SETTINGS_TIME_ZONE } = {},
+) {
+  const summary = renderSettingsText(row, { timeZone })
+    .replace("News settings\n✅ Settings saved and active", "✅ Settings applied")
+    .replace(
+      "Each change is applied immediately.",
+      "The settings menu is closed. Send /settings to change them again.",
+    );
+  return summary;
+}
+
+function button(text, action, value, version, style = null) {
+  return {
+    text,
+    callback_data: createSettingsCallback(action, value, version),
+    ...(style ? { style } : {}),
+  };
 }
 
 function rowsOfTwo(buttons) {
@@ -273,10 +290,19 @@ export function renderSettingsKeyboard(row, page = "home") {
             selected.has(topic.code) ? "topic_remove" : "topic_add",
             topic.code,
             version,
+            selected.has(topic.code) ? "primary" : null,
           ),
         ),
       ),
-      [button("🌈 Broad mix", "topics_all", "all", version)],
+      [
+        button(
+          "🌈 Broad mix",
+          "topics_all",
+          "all",
+          version,
+          selected.size === topicEntries.length ? "success" : null,
+        ),
+      ],
       [button("‹ Back", "view", "home", version)],
     ];
   }
@@ -372,7 +398,15 @@ export function renderSettingsKeyboard(row, page = "home") {
     [button("3 · Custom topics", "view", "custom", version)],
     [button("4 · Publishing", "view", "approval", version)],
     [button("5 · Frequency", "view", "frequency", version)],
-    [button("✅ All changes applied", "status", "applied", version)],
+    [
+      button(
+        "✅ Apply & close settings",
+        "status",
+        "applied",
+        version,
+        "success",
+      ),
+    ],
   ];
 }
 
@@ -387,6 +421,7 @@ async function editSettingsMessage({
   messageId,
   settings,
   page = "home",
+  close = false,
 }) {
   const pageNotice =
     page === "automatic"
@@ -396,12 +431,24 @@ async function editSettingsMessage({
       : page === "frequency"
         ? "\n\nCost note: every-hour search can consume provider and web-search credits quickly."
         : "";
-  await callTelegram(token, "editMessageText", {
-    chat_id: chatId,
-    message_id: messageId,
-    text: `${renderSettingsText(settings)}${pageNotice}`,
-    reply_markup: telegramMarkup(settings, page),
-  });
+  try {
+    await callTelegram(token, "editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text: close
+        ? renderAppliedSettingsText(settings)
+        : `${renderSettingsText(settings)}${pageNotice}`,
+      reply_markup: close
+        ? { inline_keyboard: [] }
+        : telegramMarkup(settings, page),
+    });
+    return true;
+  } catch (error) {
+    if (/message is not modified/i.test(error?.message ?? "")) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function updatePayload(settings, changes, { channelId, chatId, userId, version }) {
@@ -471,8 +518,16 @@ export async function handleSettingsCallback(
     const current = normalizeSettings(currentRow);
 
     if (parsed.action === "status") {
-      await answer("Settings are saved and active.");
-      return { auditResult: "Confirmed that news settings are saved and active." };
+      await editSettingsMessage({
+        token,
+        callTelegram,
+        chatId,
+        messageId,
+        settings: currentRow,
+        close: true,
+      });
+      await answer("Settings applied. Menu closed.");
+      return { auditResult: "Confirmed settings and closed the settings menu." };
     }
 
     if (parsed.action === "view") {

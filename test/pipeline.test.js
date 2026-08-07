@@ -182,6 +182,7 @@ test("runPipeline carries configured topics and language through research and dr
   const result = await runPipeline({
     repository,
     aiProvider,
+    editor: { key: "anna", name: "Anna Beispiel" },
     ownerId: "00000000-0000-4000-8000-000000000001",
     newsSettings: {
       languageCode: "de",
@@ -210,6 +211,7 @@ test("runPipeline carries configured topics and language through research and dr
   assert.equal(searchRequest.languageCode, "de");
   assert.deepEqual(searchRequest.topicCodes, ["ai", "nature"]);
   assert.match(draftRequest.systemInstruction, /in German/);
+  assert.match(result.preview, /aufbereitet von Anna Beispiel/);
   assert.equal(result.settings.version, 5);
   assert.equal(result.settings.languageCode, "de");
 });

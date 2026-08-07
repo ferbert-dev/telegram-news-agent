@@ -1,5 +1,13 @@
 import { sendTelegramMessage, TelegramError } from "./telegram.js";
 
+function editorFromDraft(draft) {
+  try {
+    return JSON.parse(draft.reviewer_notes ?? "{}")?.editor ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function publishApprovedDraft({
   repository,
   token,
@@ -46,6 +54,7 @@ export async function publishApprovedDraft({
       metadata: {
         bot_message_date: sent.date ?? null,
         approval: "database_approved",
+        editor: editorFromDraft(draft),
       },
     });
   } catch (error) {

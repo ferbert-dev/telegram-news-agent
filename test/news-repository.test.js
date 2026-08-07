@@ -281,3 +281,72 @@ test("settings input and scheduler repository methods preserve bindings", async 
     ["select public.has_pending_telegram_review($1) as value", ["@channel"]],
   ]);
 });
+
+test("AI usage ledger records provider metrics and returns a daily dashboard", async () => {
+  const calls = [];
+  const repository = new NewsRepository({
+    async query(text, parameters) {
+      calls.push([text, parameters]);
+      if (text.includes("insert into public.ai_usage_events")) {
+        return { rows: [{ id: "usage-1", provider: parameters[0] }] };
+      }
+      if (text.includes("priced_request_count")) {
+        return {
+          rows: [
+            {
+              request_count: "1",
+              input_tokens: "100",
+              estimated_cost_usd: "0.01000000",
+            },
+          ],
+        };
+      }
+      return {
+        rows: [
+          {
+            telegram_message_id: "42",
+            editor_name: "Михаил Онест",
+            estimated_cost_usd: "0.01000000",
+          },
+        ],
+      };
+    },
+  });
+
+  const usage = await repository.recordAiUsage({
+    provider: "openai",
+    providerResponseId: "resp_1",
+    model: "gpt-5.4-2026-03-05",
+    operation: "news_search",
+    telegramChannelId: "@channel",
+    searchRunId: "00000000-0000-4000-8000-000000000001",
+    inputTokens: 100,
+    outputTokens: 50,
+    webSearchCalls: 1,
+    estimatedCostUsd: 0.01075,
+    pricingSnapshot: { tier: "standard" },
+  });
+  const dashboard = await repository.getDailyUsageDashboard({
+    channelId: "@channel",
+    now: "2026-08-07T14:00:00.000Z",
+  });
+
+  assert.equal(usage.id, "usage-1");
+  assert.equal(calls[0][1][0], "openai");
+  assert.equal(calls[0][1][1], "resp_1");
+  assert.equal(calls[0][1][7], 100);
+  assert.equal(calls[0][1][11], 1);
+  assert.equal(dashboard.summary.request_count, "1");
+  assert.equal(dashboard.posts[0].editor_name, "Михаил Онест");
+  assert.deepEqual(calls[1][1], [
+    "@channel",
+    "2026-08-07T14:00:00.000Z",
+    "Europe/Madrid",
+  ]);
+  assert.deepEqual(calls[2][1], [
+    "@channel",
+    "2026-08-07T14:00:00.000Z",
+    "Europe/Madrid",
+    5,
+  ]);
+});

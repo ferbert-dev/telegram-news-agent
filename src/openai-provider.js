@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { NewsDiscovery } from "./ai-news-discovery.js";
+import { openAiUsageEvent } from "./ai-usage.js";
 import { LANGUAGE_OPTIONS } from "./news-settings.js";
 
 const OPENAI_REASONING_EFFORTS = new Set([
@@ -47,6 +48,7 @@ export function createOpenAiProvider(
       input,
       zodSchema,
       schemaName,
+      usageOperation = "structured_generation",
     }) {
       const response = await openai.responses.parse({
         model: config.model,
@@ -67,6 +69,12 @@ export function createOpenAiProvider(
         value: response.output_parsed,
         provider: "openai",
         model: config.model,
+        usageEvents: [
+          openAiUsageEvent(response, {
+            model: config.model,
+            operation: usageOperation,
+          }),
+        ].filter(Boolean),
       };
     },
 
@@ -122,6 +130,12 @@ export function createOpenAiProvider(
         ...response.output_parsed,
         provider: "openai",
         model: config.model,
+        usageEvents: [
+          openAiUsageEvent(response, {
+            model: config.model,
+            operation: "news_search",
+          }),
+        ].filter(Boolean),
       };
     },
   };

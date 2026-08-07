@@ -48,6 +48,8 @@ OPENAI_MODEL=gpt-5.4-2026-03-05
 OPENAI_REASONING_EFFORT=medium
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
+NEWS_EDITOR_KEY=mikhail-onest
+NEWS_EDITOR_NAME=Михаил Онест
 NOTION_API_KEY=
 NOTION_AGENT_RUNS_DATA_SOURCE_ID=8eef7282-532e-4cf9-b309-bf09f9e9afeb
 NOTION_PIPELINE_AGENT_PAGE_ID=38bd7885-0eab-81f4-9879-e8b4b990e314
@@ -128,7 +130,11 @@ topic mix, English, review required, and automatic search paused. Enabling
 automatic publication requires a separate confirmation screen. Selecting the
 one-hour interval can consume provider search/tool credits quickly. Every menu
 change is saved and applied immediately; the home screen and selected-option
-checkmarks show the active configuration. Scheduler timestamps remain stored
+checkmarks show the active configuration. Selected topics use Telegram's native
+colored inline-button styles. `Apply & close settings` replaces the menu with a
+read-only summary of the applied values. Duplicate rapid taps that result in
+Telegram's harmless `message is not modified` response are acknowledged instead
+of blocking the polling queue. Scheduler timestamps remain stored
 as PostgreSQL `timestamptz` values and are displayed in `Europe/Madrid` with
 automatic CET/CEST daylight-saving handling.
 
@@ -138,6 +144,22 @@ administrator or creator of `TELEGRAM_CHANNEL_ID`. In review-required mode the
 bot creates a 24-hour opaque session bound to the private chat and preview
 message. Publish and Reject are atomic decisions; publication retains the
 existing idempotency and reconciliation behavior.
+
+Send `/stats` in the same private admin chat to see today's API requests,
+input/cached/output/reasoning tokens, web-search calls, estimated list cost, and
+the latest published posts with their editor and per-post estimate. Usage is
+stored per provider response in PostgreSQL. OpenAI estimates use the checked-in
+standard-price snapshot and count web search separately; unsupported provider
+prices remain unpriced instead of being guessed. Free data-sharing allowances,
+credits, taxes, and account-level adjustments are not exposed per API response,
+so the dashboard labels the amount as an estimate rather than the actual bill.
+The current source for the snapshot is the official
+[OpenAI API pricing page](https://developers.openai.com/api/docs/pricing).
+
+New drafts include a localized editorial credit for `NEWS_EDITOR_NAME` and store
+the stable `NEWS_EDITOR_KEY` in draft/publication metadata. The defaults identify
+the first editor as `Михаил Онест`; changing both environment values later adds
+a distinct editor identity without rewriting historical posts.
 
 The embedded scheduler polls for due database rows and atomically claims one
 run at a time. It rereads a complete configuration snapshot before each search,
