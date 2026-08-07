@@ -10,6 +10,10 @@ the bot; it does not build application images.
 The Telegram bot uses long polling, so neither the bot nor PostgreSQL needs an
 inbound internet port. Only SSH is required for this deployment design.
 
+A checked-in migration seeds the four approved primary RSS sources: OpenAI
+News, Google DeepMind, Google AI, and Microsoft Research. Each feed was live
+and parseable when this deployment was prepared.
+
 ## One-time Oracle bootstrap
 
 Copy `ops/bootstrap-oracle.sh` to the instance and run it once:
