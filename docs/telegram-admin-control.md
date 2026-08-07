@@ -32,9 +32,10 @@ The process has a 30-second hard deadline.
 
 The same process runs the persistent news scheduler. Send `/settings` in a
 private admin chat to choose language, preset/custom topics, publishing policy,
-and frequency. The choices are stored in `news_bot_settings`, and every manual
+frequency, and the night pause. The choices are stored in `news_bot_settings`, and every manual
 or scheduled run reads one complete versioned snapshot before research begins.
-The safe default is English + broad topics + review required + paused.
+The safe default is English + broad topics + review required + paused + night
+pause enabled from 22:00 to 08:00 Europe/Madrid.
 Every menu choice is persisted immediately. The menu shows a saved/active
 status and marks the currently selected interval; there is no separate batch
 of unsaved settings. `next_run_at` remains a PostgreSQL `timestamptz`, while
@@ -59,6 +60,14 @@ prevents the scheduler from creating another draft. Custom topic input
 is accepted only as a private ForceReply response to the exact expiring prompt;
 labels are limited to 2-80 characters, five custom topics, and twelve topics in
 total.
+
+When the night pause is enabled, PostgreSQL moves due scheduled work to the
+next 08:00 using the `Europe/Madrid` calendar, including CET/CEST changes. The
+scheduler checks the window before research, after saving a draft, and again
+immediately before a Telegram delivery. Research that crosses 22:00 therefore
+keeps its checkpointed draft for the morning instead of paying to research the
+same occurrence again. Explicit admin `/news` and Publish actions remain manual
+overrides and are not blocked by the scheduled pause.
 
 Automatic publication is intentionally a two-step setting. Once confirmed, a
 successful scheduled run publishes directly to `TELEGRAM_CHANNEL_ID` and sends
@@ -95,7 +104,8 @@ Before production use, verify:
 5. Restart redelivery, webhook conflict, `409` polling conflict, and shutdown.
 6. Notion start failure and finalization outbox recovery.
 7. EN/UK/DE output, topic add/remove, custom-topic expiry, stale settings
-   callbacks, each interval, restart recovery, and auto-publish confirmation.
+   callbacks, each interval, night-pause boundaries, restart recovery, and
+   auto-publish confirmation.
 8. Article-tag Off/Collect/Enabled behavior, stale Labs callbacks, localized
    hashtags, and rejection of model-created tag codes.
 

@@ -111,6 +111,7 @@ test(
       assert.equal(defaultSettings.schedule_interval_minutes, null);
       assert.equal(defaultSettings.language_code, "en");
       assert.equal(defaultSettings.approval_policy, "manual");
+      assert.equal(defaultSettings.quiet_hours_enabled, true);
       assert.deepEqual(defaultSettings.topic_codes, [
         "ai",
         "world",
@@ -165,11 +166,13 @@ test(
         topicCodes: ["world", "nature"],
         customTopics: ["Ocean exploration"],
         approvalPolicy: "automatic",
+        quietHoursEnabled: false,
         updatedBy: settingsUserId,
         expectedVersion: defaultSettings.version,
       });
       assert.equal(updatedSettings.version, defaultSettings.version + 1);
       assert.equal(updatedSettings.language_code, "de");
+      assert.equal(updatedSettings.quiet_hours_enabled, false);
       assert.equal(
         await repository.updateNewsSettings({
           channelId: settingsChannel,
@@ -179,6 +182,7 @@ test(
           topicCodes: ["history"],
           customTopics: [],
           approvalPolicy: "manual",
+          quietHoursEnabled: true,
           updatedBy: settingsUserId,
           expectedVersion: defaultSettings.version,
         }),

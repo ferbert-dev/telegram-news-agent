@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { normalizeNewsSettings } from "./news-settings.js";
+import { shouldDeferScheduledNews } from "./quiet-hours.js";
 import { NoResearchCandidatesError } from "./research.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
@@ -129,6 +130,35 @@ function draftForClaim(claim) {
   };
 }
 
+async function deferForQuietHours({
+  repository,
+  claim,
+  settings,
+  heartbeat,
+  now,
+}) {
+  if (!shouldDeferScheduledNews(settings, now())) {
+    return null;
+  }
+  await heartbeat.stop();
+  const deferred = await repository.deferNewsScheduleForQuietHours({
+    channelId: claim.telegram_channel_id,
+    claimToken: claim.schedule_claim_token,
+  });
+  if (!deferred) {
+    throw new Error("Scheduled news claim was lost before quiet-hours deferral");
+  }
+  return { status: "quiet_hours_deferred", settings };
+}
+
+function deferredDraftResult(deferral, scheduledDraft) {
+  return {
+    ...deferral,
+    draftId: scheduledDraft.id,
+    windowHours: scheduledDraft.windowHours,
+  };
+}
+
 async function executeClaim({
   repository,
   claim,
@@ -139,7 +169,17 @@ async function executeClaim({
   notifyAdmin,
   log,
   heartbeat,
+  now,
 }) {
+  const earlyDeferral = await deferForQuietHours({
+    repository,
+    claim,
+    settings,
+    heartbeat,
+    now,
+  });
+  if (earlyDeferral) return earlyDeferral;
+
   let scheduledDraft = draftForClaim(claim);
   if (
     settings.approvalPolicy === "manual" &&
@@ -179,8 +219,29 @@ async function executeClaim({
     }
   }
 
+  const deliveryDeferral = await deferForQuietHours({
+    repository,
+    claim,
+    settings,
+    heartbeat,
+    now,
+  });
+  if (deliveryDeferral) {
+    return deferredDraftResult(deliveryDeferral, scheduledDraft);
+  }
+
   if (settings.approvalPolicy === "manual") {
     await heartbeat.renew();
+    const renewedDeferral = await deferForQuietHours({
+      repository,
+      claim,
+      settings,
+      heartbeat,
+      now,
+    });
+    if (renewedDeferral) {
+      return deferredDraftResult(renewedDeferral, scheduledDraft);
+    }
     let delivery;
     try {
       delivery = await deliverReviewDraft({
@@ -210,6 +271,16 @@ async function executeClaim({
   let publicationMessageId = claim.schedule_publication_message_id;
   if (!publicationMessageId) {
     await heartbeat.renew();
+    const renewedDeferral = await deferForQuietHours({
+      repository,
+      claim,
+      settings,
+      heartbeat,
+      now,
+    });
+    if (renewedDeferral) {
+      return deferredDraftResult(renewedDeferral, scheduledDraft);
+    }
     const published = await publishDraft({ draftId: scheduledDraft.id });
     publicationMessageId = published.publication.telegram_message_id;
     await requireSaved(() =>
@@ -255,6 +326,7 @@ export async function runScheduledNewsOnce({
   claimHeartbeatIntervalMs,
   setIntervalImpl,
   clearIntervalImpl,
+  now = () => new Date(),
 }) {
   const claim = await repository.claimDueNewsSchedule({
     claimToken,
@@ -286,6 +358,7 @@ export async function runScheduledNewsOnce({
         notifyAdmin,
         log,
         heartbeat,
+        now,
       }),
     );
   } catch (error) {

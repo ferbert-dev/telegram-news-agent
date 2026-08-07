@@ -16,6 +16,7 @@ test("news settings normalize safe defaults and supported options", () => {
   assert.equal(settings.languageCode, "en");
   assert.equal(settings.scheduleIntervalMinutes, null);
   assert.equal(settings.approvalPolicy, "manual");
+  assert.equal(settings.quietHoursEnabled, true);
   assert.deepEqual(settings.topicCodes, DEFAULT_TOPIC_CODES);
   assert.deepEqual(Object.keys(LANGUAGE_OPTIONS), ["en", "uk", "de"]);
   assert.deepEqual(SCHEDULE_INTERVAL_MINUTES, [60, 360, 720, 1440]);
@@ -31,6 +32,7 @@ test("news settings normalize a persisted database row", () => {
     topic_codes: ["nature", "animals", "nature"],
     custom_topics: ["  Космічні дослідження  "],
     approval_policy: "AUTOMATIC",
+    quiet_hours_enabled: false,
     next_run_at: "2026-08-08T06:00:00+02:00",
     version: 7,
     updated_by: 99,
@@ -44,6 +46,7 @@ test("news settings normalize a persisted database row", () => {
     topicCodes: ["nature", "animals"],
     customTopics: ["Космічні дослідження"],
     approvalPolicy: "automatic",
+    quietHoursEnabled: false,
     nextRunAt: "2026-08-08T04:00:00.000Z",
     version: 7,
     updatedBy: 99,

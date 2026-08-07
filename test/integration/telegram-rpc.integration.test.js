@@ -63,6 +63,38 @@ test(
     const cleanup = [];
 
     try {
+      await t.test("night-pause helpers honor Madrid time and DST", async () => {
+        const boundaries = await one(
+          db,
+          `select
+             public.is_news_quiet_hours('2026-08-07T19:59:59Z') as summer_before,
+             public.is_news_quiet_hours('2026-08-07T20:00:00Z') as summer_start,
+             public.is_news_quiet_hours('2026-08-08T05:59:59Z') as summer_before_end,
+             public.is_news_quiet_hours('2026-08-08T06:00:00Z') as summer_end,
+             public.is_news_quiet_hours('2026-01-15T21:00:00Z') as winter_start,
+             public.next_allowed_news_schedule_at('2026-08-07T22:30:00Z', true) as summer_next,
+             public.next_allowed_news_schedule_at('2026-01-15T22:30:00Z', true) as winter_next,
+             public.next_allowed_news_schedule_at('2026-08-07T22:30:00Z', false) as disabled_next`,
+        );
+        assert.equal(boundaries.summer_before, false);
+        assert.equal(boundaries.summer_start, true);
+        assert.equal(boundaries.summer_before_end, true);
+        assert.equal(boundaries.summer_end, false);
+        assert.equal(boundaries.winter_start, true);
+        assert.equal(
+          new Date(boundaries.summer_next).toISOString(),
+          "2026-08-08T06:00:00.000Z",
+        );
+        assert.equal(
+          new Date(boundaries.winter_next).toISOString(),
+          "2026-01-16T07:00:00.000Z",
+        );
+        assert.equal(
+          new Date(boundaries.disabled_next).toISOString(),
+          "2026-08-07T22:30:00.000Z",
+        );
+      });
+
       await t.test("session expiry and message binding fail closed", async () => {
         const expired = await createReviewFixture(db, randomUUID());
         cleanup.push(["review", expired.session.id, expired.article.id]);
@@ -268,7 +300,7 @@ test(
         );
 
         await db.query(
-          "update public.news_bot_settings set next_run_at = $1 where telegram_channel_id = $2",
+          "update public.news_bot_settings set quiet_hours_enabled = false, next_run_at = $1 where telegram_channel_id = $2",
           [new Date("2000-01-01T00:00:00Z"), channelId],
         );
         const pipelineOwner = randomUUID();
@@ -362,7 +394,7 @@ test(
 
         const changedDuringRun = await one(
           db,
-          "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+          "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
           [
             channelId,
             101,
@@ -371,6 +403,7 @@ test(
             ["history"],
             [],
             "automatic",
+            false,
             303,
             recovered.version,
           ],
@@ -430,8 +463,8 @@ test(
         );
         const enabled = await one(
           db,
-          "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-          [channelId, 101, 60, "en", ["world"], [], "automatic", 303, created.version],
+          "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+          [channelId, 101, 60, "en", ["world"], [], "automatic", false, 303, created.version],
         );
         await db.query(
           "update public.news_bot_settings set next_run_at = now() - interval '1 minute' where telegram_channel_id = $1",
