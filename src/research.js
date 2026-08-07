@@ -1,5 +1,10 @@
 import { fetchArticle } from "./article-extractor.js";
-import { canonicalizeUrl, fetchFeed, hashText } from "./feed.js";
+import {
+  assertPublicHttpUrl,
+  canonicalizeUrl,
+  fetchFeed,
+  hashText,
+} from "./feed.js";
 import { fetchRedditDiscoveries } from "./reddit.js";
 import { withRetry } from "./retry.js";
 
@@ -38,6 +43,20 @@ function sourceHostname(source) {
   return null;
 }
 
+function webSourceForUrl(value) {
+  const url = new URL(value);
+  const hostname = url.hostname.toLowerCase();
+  return {
+    id: null,
+    name: hostname.replace(/^www\./, ""),
+    homepage_url: url.origin,
+    feed_url: null,
+    source_type: "website",
+    reliability_score: 80,
+    is_primary: false,
+  };
+}
+
 export function matchPrimarySource(url, sources) {
   const hostname = new URL(url).hostname.toLowerCase();
   return sources.find((source) => {
@@ -65,7 +84,12 @@ export function scoreCandidate(
   const recency = Math.max(0, 30 - Math.min(30, ageHours * 0.625));
   const primary = source.is_primary ? 30 : 0;
 
-  const discovery = candidate.discoveryKind === "reddit" ? 5 : 0;
+  const discovery =
+    candidate.discoveryKind === "reddit"
+      ? 5
+      : candidate.discoveryKind?.endsWith("_web_search")
+        ? Math.max(20, 40 - (candidate.searchRank ?? 0) * 4)
+        : 0;
 
   return Number(
     (
@@ -218,45 +242,68 @@ export async function runResearch({
     });
     let providerDiscovery = null;
 
-    if (!ranked.length && discoveryProvider?.searchNews) {
-      const allowedDomains = [
-        ...new Set(primarySources.map(sourceHostname).filter(Boolean)),
-      ];
+    if (discoveryProvider?.searchNews) {
       try {
         providerDiscovery = await discoveryProvider.searchNews({
           query,
           windowHours,
-          allowedDomains,
           limit: 8,
         });
-        const providerCandidates = providerDiscovery.items.flatMap((item) => {
-          const source = matchPrimarySource(item.url, primarySources);
-          if (!source) {
-            return [];
-          }
-          const canonicalUrl = canonicalizeUrl(item.url);
-          const publishedAt = item.publishedAt
-            ? new Date(item.publishedAt)
-            : null;
-          return [
-            {
-              title: item.title,
-              canonicalUrl,
-              author: item.author ?? null,
-              publishedAt:
-                publishedAt && !Number.isNaN(publishedAt.valueOf())
-                  ? publishedAt.toISOString()
-                  : null,
-              summary: item.summary,
-              contentHash: hashText(
-                [canonicalUrl, item.title, item.summary].join("\n"),
-              ),
-              source,
-              discoveryKind: `${providerDiscovery.provider}_web_search`,
-            },
-          ];
-        });
-        ranked = rankCandidates(providerCandidates, {
+        const seenWebPublishers = new Set();
+        const providerCandidates = providerDiscovery.items.flatMap(
+          (item, searchRank) => {
+            let canonicalUrl;
+            let source;
+            try {
+              canonicalUrl = canonicalizeUrl(
+                assertPublicHttpUrl(item.url).toString(),
+              );
+              source =
+                matchPrimarySource(canonicalUrl, primarySources) ??
+                webSourceForUrl(canonicalUrl);
+              const publisherHost = new URL(canonicalUrl).hostname.replace(
+                /^www\./,
+                "",
+              );
+              if (!source.is_primary && seenWebPublishers.has(publisherHost)) {
+                return [];
+              }
+              if (!source.is_primary) {
+                seenWebPublishers.add(publisherHost);
+              }
+            } catch {
+              return [];
+            }
+            const publishedAt = item.publishedAt
+              ? new Date(item.publishedAt)
+              : null;
+            return [
+              {
+                title: item.title,
+                canonicalUrl,
+                author: item.author ?? null,
+                publishedAt:
+                  publishedAt && !Number.isNaN(publishedAt.valueOf())
+                    ? publishedAt.toISOString()
+                    : null,
+                summary: item.summary,
+                contentHash: hashText(
+                  [canonicalUrl, item.title, item.summary].join("\n"),
+                ),
+                source,
+                publisher: source.is_primary
+                  ? source.name
+                  : new URL(canonicalUrl).hostname.replace(/^www\./, ""),
+                verificationStatus: source.is_primary
+                  ? "primary_source"
+                  : "web_source",
+                searchRank,
+                discoveryKind: `${providerDiscovery.provider}_web_search`,
+              },
+            ];
+          },
+        );
+        ranked = rankCandidates([...candidates, ...providerCandidates], {
           now,
           keywords,
           windowHours,
@@ -270,12 +317,19 @@ export async function runResearch({
 
     if (!ranked.length) {
       throw new NoResearchCandidatesError(
-        "No recent primary-source candidates were found",
+        "No recent news candidates were found",
       );
     }
 
     const articles = [];
     for (const candidate of ranked) {
+      const verificationStatus =
+        candidate.verificationStatus ??
+        (candidate.unverified
+          ? "unverified_community"
+          : candidate.source.is_primary
+            ? "primary_source"
+            : "web_source");
       const article = await repository.createOrResumeArticleCandidate({
         source_id: candidate.source.id,
         search_run_id: run.id,
@@ -289,9 +343,9 @@ export async function runResearch({
           feed_summary: candidate.summary,
           research_score: candidate.score,
           primary_source: candidate.source.is_primary,
-          verification_status: candidate.unverified
-            ? "unverified"
-            : "primary_source",
+          verification_status: verificationStatus,
+          publisher: candidate.publisher ?? candidate.source.name,
+          search_rank: candidate.searchRank ?? null,
           discovery_kind: candidate.discoveryKind ?? "primary_feed",
           discovery_url: candidate.discoveryUrl ?? null,
         },
@@ -304,27 +358,27 @@ export async function runResearch({
         content: candidate.summary || candidate.title,
         content_type: "text",
         language_code: "en",
-        extractor: "rss",
+        extractor: "discovery-summary",
         content_hash: candidate.contentHash,
         metadata: {
           source_url: candidate.canonicalUrl,
-          extraction_kind: "feed_summary",
+          extraction_kind: "discovery_summary",
           discovery_url: candidate.discoveryUrl ?? null,
         },
       });
-      articles.push({ ...candidate, article });
+      articles.push({ ...candidate, verificationStatus, article });
     }
 
     if (!articles.length) {
       throw new NoResearchCandidatesError(
-        "No new primary-source articles were found",
+        "No new news articles were found",
       );
     }
 
     const extractionErrors = [];
     let selected = null;
     for (const candidate of articles) {
-      if (candidate.unverified) {
+      if (candidate.verificationStatus === "unverified_community") {
         selected = {
           ...candidate,
           evidenceText: candidate.summary || candidate.title,
@@ -341,12 +395,16 @@ export async function runResearch({
           content: extracted.text,
           content_type: "text",
           language_code: "en",
-          extractor: "primary-html",
+          extractor: candidate.source.is_primary
+            ? "primary-html"
+            : "web-html",
           content_hash: extracted.contentHash,
           metadata: {
             source_url: candidate.canonicalUrl,
             final_url: extracted.finalUrl,
-            extraction_kind: "primary_article_text",
+            extraction_kind: candidate.source.is_primary
+              ? "primary_article_text"
+              : "web_article_text",
           },
         });
         selected = { ...candidate, evidenceText: extracted.text };
@@ -357,6 +415,22 @@ export async function runResearch({
           source_url: candidate.canonicalUrl,
           error: error instanceof Error ? error.message : String(error),
         });
+      }
+    }
+
+    if (!selected) {
+      const webSearchFallback = articles.find(
+        (candidate) =>
+          candidate.verificationStatus === "web_source" &&
+          String(candidate.summary || candidate.title).trim(),
+      );
+      if (webSearchFallback) {
+        selected = {
+          ...webSearchFallback,
+          verificationStatus: "web_search_summary",
+          evidenceText: webSearchFallback.summary || webSearchFallback.title,
+          evidenceKind: "web_search_summary",
+        };
       }
     }
 
@@ -376,7 +450,7 @@ export async function runResearch({
     }
 
     if (!selected) {
-      throw new Error("No ranked primary-source evidence could be extracted");
+      throw new Error("No ranked news evidence could be extracted");
     }
 
     await repository.finishSearchRun(run.id, {
@@ -388,7 +462,10 @@ export async function runResearch({
         extraction_errors: extractionErrors,
         selected_article_id: selected.article.id,
         selected_evidence_kind:
-          selected.evidenceKind ?? "primary_article_text",
+          selected.evidenceKind ??
+          (selected.verificationStatus === "web_source"
+            ? "web_article_text"
+            : "primary_article_text"),
         provider_discovery: providerDiscovery
           ? {
               provider: providerDiscovery.provider ?? null,

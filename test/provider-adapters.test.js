@@ -86,7 +86,6 @@ test("OpenAI adapter uses Responses structured output and web search", async () 
   const discovered = await provider.searchNews({
     query: "AI news",
     windowHours: 48,
-    allowedDomains: ["example.com"],
   });
 
   assert.equal(generated.value.status, "OK");
@@ -96,7 +95,8 @@ test("OpenAI adapter uses Responses structured output and web search", async () 
   assert.deepEqual(calls[1].tools, [
     {
       type: "web_search",
-      filters: { allowed_domains: ["example.com"] },
+      search_context_size: "medium",
+      external_web_access: true,
     },
   ]);
   assert.equal(calls[1].tool_choice, "required");
@@ -140,7 +140,6 @@ test("Gemini adapter uses structured JSON generation and Google Search", async (
   const discovered = await provider.searchNews({
     query: "AI news",
     windowHours: 48,
-    allowedDomains: ["example.com"],
   });
 
   assert.equal(generated.value.status, "OK");

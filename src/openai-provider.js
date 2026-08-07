@@ -69,7 +69,7 @@ export function createOpenAiProvider(
       };
     },
 
-    async searchNews({ query, windowHours, allowedDomains, limit = 8 }) {
+    async searchNews({ query, windowHours, limit = 8 }) {
       const response = await openai.responses.parse({
         model: config.model,
         store: false,
@@ -78,7 +78,8 @@ export function createOpenAiProvider(
         tools: [
           {
             type: "web_search",
-            filters: { allowed_domains: allowedDomains },
+            search_context_size: "medium",
+            external_web_access: true,
           },
         ],
         tool_choice: "required",
@@ -87,14 +88,13 @@ export function createOpenAiProvider(
           {
             role: "system",
             content:
-              "Search for recent news from the allowed official publisher domains only. Return direct article URLs, not search pages or aggregators. Do not invent dates, URLs, or claims.",
+              "Search the live public internet for the most important recent AI news. Prioritize original reporting, publicly readable direct publisher pages, reputable newsrooms, research organizations, and company announcements. Return diverse results from different publishers when available. Return direct article URLs, not search-result pages, social posts, newsletters, or aggregator pages. Do not invent dates, URLs, or claims.",
           },
           {
             role: "user",
             content: JSON.stringify({
               query,
               windowHours,
-              allowedDomains,
               maximumItems: limit,
             }),
           },

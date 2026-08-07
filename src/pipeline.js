@@ -3,13 +3,21 @@ import { generateDraft } from "./draft.js";
 import { runResearch } from "./research.js";
 
 export function buildDraftEvidence(selected) {
+  const verificationStatus =
+    selected.verificationStatus ??
+    (selected.unverified
+      ? "unverified_community"
+      : selected.source.is_primary
+        ? "primary_source"
+        : "web_source");
   const primaryEvidence = {
     url: selected.canonicalUrl,
     title: selected.title,
     publishedAt: selected.publishedAt,
     text: selected.evidenceText,
-    primary: Boolean(selected.source.is_primary),
-    publisher: selected.source.name,
+    primary: verificationStatus === "primary_source",
+    publisher: selected.publisher ?? selected.source.name,
+    verificationStatus,
   };
   if (
     !selected.unverified ||
@@ -27,6 +35,7 @@ export function buildDraftEvidence(selected) {
       text: selected.evidenceText,
       primary: false,
       publisher: selected.source.name,
+      verificationStatus: "unverified_community",
     },
   ];
 }

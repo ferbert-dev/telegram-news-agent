@@ -36,9 +36,11 @@ Last updated: 2026-08-07
 - The Node runtime now supports source management, 48-hour research and
   ranking, GPT-5.4 generation and web search with Gemini fallback, explicit
   approval, and idempotent Telegram publication.
-- RSS is the first discovery path. AI-provider web search is available when
-  approved feeds have no recent candidates, with an allowlist check against
-  configured primary-source domains.
+- Every run combines the approved RSS feeds with live AI-provider web search
+  across the public internet. Search results are not domain-allowlisted, but a
+  direct article must pass public-URL safety checks. The bot extracts the page
+  when possible; publisher-blocked pages use the provider's web-grounded
+  summary with a visible caveat and reduced evidence status.
 - When an approved publisher blocks primary-page extraction, the pipeline can
   use its already-persisted RSS summary as reduced first-party evidence instead
   of failing before draft generation.
