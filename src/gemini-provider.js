@@ -62,18 +62,17 @@ export function createGeminiProvider(
     model: config.model,
     generateStructured,
 
-    async searchNews({ query, windowHours, allowedDomains, limit = 8 }) {
+    async searchNews({ query, windowHours, limit = 8 }) {
       const response = await gemini.models.generateContent({
         model: config.model,
         contents: JSON.stringify({
           query,
           windowHours,
-          allowedDomains,
           maximumItems: limit,
         }),
         config: {
           systemInstruction:
-            "Use Google Search to find recent news from the allowed official publisher domains only. Return direct article URLs. Output one JSON object with an items array and no markdown. Each item must contain title, url, summary, and, when available, publishedAt and author. Do not invent dates, URLs, or claims.",
+            "Use Google Search to find the most important recent AI news across the public internet. Prioritize original reporting, publicly readable direct publisher pages, reputable newsrooms, research organizations, and company announcements. Return diverse results from different publishers when available. Exclude search-result pages, social posts, newsletters, and aggregator pages. Return direct article URLs. Output one JSON object with an items array and no markdown. Each item must contain title, url, summary, and, when available, publishedAt and author. Do not invent dates, URLs, or claims.",
           tools: [{ googleSearch: {} }],
         },
       });

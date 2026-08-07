@@ -68,6 +68,26 @@ excluding source URL lines. Explain what people are discussing, why it may
 matter if true, and what proof is still missing. Attribute every claim to the
 community source. Include a strong caveat and source URLs.`;
 
+const WEB_SOURCE_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
+The supplied evidence was extracted from a direct web article found through
+live internet search. It may be reputable reporting, but it is not necessarily
+a first-party announcement. Use only the supplied article evidence and do not
+add facts from memory. Attribute claims to the named publisher. Use simple B1
+English, short sentences, common words, and no marketing language. Write 60-100
+words and no more than five sentences, excluding source URL lines. Explain what
+happened, why it matters, and one clear caveat about source limitations. Include
+the direct article URL at the end. Do not call the report independently verified.`;
+
+const WEB_SEARCH_SUMMARY_SYSTEM_PROMPT = `You are the editor of a concise English AI news channel.
+The supplied evidence is a web-grounded summary returned by live internet
+search because the publisher page could not be extracted. Use only the supplied
+summary and do not add facts from memory. Attribute every claim to the named
+publisher and link the direct article URL. Use simple B1 English, short
+sentences, and common words. Write 60-100 words and no more than five sentences,
+excluding source URL lines. Explain what was reported and why it may matter.
+Include a clear caveat that the publisher page could not be independently read
+by this bot. Do not present the report as independently verified.`;
+
 function proseMetrics(text) {
   const prose = text.split(/\n\s*Sources?:\s*\n/i, 1)[0].trim();
   const words = prose ? prose.split(/\s+/).length : 0;
@@ -136,13 +156,32 @@ export async function generateDraft({
     throw new Error("Article is required for draft generation");
   }
 
-  if (
-    !evidence.length ||
-    (!allowUnverified && evidence.some((item) => !item.primary))
-  ) {
+  const verificationStatuses = evidence.map(
+    (item) =>
+      item.verificationStatus ??
+      (item.primary ? "primary_source" : "unverified_community"),
+  );
+  const verificationStatus = verificationStatuses.includes(
+    "unverified_community",
+  )
+    ? "unverified_community"
+    : verificationStatuses.includes("web_search_summary")
+      ? "web_search_summary"
+      : verificationStatuses.includes("web_source")
+        ? "web_source"
+        : "primary_source";
+  const hasNonPrimary = verificationStatus !== "primary_source";
+  if (!evidence.length || (!allowUnverified && hasNonPrimary)) {
     throw new Error("Draft generation requires primary-source evidence");
   }
-  const unverified = evidence.some((item) => !item.primary);
+  const unverified = verificationStatus === "unverified_community";
+  const systemInstruction = unverified
+    ? UNVERIFIED_SYSTEM_PROMPT
+    : verificationStatus === "web_search_summary"
+      ? WEB_SEARCH_SUMMARY_SYSTEM_PROMPT
+      : verificationStatus === "web_source"
+        ? WEB_SOURCE_SYSTEM_PROMPT
+        : VERIFIED_SYSTEM_PROMPT;
 
   const input = {
     task: "Create one review-ready Telegram article.",
@@ -156,9 +195,7 @@ export async function generateDraft({
   let generated;
   if (aiProvider) {
     generated = await aiProvider.generateStructured({
-      systemInstruction: unverified
-        ? UNVERIFIED_SYSTEM_PROMPT
-        : VERIFIED_SYSTEM_PROMPT,
+      systemInstruction,
       input,
       zodSchema: TelegramDraft,
       jsonSchema: TELEGRAM_DRAFT_JSON_SCHEMA,
@@ -169,9 +206,7 @@ export async function generateDraft({
       model,
       contents: JSON.stringify(input),
       config: {
-        systemInstruction: unverified
-          ? UNVERIFIED_SYSTEM_PROMPT
-          : VERIFIED_SYSTEM_PROMPT,
+        systemInstruction,
         responseMimeType: "application/json",
         responseJsonSchema: TELEGRAM_DRAFT_JSON_SCHEMA,
       },
@@ -204,14 +239,18 @@ export async function generateDraft({
     model: generated.model,
     prompt_version: unverified
       ? "telegram-unverified-trend-v2"
-      : "telegram-grounded-v2",
+      : verificationStatus === "web_search_summary"
+        ? "telegram-web-search-grounded-v1"
+        : verificationStatus === "web_source"
+          ? "telegram-web-grounded-v1"
+          : "telegram-grounded-v2",
     reviewer_notes: JSON.stringify({
       headline: draft.headline,
       claims: draft.claims,
       source_urls: draft.sourceUrls,
       caveat: draft.caveat,
       provider: generated.provider,
-      verification_status: unverified ? "unverified" : "primary_source",
+      verification_status: verificationStatus,
     }),
     lease_name: lease?.name,
     lease_owner_id: lease?.ownerId,

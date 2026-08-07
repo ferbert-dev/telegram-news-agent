@@ -169,8 +169,10 @@ test("runResearch falls back to persisted primary RSS evidence when pages block 
   );
 });
 
-test("runResearch uses provider web search only when feeds have no recent candidates", async () => {
+test("runResearch accepts broad web-search results and extracts the direct article", async () => {
   const saved = [];
+  const searched = [];
+  const extracted = [];
   let searchCalls = 0;
   const repository = {
     async startSearchRun() {
@@ -195,22 +197,141 @@ test("runResearch uses provider web search only when feeds have no recent candid
     now: NOW,
     fetchFeedImpl: async () => [],
     discoveryProvider: {
-      async searchNews() {
+      async searchNews(options) {
         searchCalls += 1;
+        searched.push(options);
         return {
-          provider: "gemini",
-          model: "gemini-2.5-flash",
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
           items: [
             {
-              title: "Provider discovery",
-              url: "https://example.com/provider-news",
-              summary: "A verified official-source result.",
+              title: "Independent newsroom report",
+              url: "https://news.example.net/ai-report",
+              summary: "A direct article discovered across the public web.",
               publishedAt: "2026-06-26T20:00:00Z",
             },
             {
-              title: "Unapproved domain",
-              url: "https://aggregator.invalid/story",
-              summary: "This must be rejected.",
+              title: "Second report from the same publisher",
+              url: "https://news.example.net/second-report",
+              summary: "This lower-ranked duplicate publisher is omitted.",
+              publishedAt: "2026-06-26T19:30:00Z",
+            },
+            {
+              title: "Report from another publisher",
+              url: "https://another.example.org/ai-report",
+              summary: "A diverse second publisher remains eligible.",
+              publishedAt: "2026-06-26T19:00:00Z",
+            },
+          ],
+        };
+      },
+    },
+    fetchArticleImpl: async (url) => {
+      extracted.push(url);
+      return {
+        text: "Evidence extracted from the direct newsroom article.",
+        contentHash: "web-article-hash",
+        finalUrl: url,
+      };
+    },
+    retryImpl: (operation) => operation(),
+  });
+
+  assert.equal(searchCalls, 1);
+  assert.deepEqual(searched[0], {
+    query: "AI news",
+    windowHours: 48,
+    limit: 8,
+  });
+  assert.equal(saved.length, 2);
+  assert.equal(saved[0].source_id, null);
+  assert.equal(saved[0].metadata.discovery_kind, "openai_web_search");
+  assert.equal(saved[0].metadata.verification_status, "web_source");
+  assert.equal(saved[0].metadata.publisher, "news.example.net");
+  assert.equal(saved[1].metadata.publisher, "another.example.org");
+  assert.deepEqual(extracted, ["https://news.example.net/ai-report"]);
+  assert.equal(result.selected.verificationStatus, "web_source");
+  assert.equal(
+    result.selected.evidenceText,
+    "Evidence extracted from the direct newsroom article.",
+  );
+});
+
+test("runResearch performs web search even when RSS has a recent candidate", async () => {
+  let searchCalls = 0;
+  const repository = {
+    async startSearchRun() {
+      return { id: "run-always-search" };
+    },
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(article) {
+      return { id: `article-${article.title}`, ...article };
+    },
+    async saveRawContent() {},
+    async finishSearchRun() {},
+    async failSearchRun() {},
+  };
+
+  await runResearch({
+    repository,
+    query: "AI news",
+    now: NOW,
+    fetchFeedImpl: async () => [candidate()],
+    discoveryProvider: {
+      async searchNews() {
+        searchCalls += 1;
+        return {
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+          items: [],
+        };
+      },
+    },
+    fetchArticleImpl: async (url) => ({
+      text: "Extracted article evidence.",
+      contentHash: "article-hash",
+      finalUrl: url,
+    }),
+  });
+
+  assert.equal(searchCalls, 1);
+});
+
+test("runResearch uses a web-grounded search summary when the publisher blocks extraction", async () => {
+  const repository = {
+    async startSearchRun() {
+      return { id: "run-web-summary" };
+    },
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(article) {
+      return { id: "article-web-summary", ...article };
+    },
+    async saveRawContent() {},
+    async finishSearchRun() {},
+    async failSearchRun() {},
+  };
+
+  const result = await runResearch({
+    repository,
+    query: "AI news",
+    now: NOW,
+    fetchFeedImpl: async () => [],
+    discoveryProvider: {
+      async searchNews() {
+        return {
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+          items: [
+            {
+              title: "Publisher-blocked report",
+              url: "https://news.example.net/blocked-report",
+              summary: "A web-grounded description of the reported event.",
               publishedAt: "2026-06-26T20:00:00Z",
             },
           ],
@@ -218,15 +339,18 @@ test("runResearch uses provider web search only when feeds have no recent candid
       },
     },
     fetchArticleImpl: async () => {
-      throw new Error("blocked");
+      throw new Error("Publisher returned HTTP 403");
     },
     retryImpl: (operation) => operation(),
   });
 
-  assert.equal(searchCalls, 1);
-  assert.equal(saved.length, 1);
-  assert.equal(saved[0].metadata.discovery_kind, "gemini_web_search");
-  assert.equal(result.selected.evidenceKind, "primary_feed_summary");
+  assert.equal(result.selected.verificationStatus, "web_search_summary");
+  assert.equal(result.selected.evidenceKind, "web_search_summary");
+  assert.equal(
+    result.selected.evidenceText,
+    "A web-grounded description of the reported event.",
+  );
+  assert.equal(result.extractionErrors.length, 1);
 });
 
 test("runResearch fails closed without primary sources", async () => {
@@ -279,8 +403,8 @@ test("runResearch does not reset or redraft an existing canonical URL", async ()
         extractionCalled = true;
       },
     }),
-    /No new primary-source articles/,
+    /No new news articles/,
   );
   assert.equal(extractionCalled, false);
-  assert.equal(failedMessage, "No new primary-source articles were found");
+  assert.equal(failedMessage, "No new news articles were found");
 });

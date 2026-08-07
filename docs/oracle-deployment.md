@@ -12,7 +12,9 @@ inbound internet port. Only SSH is required for this deployment design.
 
 A checked-in migration seeds the four approved primary RSS sources: OpenAI
 News, Google DeepMind, Google AI, and Microsoft Research. Each feed was live
-and parseable when this deployment was prepared.
+and parseable when this deployment was prepared. Every news run also performs
+live provider web search across the public internet; those feeds are supporting
+signals rather than a web-search domain allowlist.
 
 ## One-time Oracle bootstrap
 

@@ -61,16 +61,18 @@ At least one of `OPENAI_API_KEY` or `GEMINI_API_KEY` is required. The default
 order uses `gpt-5.4-2026-03-05` first and Gemini second. A missing key is
 skipped, and an OpenAI authentication, quota, rate-limit, or response error
 falls through to Gemini. OpenAI requests use medium reasoning for reliable
-agentic web search, require the search tool, and restrict results to configured
-primary-source domains.
+agentic web search, require the search tool, and explicitly enable live public
+internet access without an allowed-domain filter.
 
-Research the last 48 hours, fetch and persist the selected primary page, and
-generate a grounded article before stopping at the review gate. RSS remains
-the first discovery path. Provider web search is used when the approved feeds
-have no recent candidates, and its results are accepted only when their URLs
-match an approved primary-source domain. If a primary page blocks extraction,
-the pipeline can still draft from that publisher's persisted RSS summary and
-records the reduced evidence level in the search-run metadata:
+Every research run combines approved RSS feeds with live provider web search
+across the public internet. Direct results from newsrooms, research sites, and
+company pages are ranked with the feed candidates. Before drafting, the bot
+fetches the selected web article and grounds the summary in the extracted page;
+if a publisher blocks automated extraction, it can use the provider's
+web-grounded summary with an explicit caveat and reduced evidence level. If an
+approved primary page blocks extraction, the pipeline can still draft from
+that publisher's persisted RSS summary. Every fallback is recorded in the
+search-run metadata:
 
 ```bash
 npm run pipeline:run

@@ -25,6 +25,28 @@ test("unverified Reddit trends allow only the linked page and discussion URL", (
     ],
   );
   assert.ok(evidence.every((item) => item.primary === false));
+  assert.ok(
+    evidence.every(
+      (item) => item.verificationStatus === "unverified_community",
+    ),
+  );
+});
+
+test("web-search evidence keeps the direct publisher and verification tier", () => {
+  const evidence = buildDraftEvidence({
+    canonicalUrl: "https://news.example.net/ai-report",
+    title: "Independent report",
+    publishedAt: "2026-06-29T00:00:00Z",
+    evidenceText: "Extracted direct article text.",
+    publisher: "news.example.net",
+    verificationStatus: "web_source",
+    source: { name: "news.example.net", is_primary: false },
+  });
+
+  assert.equal(evidence.length, 1);
+  assert.equal(evidence[0].publisher, "news.example.net");
+  assert.equal(evidence[0].primary, false);
+  assert.equal(evidence[0].verificationStatus, "web_source");
 });
 
 function repositoryFixture({ leaseAcquired = true } = {}) {

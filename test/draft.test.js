@@ -206,3 +206,97 @@ test("generateDraft labels explicitly allowed community evidence as unverified",
   assert.match(result.saved.body, /^UNVERIFIED TREND/);
   assert.equal(result.saved.prompt_version, "telegram-unverified-trend-v2");
 });
+
+test("generateDraft labels extracted web reporting without a rumor prefix", async () => {
+  let stored;
+  const repository = {
+    async createReviewDraft(draft) {
+      stored = draft;
+      return { id: "draft-web", ...draft };
+    },
+  };
+  const aiProvider = {
+    async generateStructured(request) {
+      assert.match(request.systemInstruction, /live internet search/);
+      return {
+        value: structuredDraft(),
+        provider: "openai",
+        model: "gpt-5.4-2026-03-05",
+      };
+    },
+  };
+
+  const result = await generateDraft({
+    aiProvider,
+    repository,
+    article: {
+      id: "article-web",
+      title: "Independent report",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [
+      {
+        url: SOURCE_URL,
+        primary: false,
+        verificationStatus: "web_source",
+        publisher: "example.com",
+        text: "Extracted direct article evidence.",
+      },
+    ],
+    allowUnverified: true,
+  });
+
+  assert.doesNotMatch(result.saved.body, /^UNVERIFIED TREND/);
+  assert.equal(result.saved.prompt_version, "telegram-web-grounded-v1");
+  assert.equal(
+    JSON.parse(stored.reviewer_notes).verification_status,
+    "web_source",
+  );
+});
+
+test("generateDraft records blocked-page web search evidence separately", async () => {
+  let stored;
+  const result = await generateDraft({
+    aiProvider: {
+      async generateStructured(request) {
+        assert.match(request.systemInstruction, /publisher page could not be extracted/);
+        return {
+          value: structuredDraft(),
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        stored = draft;
+        return { id: "draft-web-summary", ...draft };
+      },
+    },
+    article: {
+      id: "article-web-summary",
+      title: "Publisher-blocked report",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [
+      {
+        url: SOURCE_URL,
+        primary: false,
+        verificationStatus: "web_search_summary",
+        publisher: "example.com",
+        text: "Web-grounded search evidence.",
+      },
+    ],
+    allowUnverified: true,
+  });
+
+  assert.doesNotMatch(result.saved.body, /^UNVERIFIED TREND/);
+  assert.equal(
+    result.saved.prompt_version,
+    "telegram-web-search-grounded-v1",
+  );
+  assert.equal(
+    JSON.parse(stored.reviewer_notes).verification_status,
+    "web_search_summary",
+  );
+});
