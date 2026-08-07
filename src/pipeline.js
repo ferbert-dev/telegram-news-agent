@@ -6,6 +6,40 @@ import {
 } from "./news-settings.js";
 import { runResearch } from "./research.js";
 
+const ARTICLE_TAGS_FEATURE_KEY = "article_tags";
+
+function featureState(row) {
+  return row?.state === "collect" || row?.state === "enabled"
+    ? row.state
+    : "off";
+}
+
+export async function loadArticleTagging({ repository, newsSettings }) {
+  const channelId = newsSettings?.channelId ?? null;
+  if (!channelId || typeof repository.getNewsFeatureFlags !== "function") {
+    return { state: "off", catalog: [] };
+  }
+
+  const flags = await repository.getNewsFeatureFlags(channelId);
+  const state = featureState(
+    flags.find((row) => row.feature_key === ARTICLE_TAGS_FEATURE_KEY),
+  );
+  if (state === "off") {
+    return { state, catalog: [] };
+  }
+  if (typeof repository.listEnabledArticleTags !== "function") {
+    throw new Error("Article tag catalog is unavailable");
+  }
+
+  const catalog = await repository.listEnabledArticleTags(
+    newsSettings.languageCode,
+  );
+  if (!catalog.length) {
+    throw new Error("No enabled article tags are configured");
+  }
+  return { state, catalog };
+}
+
 export function buildDraftEvidence(selected) {
   const verificationStatus =
     selected.verificationStatus ??
@@ -144,6 +178,10 @@ export async function runPipeline({
   });
 
   try {
+    const articleTagging = await loadArticleTagging({
+      repository,
+      newsSettings: settingsSnapshot,
+    });
     const research = await runResearch({
       repository,
       query,
@@ -169,6 +207,7 @@ export async function runPipeline({
       languageCode: normalizedSettings.languageCode,
       newsSettings: settingsSnapshot,
       editor,
+      articleTagging,
     });
     heartbeat.assertOwned();
 
@@ -181,6 +220,9 @@ export async function runPipeline({
       model: generated.model,
       feedErrors: research.feedErrors,
       settings: settingsSnapshot,
+      features: {
+        articleTags: articleTagging.state,
+      },
     };
   } finally {
     let heartbeatError;

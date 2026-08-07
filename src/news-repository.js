@@ -221,6 +221,27 @@ export class NewsRepository {
     return result.rows;
   }
 
+  async listEnabledArticleTags(languageCode) {
+    const result = await this.query(
+      "List enabled article tags",
+      `select
+         topic.id as topic_id,
+         topic.name as code,
+         topic.description,
+         translation.language_code,
+         translation.label,
+         translation.hashtag
+       from public.topics as topic
+       join public.topic_translations as translation
+         on translation.topic_id = topic.id
+       where topic.enabled = true
+         and translation.language_code = lower(btrim($1))
+       order by topic.name`,
+      [languageCode],
+    );
+    return result.rows;
+  }
+
   async listSourceHealth() {
     const result = await this.query(
       "List source health",
@@ -417,9 +438,23 @@ export class NewsRepository {
     );
   }
 
+  async replaceArticleTopics({
+    articleId,
+    assignments,
+    assignmentSource = "ai",
+    assignedModel = null,
+  }) {
+    return this.functionRows(
+      "replace_article_topics",
+      [articleId, JSON.stringify(assignments), assignmentSource, assignedModel],
+      "Replace article topics",
+    );
+  }
+
   async createReviewDraft(draft) {
+    const withTopics = draft.topic_assignments !== undefined;
     const rows = await this.functionRows(
-      "create_review_draft",
+      withTopics ? "create_review_draft_with_topics" : "create_review_draft",
       [
         draft.article_id,
         draft.body,
@@ -428,6 +463,13 @@ export class NewsRepository {
         draft.reviewer_notes ?? null,
         draft.lease_name ?? null,
         draft.lease_owner_id ?? null,
+        ...(withTopics
+          ? [
+              JSON.stringify(draft.topic_assignments),
+              draft.topic_assignment_source ?? "ai",
+              draft.topic_assigned_model ?? draft.model ?? null,
+            ]
+          : []),
       ],
       "Create review draft",
     );
@@ -698,6 +740,37 @@ export class NewsRepository {
       "get_or_create_news_settings",
       [channelId, reviewChatId, updatedBy],
       "Get or create news settings",
+    );
+    return rows[0] ?? null;
+  }
+
+  async getOrCreateNewsFeatureFlags({ channelId, updatedBy }) {
+    return this.functionRows(
+      "get_or_create_news_feature_flags",
+      [channelId, updatedBy],
+      "Get or create news feature flags",
+    );
+  }
+
+  async getNewsFeatureFlags(channelId) {
+    return this.functionRows(
+      "get_news_feature_flags",
+      [channelId],
+      "Get news feature flags",
+    );
+  }
+
+  async updateNewsFeatureFlag({
+    channelId,
+    featureKey,
+    state,
+    updatedBy,
+    expectedVersion,
+  }) {
+    const rows = await this.functionRows(
+      "update_news_feature_flag",
+      [channelId, featureKey, state, updatedBy, expectedVersion],
+      "Update news feature flag",
     );
     return rows[0] ?? null;
   }

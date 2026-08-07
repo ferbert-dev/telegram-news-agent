@@ -40,6 +40,16 @@ status and marks the currently selected interval; there is no separate batch
 of unsaved settings. `next_run_at` remains a PostgreSQL `timestamptz`, while
 the Telegram UI displays it in `Europe/Madrid` with CET/CEST applied by date.
 
+Send `/labs` in the same private admin chat to manage versioned experimental
+features. `Article tags` supports `Off`, `Collect only`, and `Enabled`. Collect
+mode asks the existing structured draft request to choose up to three enabled
+PostgreSQL tag codes and persists the article-topic relationships, but leaves
+the public draft text unchanged. Enabled mode additionally renders the
+localized database-owned hashtags. Off mode does not load the catalogue or
+write tag assignments. The Labs menu applies each change immediately, uses
+optimistic version fencing for stale callbacks, and can be closed with
+`Done & close`. Story connections are displayed only as a planned V2 feature.
+
 Frequency choices are paused, 1 hour, 6 hours, 12 hours, and 24 hours. A due row
 is claimed atomically in PostgreSQL, so a process restart or a second transient
 worker does not create a parallel run. The selected draft and publication
@@ -78,7 +88,7 @@ sent draft is completed from its stored publication receipt without resending.
 
 Before production use, verify:
 
-1. Admin `/news`, `/settings`, Reject, and Publish in a private chat.
+1. Admin `/news`, `/settings`, `/labs`, Reject, and Publish in a private chat.
 2. Group chat, member, missing sender, and malformed command denials.
 3. Revoked administrator callback denial.
 4. Wrong message/chat, expired session, double Publish, and Publish/Reject race.
@@ -86,6 +96,8 @@ Before production use, verify:
 6. Notion start failure and finalization outbox recovery.
 7. EN/UK/DE output, topic add/remove, custom-topic expiry, stale settings
    callbacks, each interval, restart recovery, and auto-publish confirmation.
+8. Article-tag Off/Collect/Enabled behavior, stale Labs callbacks, localized
+   hashtags, and rejection of model-created tag codes.
 
 Live Telegram QA, database migration execution, Reviewer approval, and QA
 approval remain release gates and must be recorded in Notion before merge.

@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { generateDraft, validateGroundedDraft } from "../src/draft.js";
+import {
+  BASE_TELEGRAM_DRAFT_JSON_SCHEMA,
+  generateDraft,
+  TELEGRAM_DRAFT_JSON_SCHEMA,
+  validateGroundedDraft,
+} from "../src/draft.js";
 import { getGeminiConfig } from "../src/gemini-client.js";
 
 const SOURCE_URL = "https://example.com/primary";
@@ -27,6 +32,7 @@ function structuredDraft(overrides = {}) {
     ],
     sourceUrls: [SOURCE_URL],
     caveat: "Performance claims come from the developer.",
+    topicTags: [],
     ...overrides,
   };
 }
@@ -55,6 +61,22 @@ test("validateGroundedDraft accepts only supplied citations", () => {
         [{ url: SOURCE_URL, primary: true }],
       ),
     /unsupported source/,
+  );
+});
+
+test("TelegramDraft structured output requires bounded topic assignments", () => {
+  assert.equal(
+    BASE_TELEGRAM_DRAFT_JSON_SCHEMA.required.includes("topicTags"),
+    false,
+  );
+  assert.ok(TELEGRAM_DRAFT_JSON_SCHEMA.required.includes("topicTags"));
+  assert.equal(
+    TELEGRAM_DRAFT_JSON_SCHEMA.properties.topicTags.maxItems,
+    3,
+  );
+  assert.deepEqual(
+    TELEGRAM_DRAFT_JSON_SCHEMA.properties.topicTags.items.required,
+    ["code", "confidence"],
   );
 });
 
@@ -148,6 +170,231 @@ test("generateDraft stores a review draft and advances article state", async () 
   assert.equal(writes.length, 1);
   assert.equal(writes[0].article_id, "article-1");
   assert.equal(writes[0].lease_name, "daily");
+  assert.deepEqual(JSON.parse(writes[0].reviewer_notes).topic_tags, []);
+  assert.equal(
+    JSON.parse(writes[0].reviewer_notes).article_tagging_state,
+    "off",
+  );
+});
+
+test("tagging off normalizes model assignments without persistence or hashtags", async () => {
+  let stored;
+  let replaced = false;
+  const result = await generateDraft({
+    aiProvider: {
+      async generateStructured(request) {
+        assert.doesNotMatch(request.systemInstruction, /topic tag/i);
+        assert.equal(request.input.articleTagging, undefined);
+        assert.equal(request.schemaName, "telegram_news_draft");
+        assert.equal(request.jsonSchema.required.includes("topicTags"), false);
+        return {
+          value: structuredDraft({
+            topicTags: [{ code: "MODEL INVENTED!", confidence: "certain" }],
+          }),
+          provider: "openai",
+          model: "gpt-test",
+        };
+      },
+    },
+    repository: {
+      async replaceArticleTopics() {
+        replaced = true;
+      },
+      async createReviewDraft(draft) {
+        stored = draft;
+        return { id: "draft-off", ...draft };
+      },
+    },
+    article: {
+      id: "article-off",
+      title: "Primary announcement",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [{ url: SOURCE_URL, primary: true, text: "Evidence" }],
+  });
+
+  assert.equal(replaced, false);
+  assert.deepEqual(result.draft.topicTags, []);
+  assert.doesNotMatch(stored.body, /#model-invented/i);
+  assert.deepEqual(JSON.parse(stored.reviewer_notes).topic_tags, []);
+});
+
+test("collect mode stores catalog-only assignments without rendering hashtags", async () => {
+  let request;
+  let stored;
+  const catalog = [
+    {
+      code: "science",
+      label: "Science",
+      hashtag: { en: "#Science", de: "#Wissenschaft" },
+      description: "Research and discoveries",
+    },
+    {
+      code: "nature",
+      label: "Nature",
+      hashtag: "#Nature",
+    },
+  ];
+  const result = await generateDraft({
+    aiProvider: {
+      async generateStructured(value) {
+        request = value;
+        assert.equal(value.schemaName, "telegram_news_draft_with_tags");
+        assert.ok(value.jsonSchema.required.includes("topicTags"));
+        return {
+          value: structuredDraft({
+            topicTags: [
+              { code: "science", confidence: 0.94 },
+              { code: "nature", confidence: 0.55 },
+            ],
+          }),
+          provider: "openai",
+          model: "gpt-tagging",
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        stored = draft;
+        return { id: "draft-collect", ...draft };
+      },
+    },
+    article: {
+      id: "article-collect",
+      title: "Primary announcement",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [{ url: SOURCE_URL, primary: true, text: "Evidence" }],
+    articleTagging: { state: "collect", catalog },
+  });
+
+  assert.match(request.systemInstruction, /one primary topic and up to two secondary/);
+  assert.deepEqual(request.input.articleTagging.catalog, [
+    {
+      code: "science",
+      label: "Science",
+      description: "Research and discoveries",
+    },
+    { code: "nature", label: "Nature" },
+  ]);
+  const assignments = [
+    { code: "science", confidence: 0.94 },
+    { code: "nature", confidence: 0.55 },
+  ];
+  assert.deepEqual(stored.topic_assignments, assignments);
+  assert.equal(stored.topic_assignment_source, "ai");
+  assert.equal(stored.topic_assigned_model, "gpt-tagging");
+  assert.deepEqual(result.draft.topicTags, assignments);
+  assert.doesNotMatch(stored.body, /#Science|#Nature/);
+  const notes = JSON.parse(stored.reviewer_notes);
+  assert.equal(notes.article_tagging_state, "collect");
+  assert.deepEqual(notes.topic_tags, assignments);
+});
+
+test("enabled mode appends deterministic localized catalog hashtags at the end", async () => {
+  let stored;
+  const result = await generateDraft({
+    aiProvider: {
+      async generateStructured() {
+        return {
+          value: structuredDraft({
+            topicTags: [
+              { code: "nature", confidence: 0.59 },
+              { code: "world", confidence: 0.8 },
+              { code: "science", confidence: 0.95 },
+            ],
+          }),
+          provider: "openai",
+          model: "gpt-tagging",
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        stored = draft;
+        return { id: "draft-enabled", ...draft };
+      },
+    },
+    article: {
+      id: "article-enabled",
+      title: "Primary announcement",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [{ url: SOURCE_URL, primary: true, text: "Evidence" }],
+    languageCode: "de",
+    articleTagging: {
+      state: "enabled",
+      catalog: [
+        {
+          code: "science",
+          label: "Science",
+          hashtag: { en: "#Science", de: "#Wissenschaft" },
+        },
+        { code: "world", label: "World", hashtag: "#WorldNews" },
+        { code: "nature", label: "Nature", hashtag: "#Nature" },
+      ],
+    },
+  });
+
+  assert.match(
+    stored.body,
+    /Für Sie gefunden und aufbereitet von Михаил Онест\n\nSource:\nhttps:\/\/example\.com\/primary\n\n#Wissenschaft #WorldNews$/,
+  );
+  assert.doesNotMatch(stored.body, /#Nature/);
+  assert.deepEqual(stored.topic_assignments, [
+    { code: "nature", confidence: 0.59 },
+    { code: "world", confidence: 0.8 },
+    { code: "science", confidence: 0.95 },
+  ]);
+  assert.equal(result.draft.telegramText, stored.body);
+});
+
+test("collect mode discards model-created codes without blocking the draft", async () => {
+  let stored;
+  const result = await generateDraft({
+    aiProvider: {
+      async generateStructured() {
+        return {
+          value: structuredDraft({
+            topicTags: [{ code: "invented", confidence: 0.9 }],
+          }),
+          provider: "openai",
+          model: "gpt-tagging",
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        stored = draft;
+        return { id: "draft-invalid-tag", ...draft };
+      },
+    },
+    article: {
+      id: "article-invalid-tag",
+      title: "Primary announcement",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [{ url: SOURCE_URL, primary: true, text: "Evidence" }],
+    articleTagging: {
+      state: "collect",
+      catalog: [
+        { code: "science", label: "Science", hashtag: "#Science" },
+      ],
+    },
+  });
+
+  assert.deepEqual(stored.topic_assignments, []);
+  assert.equal(stored.topic_assignment_source, "ai");
+  assert.equal(stored.topic_assigned_model, "gpt-tagging");
+  assert.deepEqual(result.draft.topicTags, []);
+  assert.doesNotMatch(stored.body, /invented/i);
+  const notes = JSON.parse(stored.reviewer_notes);
+  assert.deepEqual(notes.topic_tags, []);
+  assert.equal(notes.article_tagging_state, "collect");
+  assert.equal(
+    notes.topic_tagging_diagnostic,
+    "invalid_assignments_discarded",
+  );
 });
 
 test("generateDraft records the provider and actual fallback model", async () => {

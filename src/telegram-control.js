@@ -9,6 +9,12 @@ import {
   parseSettingsCommand,
   showSettings,
 } from "./telegram-settings.js";
+import {
+  handleLabsCallback,
+  parseLabsCallback,
+  parseLabsCommand,
+  showLabs,
+} from "./telegram-labs.js";
 import { showUsageDashboard } from "./telegram-stats.js";
 
 const CALLBACK_PATTERN = /^news:([pr]):([a-f0-9]{32,64})$/;
@@ -90,6 +96,12 @@ function addressedElsewhere(command, botUsername) {
 }
 
 export function classifyControlUpdate(update, botUsername, botId) {
+  const labsCommand = parseLabsCommand(update?.message?.text);
+  if (labsCommand) {
+    return addressedElsewhere(labsCommand, botUsername)
+      ? null
+      : { kind: "labs_command", command: labsCommand };
+  }
   const settingsCommand = parseSettingsCommand(update?.message?.text);
   if (settingsCommand) {
     return addressedElsewhere(settingsCommand, botUsername)
@@ -110,6 +122,12 @@ export function classifyControlUpdate(update, botUsername, botId) {
   }
 
   const data = update?.callback_query?.data;
+  if (typeof data === "string" && data.startsWith("lab:")) {
+    return {
+      kind: "labs_callback",
+      callback: parseLabsCallback(data),
+    };
+  }
   if (typeof data === "string" && data.startsWith("cfg:")) {
     return {
       kind: "settings_callback",
@@ -152,6 +170,8 @@ function auditDetails(classification, update) {
       settings_callback: "Telegram admin - settings callback",
       settings_input: "Telegram admin - settings input",
       stats_command: "Telegram admin - /stats",
+      labs_command: "Telegram admin - /labs",
+      labs_callback: "Telegram admin - Labs callback",
     }[classification.kind],
     objective: `Process ${classification.kind} update ${update.update_id} from Telegram user ${actorId}.`,
   };
@@ -165,6 +185,8 @@ function updateKind(classification) {
     settings_callback: "settings_callback",
     settings_input: "settings_input",
     stats_command: "stats_command",
+    labs_command: "labs_command",
+    labs_callback: "labs_callback",
   }[classification.kind];
 }
 
@@ -264,6 +286,18 @@ export async function handleControlUpdate(
             classification.command,
             { token, channelId, repository, callTelegram, now },
           );
+        } else if (classification.kind === "labs_command") {
+          value = await handleLabsCommand(
+            update.message,
+            classification.command,
+            { token, channelId, repository, callTelegram },
+          );
+        } else if (classification.kind === "labs_callback") {
+          value = await handleLabsControlCallback(
+            update.callback_query,
+            classification.callback,
+            { token, channelId, repository, callTelegram },
+          );
         } else {
           value = await handleSettingsControlInput(update.message, {
             token,
@@ -304,6 +338,47 @@ export async function handleControlUpdate(
         error instanceof ControlError ? error.code : "internal_error",
     },
   );
+}
+
+async function handleLabsCommand(
+  message,
+  command,
+  { token, channelId, repository, callTelegram },
+) {
+  const chatId = requirePrivateChat(message);
+  if (command.malformed) {
+    throw new ControlError("malformed_command", "Malformed /labs command");
+  }
+  const userId = await requireAdmin(message, { token, channelId, callTelegram });
+  await showLabs({
+    token,
+    channelId,
+    chatId,
+    userId,
+    repository,
+    callTelegram,
+  });
+  return { auditResult: "Opened the persisted Telegram Labs menu." };
+}
+
+async function handleLabsControlCallback(
+  callback,
+  parsed,
+  { token, channelId, repository, callTelegram },
+) {
+  requirePrivateChat(callback?.message);
+  const userId = await requireAdmin(callback, {
+    token,
+    channelId,
+    callTelegram,
+  });
+  return handleLabsCallback(callback, parsed, {
+    token,
+    channelId,
+    userId,
+    repository,
+    callTelegram,
+  });
 }
 
 async function handleStatsCommand(

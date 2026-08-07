@@ -61,6 +61,10 @@ await callTelegram(token, "setMyCommands", {
       command: "stats",
       description: "Show today's AI usage and estimated cost",
     },
+    {
+      command: "labs",
+      description: "Configure experimental news features",
+    },
   ],
 });
 

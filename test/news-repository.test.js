@@ -56,6 +56,45 @@ test("createReviewDraft surfaces transaction failures without fallback writes", 
   assert.equal(calls, 1);
 });
 
+test("createReviewDraft persists topic assignments inside the fenced draft transaction", async () => {
+  const calls = [];
+  const repository = new NewsRepository({
+    async query(text, parameters) {
+      calls.push([text, parameters]);
+      return { rows: [{ id: "draft-1" }] };
+    },
+  });
+  const assignments = [{ code: "science", confidence: 0.95 }];
+
+  await repository.createReviewDraft({
+    article_id: "article-1",
+    body: "Grounded draft",
+    model: "model",
+    lease_name: "daily",
+    lease_owner_id: "00000000-0000-4000-8000-000000000001",
+    topic_assignments: assignments,
+    topic_assignment_source: "ai",
+    topic_assigned_model: "tagger-1",
+  });
+
+  assert.equal(
+    calls[0][0],
+    "select * from public.create_review_draft_with_topics($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+  );
+  assert.deepEqual(calls[0][1], [
+    "article-1",
+    "Grounded draft",
+    "model",
+    null,
+    null,
+    "daily",
+    "00000000-0000-4000-8000-000000000001",
+    JSON.stringify(assignments),
+    "ai",
+    "tagger-1",
+  ]);
+});
+
 test("audit backfill lifecycle uses PostgreSQL functions", async () => {
   const calls = [];
   const repository = new NewsRepository({
@@ -110,6 +149,115 @@ test("source registry excludes active quarantine and exposes topic mappings", as
   assert.deepEqual(await repository.listEnabledSources(), []);
   assert.match(query, /disabled_until is null or s\.disabled_until <= now\(\)/);
   assert.match(query, /array_agg\(t\.name order by t\.name\)/);
+});
+
+test("article tag catalog and atomic assignments preserve PostgreSQL bindings", async () => {
+  const calls = [];
+  const repository = new NewsRepository({
+    async query(text, parameters) {
+      calls.push([text, parameters]);
+      if (text.includes("topic_translations")) {
+        return {
+          rows: [
+            {
+              topic_id: "topic-1",
+              code: "science",
+              language_code: "uk",
+              label: "Наука",
+              hashtag: "#Наука",
+            },
+          ],
+        };
+      }
+      return {
+        rows: [
+          {
+            article_id: "article-1",
+            topic_id: "topic-1",
+            relevance_score: "0.9500",
+            assignment_source: "ai",
+            assigned_model: "tagger-1",
+          },
+        ],
+      };
+    },
+  });
+  const assignments = [{ code: "science", confidence: 0.95 }];
+
+  assert.equal((await repository.listEnabledArticleTags("uk"))[0].code, "science");
+  assert.equal(
+    (
+      await repository.replaceArticleTopics({
+        articleId: "article-1",
+        assignments,
+        assignedModel: "tagger-1",
+      })
+    )[0].assignment_source,
+    "ai",
+  );
+
+  assert.match(calls[0][0], /translation\.language_code = lower\(btrim\(\$1\)\)/);
+  assert.match(calls[0][0], /topic\.enabled = true/);
+  assert.deepEqual(calls[0][1], ["uk"]);
+  assert.deepEqual(calls[1], [
+    "select * from public.replace_article_topics($1, $2, $3, $4)",
+    ["article-1", JSON.stringify(assignments), "ai", "tagger-1"],
+  ]);
+});
+
+test("article tag feature flags use versioned PostgreSQL functions", async () => {
+  const calls = [];
+  const repository = new NewsRepository({
+    async query(text, parameters) {
+      calls.push([text, parameters]);
+      if (text.includes("update_news_feature_flag")) {
+        return { rows: [] };
+      }
+      return {
+        rows: [
+          {
+            telegram_channel_id: "@channel",
+            feature_key: "article_tags",
+            state: "off",
+            version: 1,
+          },
+        ],
+      };
+    },
+  });
+
+  assert.equal(
+    (
+      await repository.getOrCreateNewsFeatureFlags({
+        channelId: "@channel",
+        updatedBy: 7,
+      })
+    )[0].state,
+    "off",
+  );
+  assert.equal((await repository.getNewsFeatureFlags("@channel"))[0].version, 1);
+  assert.equal(
+    await repository.updateNewsFeatureFlag({
+      channelId: "@channel",
+      featureKey: "article_tags",
+      state: "collect",
+      updatedBy: 7,
+      expectedVersion: 1,
+    }),
+    null,
+  );
+
+  assert.deepEqual(calls, [
+    [
+      "select * from public.get_or_create_news_feature_flags($1, $2)",
+      ["@channel", 7],
+    ],
+    ["select * from public.get_news_feature_flags($1)", ["@channel"]],
+    [
+      "select * from public.update_news_feature_flag($1, $2, $3, $4, $5)",
+      ["@channel", "article_tags", "collect", 7, 1],
+    ],
+  ]);
 });
 
 test("source health and discovery methods preserve PostgreSQL bindings", async () => {
