@@ -9,8 +9,7 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHANNEL_ID=
 TELEGRAM_UPDATE_MODE=polling
 TELEGRAM_POLLING_MIGRATE_WEBHOOK=false
-SUPABASE_URL=
-SUPABASE_SECRET_KEY=
+DATABASE_URL=postgresql://telegram_news_app:<password>@localhost:5432/telegram_news
 GEMINI_API_KEY=
 NOTION_API_KEY=
 NOTION_AGENT_RUNS_DATA_SOURCE_ID=
@@ -18,8 +17,8 @@ NOTION_PIPELINE_AGENT_PAGE_ID=
 NOTION_PIPELINE_TICKET_PAGE_ID=
 ```
 
-Apply `supabase/migrations/20260627120000_add_telegram_admin_control.sql`
-before starting the process.
+Run `npm run database:migrate` before starting the process. In Docker, the
+one-shot `migrate` service performs this step before the bot is replaced.
 
 ## Operation
 

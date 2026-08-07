@@ -47,8 +47,7 @@ GEMINI_MODEL=gemini-2.5-flash
 NOTION_API_KEY=
 NOTION_AGENT_RUNS_DATA_SOURCE_ID=8eef7282-532e-4cf9-b309-bf09f9e9afeb
 NOTION_PIPELINE_AGENT_PAGE_ID=38bd7885-0eab-81f4-9879-e8b4b990e314
-SUPABASE_URL=
-SUPABASE_SECRET_KEY=
+DATABASE_URL=postgresql://telegram_news_app:change-me@localhost:5432/telegram_news
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHANNEL_ID=@HonestAINews
 APPROVAL_POLICY=manual
@@ -94,7 +93,7 @@ enabled until the five supervised runs pass.
 
 ## Telegram Admin Control
 
-Apply all Supabase migrations, set `TELEGRAM_UPDATE_MODE=polling`, and run:
+Apply the PostgreSQL migrations, set `TELEGRAM_UPDATE_MODE=polling`, and run:
 
 ```bash
 npm run telegram:control
@@ -122,6 +121,27 @@ npm run audit:flush
 
 Logs and user-facing failures contain stable error codes or generic messages,
 not bot tokens, article bodies, or upstream response details.
+
+## Docker and Oracle Deployment
+
+Production runs as two private Docker Compose services on the Oracle instance:
+the polling bot and PostgreSQL. The database has no published host port. The
+one-shot `migrate` service applies the checked-in SQL migrations before each bot
+update.
+
+The GitHub Actions workflow in `.github/workflows/deploy.yml` performs this
+sequence on every merge to `main`:
+
+1. install dependencies, audit them, and run unit tests;
+2. build a clean PostgreSQL database and run integration tests;
+3. build an immutable `linux/amd64` image and push it to GHCR;
+4. connect to Oracle over SSH, run migrations, replace the bot, and verify that
+   the new container remains stable;
+5. restore the previous bot image if the new container does not stay running.
+
+Server bootstrap and GitHub configuration are documented in
+[`docs/oracle-deployment.md`](docs/oracle-deployment.md). Do not open a public
+port for PostgreSQL or the polling bot.
 
 ## Workflow
 
@@ -156,7 +176,7 @@ Inbox -> Ready -> In Progress -> Review -> Blocked / Done -> Archive
 
 ## Next Steps
 
-1. Configure the local Supabase secret and Gemini key.
+1. Configure the local PostgreSQL connection and Gemini key.
 2. Complete five supervised research-to-publish runs.
 3. Add the recurring scheduler after those QA runs pass.
 4. Add deployment monitoring and alerts.

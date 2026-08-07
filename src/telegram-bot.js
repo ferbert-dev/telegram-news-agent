@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { createDatabaseClient } from "./database.js";
+import {
+  closeDatabaseClient,
+  createDatabaseClient,
+} from "./database.js";
 import { createGeminiClient } from "./gemini-client.js";
 import { NewsRepository } from "./news-repository.js";
 import {
@@ -18,7 +21,8 @@ import { runWorkflow } from "./workflow.js";
 
 const { token, channelId } = getTelegramConfig();
 const polling = getPollingConfig();
-const repository = new NewsRepository(createDatabaseClient());
+const databaseClient = createDatabaseClient();
+const repository = new NewsRepository(databaseClient);
 const auditLogger = new NotionAuditLogger(getNotionAuditConfig());
 const bot = await callTelegram(token, "getMe", {});
 const controller = new AbortController();
@@ -134,11 +138,16 @@ console.log(
     bot_id: bot.id,
   }),
 );
-await pollTelegram({
-  token,
-  repository,
-  ownerId: randomUUID(),
-  callTelegram,
-  handleUpdate,
-  signal: controller.signal,
-});
+try {
+  await pollTelegram({
+    token,
+    repository,
+    ownerId: randomUUID(),
+    callTelegram,
+    handleUpdate,
+    signal: controller.signal,
+  });
+} finally {
+  await closeDatabaseClient(databaseClient);
+  console.log(JSON.stringify({ event: "telegram_control_stopped" }));
+}

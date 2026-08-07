@@ -1,0 +1,200 @@
+name: CI and deploy
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_IMAGE: telegram-news-agent:ci
+      POSTGRES_PASSWORD: ci-superuser-password
+      POSTGRES_APP_PASSWORD: ci-application-password
+      POSTGRES_TEST_PORT: "55432"
+      DATABASE_TEST_URL: postgresql://telegram_news_app:ci-application-password@127.0.0.1:55432/telegram_news
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build test image
+        run: docker build --tag "$APP_IMAGE" .
+
+      - name: Run PostgreSQL migration and integration tests
+        run: |
+          touch .env.production
+          docker compose \
+            -p telegram-news-agent-ci \
+            -f compose.yaml \
+            -f compose.test.yaml \
+            up -d db
+          docker compose \
+            -p telegram-news-agent-ci \
+            -f compose.yaml \
+            -f compose.test.yaml \
+            run --rm migrate
+          npm run test:integration
+
+      - name: Show container logs after failure
+        if: failure()
+        run: |
+          docker compose \
+            -p telegram-news-agent-ci \
+            -f compose.yaml \
+            -f compose.test.yaml \
+            logs --tail=100 db
+
+      - name: Remove test containers
+        if: always()
+        run: |
+          docker compose \
+            -p telegram-news-agent-ci \
+            -f compose.yaml \
+            -f compose.test.yaml \
+            down -v --remove-orphans
+
+  package:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.value }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Select immutable image name
+        id: image
+        run: echo "value=${IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.value }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Validate deployment configuration
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+        run: |
+          test -n "$ORACLE_HOST"
+          test -n "$ORACLE_USER"
+          test -n "$PRODUCTION_ENV_FILE"
+
+      - name: Upload deployment bundle
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+        run: |
+          install -d -m 700 deployment/ops/postgres/init
+          install -m 644 compose.yaml deployment/compose.yaml
+          install -m 755 ops/deploy.sh deployment/ops/deploy.sh
+          install -m 755 ops/postgres/init/00-create-app-role.sh deployment/ops/postgres/init/00-create-app-role.sh
+          printf '%s\n' "$PRODUCTION_ENV_FILE" > deployment/.env.production
+          chmod 600 deployment/.env.production
+          tar -C deployment -czf deployment.tar.gz .
+          scp deployment.tar.gz "${ORACLE_USER}@${ORACLE_HOST}:/tmp/telegram-news-agent-deployment.tar.gz"
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" \
+            'install -d -m 750 /opt/telegram-news-agent && tar -xzf /tmp/telegram-news-agent-deployment.tar.gz -C /opt/telegram-news-agent && rm /tmp/telegram-news-agent-deployment.tar.gz'
+
+      - name: Log Oracle host in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh "${ORACLE_USER}@${ORACLE_HOST}" \
+            docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Deploy immutable image
+        env:
+          DEPLOY_IMAGE: ${{ needs.package.outputs.image }}
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          # The immutable image name is intentionally expanded on the runner.
+          # shellcheck disable=SC2029
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" \
+            /opt/telegram-news-agent/ops/deploy.sh "$DEPLOY_IMAGE"
+
+      - name: Log Oracle host out of GHCR
+        if: always()
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: ssh "${ORACLE_USER}@${ORACLE_HOST}" 'docker logout ghcr.io' || true

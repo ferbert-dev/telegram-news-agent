@@ -1,0 +1,89 @@
+name: telegram-news-agent
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: telegram_news
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD is required}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=20
+      - -c
+      - wal_buffers=4MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d telegram_news"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 384m
+    shm_size: 64mb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./ops/postgres/init/00-create-app-role.sh:/docker-entrypoint-initdb.d/00-create-app-role.sh:ro
+    networks:
+      - backend
+    logging: *default-logging
+
+  migrate:
+    image: ${APP_IMAGE:-telegram-news-agent:local}
+    environment:
+      DATABASE_URL: postgresql://telegram_news_app:${POSTGRES_APP_PASSWORD}@db:5432/telegram_news
+    command: ["node", "scripts/migrate.mjs"]
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 256m
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    networks:
+      - backend
+    logging: *default-logging
+
+  bot:
+    image: ${APP_IMAGE:-telegram-news-agent:local}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql://telegram_news_app:${POSTGRES_APP_PASSWORD}@db:5432/telegram_news
+      DATABASE_POOL_MAX: 4
+    command: ["node", "src/telegram-bot.js"]
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 384m
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    stop_grace_period: 45s
+    networks:
+      - backend
+    logging: *default-logging
+
+volumes:
+  postgres_data:
+
+networks:
+  backend:
