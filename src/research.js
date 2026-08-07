@@ -1,5 +1,5 @@
 import { fetchArticle } from "./article-extractor.js";
-import { fetchFeed } from "./feed.js";
+import { canonicalizeUrl, fetchFeed, hashText } from "./feed.js";
 import { fetchRedditDiscoveries } from "./reddit.js";
 import { withRetry } from "./retry.js";
 
@@ -121,6 +121,7 @@ export async function runResearch({
   fetchFeedImpl = fetchFeed,
   fetchRedditImpl = fetchRedditDiscoveries,
   fetchArticleImpl = fetchArticle,
+  discoveryProvider,
   retryImpl = withRetry,
   now = new Date(),
 }) {
@@ -210,11 +211,62 @@ export async function runResearch({
         )
         .filter(Boolean),
     );
-    const ranked = rankCandidates(candidates, {
+    let ranked = rankCandidates(candidates, {
       now,
       keywords,
       windowHours,
     });
+    let providerDiscovery = null;
+
+    if (!ranked.length && discoveryProvider?.searchNews) {
+      const allowedDomains = [
+        ...new Set(primarySources.map(sourceHostname).filter(Boolean)),
+      ];
+      try {
+        providerDiscovery = await discoveryProvider.searchNews({
+          query,
+          windowHours,
+          allowedDomains,
+          limit: 8,
+        });
+        const providerCandidates = providerDiscovery.items.flatMap((item) => {
+          const source = matchPrimarySource(item.url, primarySources);
+          if (!source) {
+            return [];
+          }
+          const canonicalUrl = canonicalizeUrl(item.url);
+          const publishedAt = item.publishedAt
+            ? new Date(item.publishedAt)
+            : null;
+          return [
+            {
+              title: item.title,
+              canonicalUrl,
+              author: item.author ?? null,
+              publishedAt:
+                publishedAt && !Number.isNaN(publishedAt.valueOf())
+                  ? publishedAt.toISOString()
+                  : null,
+              summary: item.summary,
+              contentHash: hashText(
+                [canonicalUrl, item.title, item.summary].join("\n"),
+              ),
+              source,
+              discoveryKind: `${providerDiscovery.provider}_web_search`,
+            },
+          ];
+        });
+        ranked = rankCandidates(providerCandidates, {
+          now,
+          keywords,
+          windowHours,
+        });
+      } catch (error) {
+        providerDiscovery = {
+          error: error?.code ?? "provider_search_failed",
+        };
+      }
+    }
 
     if (!ranked.length) {
       throw new NoResearchCandidatesError(
@@ -309,7 +361,22 @@ export async function runResearch({
     }
 
     if (!selected) {
-      throw new Error("No ranked primary-source page could be extracted");
+      const feedFallback = articles.find(
+        (candidate) =>
+          candidate.source.is_primary &&
+          String(candidate.summary || candidate.title).trim(),
+      );
+      if (feedFallback) {
+        selected = {
+          ...feedFallback,
+          evidenceText: feedFallback.summary || feedFallback.title,
+          evidenceKind: "primary_feed_summary",
+        };
+      }
+    }
+
+    if (!selected) {
+      throw new Error("No ranked primary-source evidence could be extracted");
     }
 
     await repository.finishSearchRun(run.id, {
@@ -320,6 +387,16 @@ export async function runResearch({
         feed_errors: feedErrors,
         extraction_errors: extractionErrors,
         selected_article_id: selected.article.id,
+        selected_evidence_kind:
+          selected.evidenceKind ?? "primary_article_text",
+        provider_discovery: providerDiscovery
+          ? {
+              provider: providerDiscovery.provider ?? null,
+              model: providerDiscovery.model ?? null,
+              count: providerDiscovery.items?.length ?? 0,
+              error: providerDiscovery.error ?? null,
+            }
+          : null,
       },
     });
 

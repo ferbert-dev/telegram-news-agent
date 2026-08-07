@@ -1,6 +1,6 @@
 import { createDatabaseClient } from "./database.js";
 import { NewsRepository } from "./news-repository.js";
-import { createGeminiClient } from "./gemini-client.js";
+import { createAiProvider } from "./ai-provider.js";
 import {
   backfillNotionAudits,
   getNotionAuditConfig,
@@ -39,12 +39,11 @@ const result = await withNotionAudit(
       repository.enqueueNotionAuditBackfill(record),
   },
   async (auditRun) => {
-    const { client: aiClient, model } = createGeminiClient();
+    const aiProvider = createAiProvider();
     const workflowResult = await runWorkflow({
       approvalPolicy,
       repository,
-      aiClient,
-      model,
+      aiProvider,
       query,
       keywords,
       windowHours,
@@ -80,6 +79,8 @@ console.log(
       telegram_message_id:
         result.publication?.telegram_message_id ?? null,
       feed_errors: result.feedErrors,
+      ai_provider: result.provider,
+      ai_model: result.model,
     },
     null,
     2,

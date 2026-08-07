@@ -3,7 +3,7 @@ import {
   closeDatabaseClient,
   createDatabaseClient,
 } from "./database.js";
-import { createGeminiClient } from "./gemini-client.js";
+import { createAiProvider } from "./ai-provider.js";
 import { NewsRepository } from "./news-repository.js";
 import {
   getNotionAuditConfig,
@@ -24,6 +24,7 @@ const polling = getPollingConfig();
 const databaseClient = createDatabaseClient();
 const repository = new NewsRepository(databaseClient);
 const auditLogger = new NotionAuditLogger(getNotionAuditConfig());
+const aiProvider = createAiProvider();
 const bot = await callTelegram(token, "getMe", {});
 const controller = new AbortController();
 let stopping = false;
@@ -43,13 +44,11 @@ await callTelegram(token, "setMyCommands", {
 });
 
 async function runNews({ updateId }) {
-  const { client: aiClient, model } = createGeminiClient();
   return runCheckpointedNewsSearch({
     updateId,
     runWorkflow,
     repository,
-    aiClient,
-    model,
+    aiProvider,
   });
 }
 
@@ -136,6 +135,7 @@ console.log(
     event: "telegram_control_started",
     mode: "polling",
     bot_id: bot.id,
+    ai_providers: aiProvider.names,
   }),
 );
 try {

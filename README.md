@@ -42,6 +42,9 @@ subscriber notifications. The command accepts exactly one of `--text` or
 Configure these server-only values in `.env`:
 
 ```text
+AI_PROVIDER_ORDER=openai,gemini
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.6
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
 NOTION_API_KEY=
@@ -53,9 +56,18 @@ TELEGRAM_CHANNEL_ID=@HonestAINews
 APPROVAL_POLICY=manual
 ```
 
-Research the last 48 hours, fetch and persist the selected primary page,
-generate a grounded article from that extracted text, and stop at the review
-gate:
+At least one of `OPENAI_API_KEY` or `GEMINI_API_KEY` is required. The bot tries
+configured providers in `AI_PROVIDER_ORDER`; a missing key is skipped, and a
+provider error falls through to the next configured provider. This makes
+OpenAI optional while the existing Gemini setup remains fully usable.
+
+Research the last 48 hours, fetch and persist the selected primary page, and
+generate a grounded article before stopping at the review gate. RSS remains
+the first discovery path. Provider web search is used when the approved feeds
+have no recent candidates, and its results are accepted only when their URLs
+match an approved primary-source domain. If a primary page blocks extraction,
+the pipeline can still draft from that publisher's persisted RSS summary and
+records the reduced evidence level in the search-run metadata:
 
 ```bash
 npm run pipeline:run
@@ -176,7 +188,7 @@ Inbox -> Ready -> In Progress -> Review -> Blocked / Done -> Archive
 
 ## Next Steps
 
-1. Configure the local PostgreSQL connection and Gemini key.
+1. Configure the local PostgreSQL connection and at least one AI provider key.
 2. Complete five supervised research-to-publish runs.
 3. Add the recurring scheduler after those QA runs pass.
 4. Add deployment monitoring and alerts.
