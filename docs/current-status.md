@@ -31,8 +31,8 @@ Last updated: 2026-08-07
 - PostgreSQL now runs privately in Docker on Oracle and contains the content
   memory schema for sources, topics, search runs, articles, raw content,
   drafts, and published-post records.
-- Four approved primary-source RSS feeds are seeded by migration: OpenAI,
-  Google DeepMind, Google AI, and Microsoft Research.
+- The PostgreSQL registry is seeded with 49 topic-mapped RSS/Atom feeds and one
+  GDELT API source across the full preset topic catalogue.
 - The Node runtime now supports source management, 48-hour research and
   ranking, GPT-5.4 generation and web search with Gemini fallback, explicit
   approval, and idempotent Telegram publication.
@@ -40,11 +40,13 @@ Last updated: 2026-08-07
   preset/custom topic mix, review-required versus automatic publication, and a
   paused/1h/6h/12h/24h database-backed schedule. Safe defaults remain broad,
   English, manual review, and paused.
-- Every run combines the approved RSS feeds with live AI-provider web search
-  across the public internet. Search results are not domain-allowlisted, but a
-  direct article must pass public-URL safety checks. The bot extracts the page
-  when possible; publisher-blocked pages use the provider's web-grounded
-  summary with a visible caveat and reduced evidence status.
+- Normal runs use RSS/Atom and GDELT first, then perform tool-free AI candidate
+  curation. Provider web search runs only when the free layer is empty: it first
+  finds and validates reusable RSS sources for PostgreSQL, then uses a bounded
+  article-search fallback only if source discovery still yields nothing.
+- Repeated source failures are recorded without storing raw provider errors.
+  Sources enter a 24-hour quarantine after three failures and a seven-day
+  quarantine after five; they are not deleted automatically.
 - When an approved publisher blocks primary-page extraction, the pipeline can
   use its already-persisted RSS summary as reduced first-party evidence instead
   of failing before draft generation.

@@ -20,6 +20,26 @@ Receives commands or scheduled jobs, prepares channel posts, and sends messages 
 
 Collects, normalizes, summarizes, and formats candidate news items.
 
+```text
+PostgreSQL topic/source registry
+  -> active RSS/Atom feeds + GDELT
+  -> normalize, deduplicate, and rank
+  -> tool-free AI editorial curation
+  -> direct article extraction
+  -> grounded draft
+
+No fresh candidates
+  -> cooldown-protected provider search for RSS/Atom endpoints
+  -> validate XML and save working sources in PostgreSQL
+  -> emergency one-call article search only if still empty
+```
+
+Each source stores success/failure timestamps, a consecutive-failure counter,
+and an optional quarantine deadline. Source discovery state is keyed by the
+normalized topic set so repeated empty runs cannot repeatedly incur search-tool
+costs. Automatically discovered sources are additive and can be disabled by an
+operator; the pipeline never deletes them automatically.
+
 ### Scheduler
 
 Runs inside the polling bot process, but stores all durable state in PostgreSQL.

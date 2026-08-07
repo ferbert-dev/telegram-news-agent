@@ -42,13 +42,24 @@ async function execute(command, args) {
   const repository = new NewsRepository(createDatabaseClient());
 
   if (command === "list") {
-    const sources = await repository.listEnabledSources();
+    const sources = await repository.listSourceHealth();
     for (const source of sources) {
       console.log(
-        `${source.id}\t${source.name}\t${source.source_type}\t${source.feed_url ?? ""}`,
+        [
+          source.id,
+          source.name,
+          source.source_type,
+          source.enabled ? "enabled" : "disabled",
+          source.disabled_until
+            ? `quarantined-until=${new Date(source.disabled_until).toISOString()}`
+            : "available",
+          `failures=${source.consecutive_failures ?? 0}`,
+          `topics=${(source.topic_codes ?? []).join(",")}`,
+          source.feed_url ?? "",
+        ].join("\t"),
       );
     }
-    return `Listed ${sources.length} enabled sources.`;
+    return `Listed ${sources.length} sources with health status.`;
   }
 
   if (command === "add") {

@@ -203,7 +203,40 @@ export class NewsRepository {
   async listEnabledSources() {
     const result = await this.query(
       "List enabled sources",
-      "select * from public.sources where enabled = true order by reliability_score desc nulls last",
+      `select s.*,
+         coalesce(
+           (
+             select array_agg(t.name order by t.name)
+             from public.source_topics st
+             join public.topics t on t.id = st.topic_id
+             where st.source_id = s.id and t.enabled = true
+           ),
+           '{}'::text[]
+         ) as topic_codes
+       from public.sources s
+       where s.enabled = true
+         and (s.disabled_until is null or s.disabled_until <= now())
+       order by s.reliability_score desc nulls last, s.name`,
+    );
+    return result.rows;
+  }
+
+  async listSourceHealth() {
+    const result = await this.query(
+      "List source health",
+      `select s.*,
+         coalesce(
+           (
+             select array_agg(t.name order by t.name)
+             from public.source_topics st
+             join public.topics t on t.id = st.topic_id
+             where st.source_id = s.id and t.enabled = true
+           ),
+           '{}'::text[]
+         ) as topic_codes
+       from public.sources s
+       order by s.enabled desc, s.disabled_until nulls first,
+         s.reliability_score desc nulls last, s.name`,
     );
     return result.rows;
   }
@@ -237,6 +270,71 @@ export class NewsRepository {
       [timestamp, id],
     );
     return this.one(result, operation);
+  }
+
+  async markSourceFetchSuccess(id) {
+    const rows = await this.functionRows(
+      "mark_source_fetch_success",
+      [id],
+      "Mark source fetch success",
+    );
+    return this.one({ rows }, "Mark source fetch success");
+  }
+
+  async markSourceFetchFailure(id, errorCode) {
+    const rows = await this.functionRows(
+      "mark_source_fetch_failure",
+      [id, errorCode],
+      "Mark source fetch failure",
+    );
+    return this.one({ rows }, "Mark source fetch failure");
+  }
+
+  async claimSourceDiscovery(topicKey) {
+    return this.functionScalar(
+      "claim_source_discovery",
+      [topicKey],
+      "Claim source discovery",
+    );
+  }
+
+  async completeSourceDiscovery({
+    topicKey,
+    provider = null,
+    model = null,
+    resultCount = 0,
+    errorCode = null,
+  }) {
+    return this.functionScalar(
+      "complete_source_discovery",
+      [topicKey, provider, model, resultCount, errorCode],
+      "Complete source discovery",
+    );
+  }
+
+  async upsertDiscoveredSource({
+    name,
+    homepageUrl,
+    feedUrl,
+    reliabilityScore = 65,
+    topicCodes = [],
+    discoveredBy,
+    discoveryMetadata = {},
+  }) {
+    const rows = await this.functionRows(
+      "upsert_discovered_source",
+      [
+        name,
+        homepageUrl,
+        feedUrl,
+        reliabilityScore,
+        topicCodes,
+        discoveredBy,
+        discoveryMetadata,
+      ],
+      "Upsert discovered source",
+    );
+    return this.one({ rows }, "Upsert discovered source");
   }
 
   async startSearchRun({ query, sourceId = null, metadata = {} }) {

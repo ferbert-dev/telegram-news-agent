@@ -27,6 +27,19 @@ test("news discovery rejects malformed article URLs after parsing", async () => 
   );
 });
 
+test("feed discovery rejects malformed feed URLs after parsing", async () => {
+  const { FeedDiscovery } = await import("../src/ai-feed-discovery.js");
+  assert.throws(
+    () =>
+      FeedDiscovery.parse({
+        items: [
+          { name: "Invalid", feedUrl: "not-a-url", homepageUrl: null },
+        ],
+      }),
+    /Invalid HTTP URL/,
+  );
+});
+
 test("OpenAI config defaults to GPT-5.4 with medium reasoning", () => {
   assert.deepEqual(getOpenAiConfig({ OPENAI_API_KEY: "test-key" }), {
     apiKey: "test-key",
@@ -118,14 +131,14 @@ test("OpenAI adapter uses Responses structured output and web search", async () 
   assert.deepEqual(calls[1].tools, [
     {
       type: "web_search",
-      search_context_size: "medium",
+      search_context_size: "low",
       external_web_access: true,
     },
   ]);
   assert.equal(calls[1].tool_choice, "required");
   assert.deepEqual(calls[1].include, ["web_search_call.action.sources"]);
   assert.deepEqual(calls[1].reasoning, { effort: "medium" });
-  assert.equal(calls[1].max_tool_calls, 4);
+  assert.equal(calls[1].max_tool_calls, 1);
   assert.doesNotMatch(calls[1].input[0].content, /recent AI news/);
   assert.match(calls[1].input[0].content, /subject labels only/);
   assert.match(calls[1].input[0].content, /German/);
@@ -187,4 +200,84 @@ test("Gemini adapter uses structured JSON generation and Google Search", async (
   assert.deepEqual(JSON.parse(calls[1].contents).customTopics, [
     "Морська біологія",
   ]);
+});
+
+test("OpenAI feed maintenance searches once for RSS endpoints, not articles", async () => {
+  let request;
+  const provider = createOpenAiProvider(
+    {
+      apiKey: "test-key",
+      model: "gpt-5.4-2026-03-05",
+      reasoningEffort: "medium",
+    },
+    {
+      client: {
+        responses: {
+          async parse(input) {
+            request = input;
+            return {
+              id: "resp_feed_search",
+              output: [{ type: "web_search_call" }],
+              usage: { input_tokens: 80, output_tokens: 20 },
+              output_parsed: {
+                items: [
+                  {
+                    name: "Publisher",
+                    feedUrl: "https://example.com/feed.xml",
+                    homepageUrl: "https://example.com/",
+                  },
+                ],
+              },
+            };
+          },
+        },
+      },
+    },
+  );
+
+  const result = await provider.searchFeeds({
+    topicCodes: ["science"],
+    customTopics: ["Ocean exploration"],
+    languageCode: "de",
+  });
+
+  assert.equal(result.items[0].feedUrl, "https://example.com/feed.xml");
+  assert.equal(result.usageEvents[0].operation, "feed_source_search");
+  assert.equal(request.max_tool_calls, 1);
+  assert.equal(request.tools[0].search_context_size, "low");
+  assert.match(request.input[0].content, /source maintenance, not article search/i);
+  assert.doesNotMatch(request.input[0].content, /direct article URLs/i);
+});
+
+test("Gemini feed maintenance uses Google Search and validates the result", async () => {
+  let request;
+  const provider = createGeminiProvider(
+    { apiKey: "test-key", model: "gemini-2.5-flash" },
+    {
+      client: {
+        models: {
+          async generateContent(input) {
+            request = input;
+            return {
+              text: JSON.stringify({
+                items: [
+                  {
+                    name: "Publisher",
+                    feedUrl: "https://example.com/feed.xml",
+                    homepageUrl: "https://example.com/",
+                  },
+                ],
+              }),
+            };
+          },
+        },
+      },
+    },
+  );
+
+  const result = await provider.searchFeeds({ topicCodes: ["history"] });
+
+  assert.equal(result.items.length, 1);
+  assert.deepEqual(request.config.tools, [{ googleSearch: {} }]);
+  assert.match(request.config.systemInstruction, /source maintenance, not article search/i);
 });

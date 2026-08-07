@@ -151,6 +151,7 @@ test("runPipeline researches and creates a review draft without publishing", asy
 test("runPipeline carries configured topics and language through research and drafting", async () => {
   const repository = repositoryFixture();
   let searchRequest;
+  let curationRequest;
   let draftRequest;
   const aiProvider = {
     async searchNews(request) {
@@ -158,6 +159,14 @@ test("runPipeline carries configured topics and language through research and dr
       return { provider: "openai", model: "test-model", items: [] };
     },
     async generateStructured(request) {
+      if (request.usageOperation === "feed_candidate_curation") {
+        curationRequest = request;
+        return {
+          provider: "openai",
+          model: "test-model",
+          value: { rankedCandidateIds: ["candidate-1"] },
+        };
+      }
       draftRequest = request;
       return {
         provider: "openai",
@@ -208,8 +217,12 @@ test("runPipeline carries configured topics and language through research and dr
     }),
   });
 
-  assert.equal(searchRequest.languageCode, "de");
-  assert.deepEqual(searchRequest.topicCodes, ["ai", "nature"]);
+  assert.equal(searchRequest, undefined);
+  assert.equal(curationRequest.input.outputLanguage, "German");
+  assert.deepEqual(curationRequest.input.requestedTopics, [
+    "Artificial intelligence",
+    "Nature and environment",
+  ]);
   assert.match(draftRequest.systemInstruction, /in German/);
   assert.match(result.preview, /aufbereitet von Anna Beispiel/);
   assert.equal(result.settings.version, 5);

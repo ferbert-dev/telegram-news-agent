@@ -10,11 +10,12 @@ the bot; it does not build application images.
 The Telegram bot uses long polling, so neither the bot nor PostgreSQL needs an
 inbound internet port. Only SSH is required for this deployment design.
 
-A checked-in migration seeds the four approved primary RSS sources: OpenAI
-News, Google DeepMind, Google AI, and Microsoft Research. Each feed was live
-and parseable when this deployment was prepared. Every news run also performs
-live provider web search across the public internet; those feeds are supporting
-signals rather than a web-search domain allowlist.
+Checked-in migrations seed 49 topic-mapped RSS/Atom sources and the GDELT DOC
+index. Normal runs fetch these free sources and use tool-free AI curation.
+Provider web search is a recovery path: first to discover, validate, and persist
+replacement feeds, and only then as an emergency article-search fallback when
+the free source layer has no recent candidates. Source health, quarantine, and
+discovery cooldown state live in PostgreSQL.
 
 ## One-time Oracle bootstrap
 

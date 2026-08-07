@@ -86,3 +86,29 @@ test("fallback reports a stable error after every provider fails", async () => {
       error.code === "ai_providers_exhausted",
   );
 });
+
+test("feed-source search uses the same OpenAI to Gemini fallback order", async () => {
+  const calls = [];
+  const provider = createFallbackAiProvider(
+    [
+      {
+        name: "openai",
+        async searchFeeds() {
+          calls.push("openai");
+          throw Object.assign(new Error("rate limit"), { status: 429 });
+        },
+      },
+      {
+        name: "gemini",
+        async searchFeeds() {
+          calls.push("gemini");
+          return { provider: "gemini", model: "flash", items: [] };
+        },
+      },
+    ],
+    { log: { warn() {} } },
+  );
+
+  assert.equal((await provider.searchFeeds({})).provider, "gemini");
+  assert.deepEqual(calls, ["openai", "gemini"]);
+});
