@@ -105,6 +105,11 @@ test("/settings and compact callbacks are strictly parsed and bounded", () => {
   assert.equal(parseSettingsCallback("cfg:l:fr:3"), null);
   assert.equal(parseSettingsCallback("cfg:i:5:3"), null);
   assert.equal(parseSettingsCallback(`cfg:l:en:${"9".repeat(70)}`), null);
+  assert.deepEqual(parseSettingsCallback("cfg:s:ok:3"), {
+    action: "status",
+    value: "applied",
+    version: 3,
+  });
 });
 
 test("home UI presents settings in language-topic-custom-approval-frequency order", () => {
@@ -117,12 +122,15 @@ test("home UI presents settings in language-topic-custom-approval-frequency orde
       "3 · Custom topics",
       "4 · Publishing",
       "5 · Frequency",
+      "✅ All changes applied",
     ],
   );
   const text = renderSettingsText(BASE_ROW);
   assert.match(text, /Language: English/);
   assert.match(text, /Publishing: Review required/);
   assert.match(text, /Frequency: Paused/);
+  assert.match(text, /Settings saved and active/);
+  assert.match(text, /Each change is applied immediately/);
 });
 
 test("showSettings persists the review chat and sends the inline UI", async () => {
@@ -151,7 +159,29 @@ test("showSettings persists the review chat and sends the inline UI", async () =
     updatedBy: 5,
   });
   assert.equal(calls[1][0], "sendMessage");
-  assert.equal(calls[1][1].reply_markup.inline_keyboard.length, 5);
+  assert.equal(calls[1][1].reply_markup.inline_keyboard.length, 6);
+});
+
+test("applied status button confirms persistence without rewriting the message", async () => {
+  const flow = callbackFixture();
+  const result = await handleSettingsCallback(
+    flow.callback,
+    parseSettingsCallback(createSettingsCallback("status", "applied", 3)),
+    {
+      token: "token",
+      channelId: "@channel",
+      userId: 5,
+      repository: flow.repository,
+      callTelegram: flow.callTelegram,
+    },
+  );
+
+  assert.match(result.auditResult, /saved and active/i);
+  assert.equal(flow.calls.some(([name]) => name === "editMessageText"), false);
+  assert.equal(
+    flow.calls.find(([name]) => name === "answerCallbackQuery")[1].text,
+    "Settings are saved and active.",
+  );
 });
 
 test("language mutation is explicit, versioned, redraws, and answers callback", async () => {
@@ -297,6 +327,34 @@ test("automatic publishing requires a confirmation page and an explicit set", as
     },
   );
   assert.equal(flow.row().approval_policy, "automatic");
+  const approvalKeyboard = renderSettingsKeyboard(flow.row(), "approval");
+  assert.equal(approvalKeyboard[1][0].text, "Auto-publish: Enabled ⚠️");
+  const automaticKeyboard = renderSettingsKeyboard(flow.row(), "automatic");
+  assert.equal(automaticKeyboard[0][0].text, "Disable auto-publish");
+});
+
+test("next run is displayed in Europe/Madrid with daylight-saving time", () => {
+  const text = renderSettingsText({
+    ...BASE_ROW,
+    schedule_interval_minutes: 360,
+    next_run_at: "2026-08-07T14:30:00.000Z",
+  });
+  assert.match(text, /Next run \(Europe\/Madrid\):/);
+  assert.match(text, /16:30/);
+  assert.match(text, /CEST/);
+  assert.doesNotMatch(text, /2026-08-07T14:30:00\.000Z/);
+});
+
+test("frequency page marks the currently applied interval", () => {
+  const active = renderSettingsKeyboard(
+    { ...BASE_ROW, schedule_interval_minutes: 360 },
+    "frequency",
+  );
+  assert.equal(active[0][1].text, "✅ Every 6 hours");
+  assert.equal(active[2][0].text, "Pause automatic search");
+
+  const paused = renderSettingsKeyboard(BASE_ROW, "frequency");
+  assert.equal(paused[2][0].text, "✅ Pause automatic search");
 });
 
 test("custom topic prompt uses ForceReply and persists an exact expiring binding", async () => {
