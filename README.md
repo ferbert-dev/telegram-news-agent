@@ -44,7 +44,8 @@ Configure these server-only values in `.env`:
 ```text
 AI_PROVIDER_ORDER=openai,gemini
 OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.6
+OPENAI_MODEL=gpt-5.4-2026-03-05
+OPENAI_REASONING_EFFORT=medium
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
 NOTION_API_KEY=
@@ -56,10 +57,12 @@ TELEGRAM_CHANNEL_ID=@HonestAINews
 APPROVAL_POLICY=manual
 ```
 
-At least one of `OPENAI_API_KEY` or `GEMINI_API_KEY` is required. The bot tries
-configured providers in `AI_PROVIDER_ORDER`; a missing key is skipped, and a
-provider error falls through to the next configured provider. This makes
-OpenAI optional while the existing Gemini setup remains fully usable.
+At least one of `OPENAI_API_KEY` or `GEMINI_API_KEY` is required. The default
+order uses `gpt-5.4-2026-03-05` first and Gemini second. A missing key is
+skipped, and an OpenAI authentication, quota, rate-limit, or response error
+falls through to Gemini. OpenAI requests use medium reasoning for reliable
+agentic web search, require the search tool, and restrict results to configured
+primary-source domains.
 
 Research the last 48 hours, fetch and persist the selected primary page, and
 generate a grounded article before stopping at the review gate. RSS remains

@@ -34,7 +34,7 @@ Last updated: 2026-08-07
 - Four approved primary-source RSS feeds are seeded by migration: OpenAI,
   Google DeepMind, Google AI, and Microsoft Research.
 - The Node runtime now supports source management, 48-hour research and
-  ranking, extensible OpenAI/Gemini generation with ordered fallback, explicit
+  ranking, GPT-5.4 generation and web search with Gemini fallback, explicit
   approval, and idempotent Telegram publication.
 - RSS is the first discovery path. AI-provider web search is available when
   approved feeds have no recent candidates, with an allowlist check against
@@ -102,7 +102,8 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHANNEL_ID=
 AI_PROVIDER_ORDER=openai,gemini
 OPENAI_API_KEY=
-OPENAI_MODEL=gpt-5.6
+OPENAI_MODEL=gpt-5.4-2026-03-05
+OPENAI_REASONING_EFFORT=medium
 GEMINI_API_KEY=
 NOTION_API_KEY=
 NOTION_AGENT_RUNS_DATA_SOURCE_ID=8eef7282-532e-4cf9-b309-bf09f9e9afeb
