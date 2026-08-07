@@ -3,6 +3,7 @@ import {
   TOPIC_PRESETS,
   validateCustomTopic,
 } from "./news-settings.js";
+import { QUIET_HOURS_LABEL } from "./quiet-hours.js";
 
 const CALLBACK_PREFIX = "cfg";
 const CALLBACK_LIMIT_BYTES = 64;
@@ -16,6 +17,7 @@ const PAGES = new Set([
   "approval",
   "automatic",
   "frequency",
+  "quiet",
 ]);
 const INTERVALS = new Set([0, 60, 360, 720, 1440]);
 
@@ -85,6 +87,11 @@ export function createSettingsCallback(action, value, version) {
       if (!INTERVALS.has(interval)) throw new Error("Invalid schedule interval");
       return callbackData(["i", interval, version]);
     }
+    case "quiet":
+      if (value !== "enabled" && value !== "disabled") {
+        throw new Error("Invalid night pause state");
+      }
+      return callbackData(["q", value === "enabled" ? "e" : "d", version]);
     case "status":
       if (value !== "applied") throw new Error("Invalid settings status");
       return callbackData(["s", "ok", version]);
@@ -140,6 +147,13 @@ export function parseSettingsCallback(data) {
   if (code === "i" && INTERVALS.has(Number(rawValue))) {
     return { action: "interval", value: Number(rawValue), version };
   }
+  if (code === "q" && (rawValue === "e" || rawValue === "d")) {
+    return {
+      action: "quiet",
+      value: rawValue === "e" ? "enabled" : "disabled",
+      version,
+    };
+  }
   if (code === "s" && rawValue === "ok") {
     return { action: "status", value: "applied", version };
   }
@@ -170,6 +184,8 @@ function normalizeSettings(row) {
     topicCodes: [...(row.topic_codes ?? row.topicCodes ?? [])],
     customTopics: [...(row.custom_topics ?? row.customTopics ?? [])],
     approvalPolicy: row.approval_policy ?? row.approvalPolicy ?? "manual",
+    quietHoursEnabled:
+      row.quiet_hours_enabled ?? row.quietHoursEnabled ?? true,
     nextRunAt: row.next_run_at ?? row.nextRunAt ?? null,
     lastRunStatus: row.last_run_status ?? row.lastRunStatus ?? null,
     scheduleDraftId: row.schedule_draft_id ?? row.scheduleDraftId ?? null,
@@ -227,6 +243,7 @@ export function renderSettingsText(
     `Custom topics: ${custom}`,
     `Publishing: ${settings.approvalPolicy === "automatic" ? "Auto-publish enabled ⚠️" : "Review required"}`,
     `Frequency: ${intervalLabel(settings.scheduleIntervalMinutes)}`,
+    `Night pause: ${settings.quietHoursEnabled ? `Enabled (${QUIET_HOURS_LABEL})` : "Disabled"}`,
     `Next run (${timeZone}): ${nextRun}`,
     "",
     "Each change is applied immediately.",
@@ -392,12 +409,41 @@ export function renderSettingsKeyboard(row, page = "home") {
       [button("‹ Back", "view", "home", version)],
     ];
   }
+  if (page === "quiet") {
+    return [
+      [
+        button(
+          `${settings.quietHoursEnabled ? "✅ " : ""}Enabled · ${QUIET_HOURS_LABEL}`,
+          "quiet",
+          "enabled",
+          version,
+        ),
+      ],
+      [
+        button(
+          `${settings.quietHoursEnabled ? "" : "✅ "}Disabled`,
+          "quiet",
+          "disabled",
+          version,
+        ),
+      ],
+      [button("‹ Back", "view", "home", version)],
+    ];
+  }
   return [
     [button("1 · Language", "view", "language", version)],
     [button("2 · Topics", "view", "topics", version)],
     [button("3 · Custom topics", "view", "custom", version)],
     [button("4 · Publishing", "view", "approval", version)],
     [button("5 · Frequency", "view", "frequency", version)],
+    [
+      button(
+        `6 · Night pause · ${settings.quietHoursEnabled ? "Enabled" : "Disabled"}`,
+        "view",
+        "quiet",
+        version,
+      ),
+    ],
     [
       button(
         "✅ Apply & close settings",
@@ -430,6 +476,8 @@ async function editSettingsMessage({
         : "\n\nWarning: automatic publishing sends new articles to the channel without review."
       : page === "frequency"
         ? "\n\nCost note: every-hour search can consume provider and web-search credits quickly."
+        : page === "quiet"
+          ? `\n\nWhen enabled, scheduled work waits until 08:00 and never publishes between 22:00 and 08:00 (${QUIET_HOURS_LABEL.split(" ").at(-1)}). Explicit manual Publish remains available.`
         : "";
   try {
     await callTelegram(token, "editMessageText", {
@@ -460,6 +508,7 @@ function updatePayload(settings, changes, { channelId, chatId, userId, version }
     topicCodes: settings.topicCodes,
     customTopics: settings.customTopics,
     approvalPolicy: settings.approvalPolicy,
+    quietHoursEnabled: settings.quietHoursEnabled,
     updatedBy: userId,
     expectedVersion: version,
     ...changes,
@@ -635,6 +684,9 @@ export async function handleSettingsCallback(
       }
       changes = { scheduleIntervalMinutes: parsed.value === 0 ? null : parsed.value };
       returnPage = "frequency";
+    } else if (parsed.action === "quiet") {
+      changes = { quietHoursEnabled: parsed.value === "enabled" };
+      returnPage = "quiet";
     }
 
     const updated = await repository.updateNewsSettings(

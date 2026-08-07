@@ -147,11 +147,13 @@ Send `/settings` in a private chat with the bot to configure, in order:
 1. output language: English, Ukrainian, or German;
 2. preset topics plus up to five custom topic labels;
 3. review-required or automatic publication;
-4. paused, every 1, 6, 12, or 24 hours.
+4. paused, every 1, 6, 12, or 24 hours;
+5. the scheduled night pause from 22:00 to 08:00 Europe/Madrid.
 
 The native Telegram inline menu writes a versioned configuration to PostgreSQL;
 no public web UI or additional Oracle port is required. Defaults are the broad
-topic mix, English, review required, and automatic search paused. Enabling
+topic mix, English, review required, automatic search paused, and the night
+pause enabled. Enabling
 automatic publication requires a separate confirmation screen. Selecting the
 one-hour interval can consume provider search/tool credits quickly. Every menu
 change is saved and applied immediately; the home screen and selected-option
@@ -203,7 +205,12 @@ survives restarts, prevents overlapping pipeline executions, and will not
 create another manual draft for the channel while an unexpired review is
 pending. Before any automatic send, it durably checkpoints the selected draft;
 a crash resumes that exact draft instead of researching and publishing another
-one. An uncertain Telegram send pauses recurrence for manual reconciliation.
+one. With the night pause enabled, due work is moved to the next 08:00 in
+Europe/Madrid. If research crosses 22:00, its draft remains checkpointed and is
+resumed after 08:00 without repeating the paid research. The scheduler checks
+again immediately before Telegram delivery. An explicit manual `/news` or
+Publish action remains available as an operator override. An uncertain Telegram
+send pauses recurrence for manual reconciliation.
 
 Polling refuses to start while a webhook URL is configured. For an intentional
 migration only, set `TELEGRAM_POLLING_MIGRATE_WEBHOOK=true` for one startup;

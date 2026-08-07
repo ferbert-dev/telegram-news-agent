@@ -48,7 +48,11 @@ fences concurrent workers and stale claims can be recovered after a crash. A
 run takes one immutable settings snapshot and advances the next due time only
 after recording the outcome. Automatic mode checkpoints its draft before the
 external Telegram send and resumes that draft idempotently after a crash.
-Ambiguous sends pause recurrence until an operator reconciles the publication.
+An enabled 22:00–08:00 `Europe/Madrid` night pause moves due rows to the next
+local 08:00. In-process checks fence both research startup and Telegram
+delivery; a draft completed after 22:00 remains attached to the same occurrence
+for morning recovery. Ambiguous sends pause recurrence until an operator
+reconciles the publication.
 
 ### Review Gate
 
@@ -63,7 +67,7 @@ Administrators use native Telegram inline keyboards rather than a Mini App.
 This keeps the control plane private, avoids a new public HTTP service, and
 allows every mutation to be re-authorized and guarded by an optimistic settings
 version. PostgreSQL stores language, preset/custom topics, review chat,
-publication policy, interval, and schedule state.
+publication policy, interval, night-pause state, and schedule state.
 
 ## First Technical Decision
 

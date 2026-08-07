@@ -14,6 +14,7 @@ const CLAIM = {
   topic_codes: ["world"],
   custom_topics: [],
   approval_policy: "manual",
+  quiet_hours_enabled: false,
   schedule_claim_token: "claim-1",
   schedule_run_id: "run-1",
   version: 3,
@@ -42,6 +43,10 @@ function fixture(overrides = {}) {
       return true;
     },
     async renewNewsScheduleClaim() {
+      return true;
+    },
+    async deferNewsScheduleForQuietHours(input) {
+      calls.push(["deferQuiet", input]);
       return true;
     },
     async pauseNewsScheduleUnresolved(input) {
@@ -78,6 +83,89 @@ test("scheduler stays idle when no configuration is due", async () => {
     repository: { async claimDueNewsSchedule() { return null; } },
   });
   assert.deepEqual(await runScheduledNewsOnce(dependencies), { status: "idle" });
+});
+
+test("night pause defers a claimed occurrence before research starts", async () => {
+  let researched = false;
+  const claim = { ...CLAIM, quiet_hours_enabled: true };
+  const { calls, dependencies } = fixture({
+    repository: { async claimDueNewsSchedule() { return claim; } },
+    dependencies: { async runNews() { researched = true; } },
+  });
+
+  const result = await runScheduledNewsOnce({
+    ...dependencies,
+    now: () => new Date("2026-08-07T20:00:00.000Z"),
+  });
+
+  assert.equal(result.status, "quiet_hours_deferred");
+  assert.equal(researched, false);
+  assert.deepEqual(calls, [
+    [
+      "deferQuiet",
+      { channelId: "@channel", claimToken: "claim-1" },
+    ],
+  ]);
+});
+
+test("night pause checkpoints completed research and defers publication", async () => {
+  let published = false;
+  const claim = {
+    ...CLAIM,
+    approval_policy: "automatic",
+    quiet_hours_enabled: true,
+  };
+  const times = [
+    new Date("2026-08-07T19:59:00.000Z"),
+    new Date("2026-08-07T20:00:00.000Z"),
+  ];
+  const { calls, dependencies } = fixture({
+    repository: { async claimDueNewsSchedule() { return claim; } },
+    dependencies: { async publishDraft() { published = true; } },
+  });
+
+  const result = await runScheduledNewsOnce({
+    ...dependencies,
+    now: () => times.shift() ?? times.at(-1),
+  });
+
+  assert.equal(result.status, "quiet_hours_deferred");
+  assert.equal(result.draftId, "draft-1");
+  assert.equal(published, false);
+  assert.equal(calls[0][0], "saveDraft");
+  assert.equal(calls[1][0], "deferQuiet");
+  assert.equal(calls.some(([name]) => name === "finish"), false);
+});
+
+test("night pause rechecks immediately before automatic publication", async () => {
+  let published = false;
+  const claim = {
+    ...CLAIM,
+    approval_policy: "automatic",
+    quiet_hours_enabled: true,
+    schedule_draft_id: "draft-ready",
+    schedule_preview: "Ready preview",
+    schedule_window_hours: 48,
+  };
+  const times = [
+    new Date("2026-08-07T19:59:00.000Z"),
+    new Date("2026-08-07T19:59:30.000Z"),
+    new Date("2026-08-07T20:00:00.000Z"),
+  ];
+  const { calls, dependencies } = fixture({
+    repository: { async claimDueNewsSchedule() { return claim; } },
+    dependencies: { async publishDraft() { published = true; } },
+  });
+
+  const result = await runScheduledNewsOnce({
+    ...dependencies,
+    now: () => times.shift() ?? new Date("2026-08-07T20:00:00.000Z"),
+  });
+
+  assert.equal(result.status, "quiet_hours_deferred");
+  assert.equal(result.draftId, "draft-ready");
+  assert.equal(published, false);
+  assert.equal(calls.some(([name]) => name === "deferQuiet"), true);
 });
 
 test("manual scheduled run creates one bound review and advances schedule", async () => {

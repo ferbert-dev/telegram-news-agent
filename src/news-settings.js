@@ -167,6 +167,16 @@ export function normalizeNewsSettings(row = {}) {
     throw new Error("approvalPolicy must be manual or automatic");
   }
 
+  const quietHoursValue = firstDefined(
+    row,
+    "quietHoursEnabled",
+    "quiet_hours_enabled",
+    true,
+  );
+  if (typeof quietHoursValue !== "boolean") {
+    throw new Error("quietHoursEnabled must be a boolean");
+  }
+
   const version = Number(firstDefined(row, "version", "version", 1));
   if (!Number.isSafeInteger(version) || version < 1) {
     throw new Error("version must be a positive integer");
@@ -206,6 +216,7 @@ export function normalizeNewsSettings(row = {}) {
     topicCodes: Object.freeze(topicCodes),
     customTopics: Object.freeze(customTopics),
     approvalPolicy,
+    quietHoursEnabled: quietHoursValue,
     nextRunAt,
     version,
     updatedBy: normalizeNullableId(
@@ -225,6 +236,7 @@ export function newsSettingsSnapshot(settings) {
     topicCodes: [...normalized.topicCodes],
     customTopics: [...normalized.customTopics],
     approvalPolicy: normalized.approvalPolicy,
+    quietHoursEnabled: normalized.quietHoursEnabled,
     nextRunAt: normalized.nextRunAt,
     version: normalized.version,
     updatedBy: normalized.updatedBy,

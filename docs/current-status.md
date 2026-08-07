@@ -38,8 +38,11 @@ Last updated: 2026-08-07
   approval, and idempotent Telegram publication.
 - Private admin `/settings` controls English/Ukrainian/German output, a broad
   preset/custom topic mix, review-required versus automatic publication, and a
-  paused/1h/6h/12h/24h database-backed schedule. Safe defaults remain broad,
-  English, manual review, and paused.
+  paused/1h/6h/12h/24h database-backed schedule. It also controls an enabled-by-
+  default scheduled night pause from 22:00 to 08:00 Europe/Madrid. Due work is
+  deferred to 08:00, and a draft completed after 22:00 is checkpointed for
+  morning recovery without repeating research. Safe defaults remain broad,
+  English, manual review, paused scheduling, and night pause enabled.
 - Private admin `/labs` controls experimental, per-channel feature flags. The
   first V1 flag classifies articles against a PostgreSQL tag catalogue in
   Off/Collect/Enabled modes; story connections remain disabled pending tag

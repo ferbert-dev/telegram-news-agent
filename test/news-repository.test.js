@@ -373,6 +373,7 @@ test("news settings repository methods use versioned PostgreSQL functions", asyn
       topicCodes: ["world", "nature"],
       customTopics: ["Ocean exploration"],
       approvalPolicy: "automatic",
+      quietHoursEnabled: true,
       updatedBy: 7,
       expectedVersion: 1,
     }),
@@ -386,7 +387,7 @@ test("news settings repository methods use versioned PostgreSQL functions", asyn
     ],
     ["select * from public.get_news_settings($1)", ["@channel"]],
     [
-      "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+      "select * from public.update_news_settings($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
       [
         "@channel",
         42,
@@ -395,6 +396,7 @@ test("news settings repository methods use versioned PostgreSQL functions", asyn
         ["world", "nature"],
         ["Ocean exploration"],
         "automatic",
+        true,
         7,
         1,
       ],
@@ -411,6 +413,7 @@ test("settings input and scheduler repository methods preserve bindings", async 
         text.includes("finish_news_schedule") ||
         text.includes("save_news_schedule") ||
         text.includes("renew_news_schedule") ||
+        text.includes("defer_news_schedule") ||
         text.includes("pause_news_schedule") ||
         text.includes("has_pending")
       ) {
@@ -479,6 +482,13 @@ test("settings input and scheduler repository methods preserve bindings", async 
     true,
   );
   assert.equal(
+    await repository.deferNewsScheduleForQuietHours({
+      channelId: "@channel",
+      claimToken: "claim-1",
+    }),
+    true,
+  );
+  assert.equal(
     await repository.finishNewsSchedule({
       channelId: "@channel",
       claimToken: "claim-1",
@@ -511,6 +521,10 @@ test("settings input and scheduler repository methods preserve bindings", async 
     ],
     [
       "select public.renew_news_schedule_claim($1, $2) as value",
+      ["@channel", "claim-1"],
+    ],
+    [
+      "select public.defer_news_schedule_for_quiet_hours($1, $2) as value",
       ["@channel", "claim-1"],
     ],
     [

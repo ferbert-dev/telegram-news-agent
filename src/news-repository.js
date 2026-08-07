@@ -792,6 +792,7 @@ export class NewsRepository {
     topicCodes,
     customTopics,
     approvalPolicy,
+    quietHoursEnabled,
     updatedBy,
     expectedVersion,
   }) {
@@ -805,6 +806,7 @@ export class NewsRepository {
         topicCodes,
         customTopics,
         approvalPolicy,
+        quietHoursEnabled,
         updatedBy,
         expectedVersion,
       ],
@@ -881,6 +883,14 @@ export class NewsRepository {
       "renew_news_schedule_claim",
       [channelId, claimToken],
       "Renew news schedule claim",
+    );
+  }
+
+  async deferNewsScheduleForQuietHours({ channelId, claimToken }) {
+    return this.functionScalar(
+      "defer_news_schedule_for_quiet_hours",
+      [channelId, claimToken],
+      "Defer news schedule for quiet hours",
     );
   }
 

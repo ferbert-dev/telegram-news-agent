@@ -25,6 +25,7 @@ const BASE_ROW = Object.freeze({
   topic_codes: ["world", "science", "nature", "animals"],
   custom_topics: [],
   approval_policy: "manual",
+  quiet_hours_enabled: true,
   next_run_at: null,
   version: 3,
 });
@@ -38,6 +39,7 @@ function updatedRow(payload, version = payload.expectedVersion + 1) {
     topic_codes: payload.topicCodes,
     custom_topics: payload.customTopics,
     approval_policy: payload.approvalPolicy,
+    quiet_hours_enabled: payload.quietHoursEnabled,
     next_run_at: null,
     version,
   };
@@ -113,7 +115,7 @@ test("/settings and compact callbacks are strictly parsed and bounded", () => {
   });
 });
 
-test("home UI presents settings in language-topic-custom-approval-frequency order", () => {
+test("home UI presents settings including the active night pause", () => {
   const keyboard = renderSettingsKeyboard(BASE_ROW, "home");
   assert.deepEqual(
     keyboard.map((row) => row[0].text),
@@ -123,6 +125,7 @@ test("home UI presents settings in language-topic-custom-approval-frequency orde
       "3 · Custom topics",
       "4 · Publishing",
       "5 · Frequency",
+      "6 · Night pause · Enabled",
       "✅ Apply & close settings",
     ],
   );
@@ -131,6 +134,7 @@ test("home UI presents settings in language-topic-custom-approval-frequency orde
   assert.match(text, /Language: English/);
   assert.match(text, /Publishing: Review required/);
   assert.match(text, /Frequency: Paused/);
+  assert.match(text, /Night pause: Enabled \(22:00–08:00 Europe\/Madrid\)/);
   assert.match(text, /Settings saved and active/);
   assert.match(text, /Each change is applied immediately/);
 });
@@ -161,7 +165,30 @@ test("showSettings persists the review chat and sends the inline UI", async () =
     updatedBy: 5,
   });
   assert.equal(calls[1][0], "sendMessage");
-  assert.equal(calls[1][1].reply_markup.inline_keyboard.length, 6);
+  assert.equal(calls[1][1].reply_markup.inline_keyboard.length, 7);
+});
+
+test("night pause can be disabled explicitly and remains versioned", async () => {
+  const flow = callbackFixture();
+  const parsed = parseSettingsCallback(
+    createSettingsCallback("quiet", "disabled", 3),
+  );
+
+  await handleSettingsCallback(flow.callback, parsed, {
+    token: "token",
+    channelId: "@channel",
+    userId: 5,
+    repository: flow.repository,
+    callTelegram: flow.callTelegram,
+  });
+
+  const payload = flow.calls.find(([name]) => name === "update")[1];
+  assert.equal(payload.quietHoursEnabled, false);
+  assert.equal(payload.expectedVersion, 3);
+  assert.equal(flow.row().quiet_hours_enabled, false);
+  const edit = flow.calls.find(([name]) => name === "editMessageText")[1];
+  assert.match(edit.text, /Night pause: Disabled/);
+  assert.equal(edit.reply_markup.inline_keyboard[1][0].text, "✅ Disabled");
 });
 
 test("applied status button replaces controls with an applied summary", async () => {
