@@ -2,9 +2,19 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type { Pool } from "pg";
 
+import type {
+  ArticleTagRow,
+  CatalogPersistence,
+  CompleteSourceDiscoveryInput,
+  SourceRow,
+  SourceWithTopics,
+  UpsertDiscoveredSourceInput,
+  UpsertSourceInput,
+} from "../../catalog/catalog-persistence.js";
 import {
   sourceTopics,
   sources,
+  topicTranslations,
   topics,
 } from "../schema/catalog.js";
 import type { DrizzleDatabase } from "../drizzle-client.js";
@@ -18,30 +28,14 @@ import {
   toNullableIsoTimestamp,
 } from "./repository-support.js";
 
-export type SourceRow = {
-  id: string;
-  name: string;
-  homepage_url: string | null;
-  feed_url: string | null;
-  source_type: string;
-  reliability_score: number | null;
-  enabled: boolean;
-  last_checked_at: string | null;
-  created_at: string;
-  updated_at: string;
-  is_primary: boolean;
-  last_success_at: string | null;
-  last_failed_at: string | null;
-  consecutive_failures: number;
-  last_error_code: string | null;
-  disabled_until: string | null;
-  discovered_by: string;
-  discovery_metadata: Record<string, unknown>;
-};
-
-export type SourceWithTopics = SourceRow & {
-  topic_codes: string[];
-};
+export type {
+  ArticleTagRow,
+  CompleteSourceDiscoveryInput,
+  SourceRow,
+  SourceWithTopics,
+  UpsertDiscoveredSourceInput,
+  UpsertSourceInput,
+} from "../../catalog/catalog-persistence.js";
 
 type SourceTimestampFields = {
   last_checked_at: string | Date | null;
@@ -81,34 +75,25 @@ export function mapSourceRow<T extends SourceDatabaseRow>(
   };
 }
 
-export type UpsertSourceInput = {
-  name: string;
-  feed_url: string;
-  source_type: string;
-  homepage_url?: string | null;
-  reliability_score?: number | null;
-  enabled?: boolean;
-  is_primary?: boolean;
-  last_checked_at?: string | null;
+type ArticleTagDatabaseRow = {
+  topicId: string;
+  code: string;
+  description: string | null;
+  languageCode: string;
+  label: string;
+  hashtag: string;
 };
 
-export type CompleteSourceDiscoveryInput = {
-  topicKey: string;
-  provider?: string | null;
-  model?: string | null;
-  resultCount?: number;
-  errorCode?: string | null;
-};
-
-export type UpsertDiscoveredSourceInput = {
-  name: string;
-  homepageUrl: string | null;
-  feedUrl: string;
-  reliabilityScore?: number;
-  topicCodes?: string[];
-  discoveredBy: string;
-  discoveryMetadata?: Record<string, unknown>;
-};
+function mapArticleTagRow(row: ArticleTagDatabaseRow): ArticleTagRow {
+  return {
+    topic_id: row.topicId,
+    code: row.code,
+    description: row.description,
+    language_code: row.languageCode,
+    label: row.label,
+    hashtag: row.hashtag,
+  };
+}
 
 const sourceSelection = {
   id: sources.id,
@@ -153,7 +138,10 @@ const upsertDiscoveredSourceFunction = postgresRows<SourceDatabaseRow>(
 );
 
 @Injectable()
-export class SourcesRepository extends RepositorySupport {
+export class SourcesRepository
+  extends RepositorySupport
+  implements CatalogPersistence
+{
   constructor(
     @Inject(PG_POOL) pool: Pool,
     @Inject(DRIZZLE_DB) database: DrizzleDatabase,
@@ -203,6 +191,38 @@ export class SourcesRepository extends RepositorySupport {
           asc(sources.name),
         );
       return rows.map(mapSourceRow);
+    });
+  }
+
+  async listEnabledArticleTags(
+    languageCode: string,
+  ): Promise<ArticleTagRow[]> {
+    return this.operation("List enabled article tags", async () => {
+      const rows = await this.database
+        .select({
+          topicId: topics.id,
+          code: topics.name,
+          description: topics.description,
+          languageCode: topicTranslations.languageCode,
+          label: topicTranslations.label,
+          hashtag: topicTranslations.hashtag,
+        })
+        .from(topics)
+        .innerJoin(
+          topicTranslations,
+          eq(topicTranslations.topicId, topics.id),
+        )
+        .where(
+          and(
+            eq(topics.enabled, true),
+            eq(
+              topicTranslations.languageCode,
+              sql<string>`lower(btrim(${languageCode}))`,
+            ),
+          ),
+        )
+        .orderBy(asc(topics.name));
+      return rows.map(mapArticleTagRow);
     });
   }
 

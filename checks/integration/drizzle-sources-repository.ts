@@ -37,6 +37,16 @@ test(
       });
       sourceId = source.id;
 
+      const germanTags = await repository.listEnabledArticleTags(" DE ");
+      assert.ok(
+        germanTags.some(
+          (tag) =>
+            tag.code === "science" &&
+            tag.language_code === "de" &&
+            tag.hashtag === "#Wissenschaft",
+        ),
+      );
+
       assert.ok(
         (await repository.listEnabledSources()).some(
           (candidate) => candidate.id === source.id,

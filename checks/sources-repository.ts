@@ -6,6 +6,55 @@ import type { Pool } from "pg";
 import { createDrizzleDatabase } from "../src/database/drizzle-client.js";
 import { SourcesRepository } from "../src/database/repositories/sources-repository.js";
 
+test("article tag catalog uses typed topic and translation rows with legacy DTO keys", async () => {
+  const calls: [string, unknown[]][] = [];
+  const pool = {
+    async query(
+      query: string | { text: string; values?: unknown[] },
+      parameters: unknown[] = [],
+    ) {
+      const text = typeof query === "string" ? query : query.text;
+      const values = typeof query === "string"
+        ? parameters
+        : (query.values ?? parameters);
+      calls.push([text, values]);
+      return {
+        rows: [
+          [
+            "topic-1",
+            "science",
+            "Science and discoveries",
+            "de",
+            "Wissenschaft",
+            "#Wissenschaft",
+          ],
+        ],
+      };
+    },
+  } as unknown as Pool;
+  const repository = new SourcesRepository(pool, createDrizzleDatabase(pool));
+
+  assert.deepEqual(await repository.listEnabledArticleTags(" DE "), [
+    {
+      topic_id: "topic-1",
+      code: "science",
+      description: "Science and discoveries",
+      language_code: "de",
+      label: "Wissenschaft",
+      hashtag: "#Wissenschaft",
+    },
+  ]);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0][0], /inner join "topic_translations"/);
+  assert.match(calls[0][0], /"topics"\."enabled" = \$1/);
+  assert.match(
+    calls[0][0],
+    /"topic_translations"\."language_code" = lower\(btrim\(\$2\)\)/,
+  );
+  assert.match(calls[0][0], /order by "topics"\."name" asc/);
+  assert.deepEqual(calls[0][1], [true, " DE "]);
+});
+
 test("source health and discovery mutations keep atomic PostgreSQL functions", async () => {
   const calls: [string, unknown[]][] = [];
   const functionTimestamp = new Date("2026-08-09T10:34:56.123Z");

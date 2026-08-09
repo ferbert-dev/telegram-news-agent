@@ -1,0 +1,1 @@
+export const CATALOG_PERSISTENCE = Symbol("CATALOG_PERSISTENCE");
