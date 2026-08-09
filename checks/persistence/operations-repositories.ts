@@ -14,7 +14,7 @@ import {
   NotionAuditOutboxRepository,
 } from "../../src/database/repositories/notion-audit-outbox-repository.js";
 import { PipelineLeasesRepository } from "../../src/database/repositories/pipeline-leases-repository.js";
-import { OperationsModule } from "../../src/operations/operations.module.js";
+import { OperationsPersistenceModule } from "../../src/operations/operations-persistence.module.js";
 import {
   NOTION_AUDIT_OUTBOX_REPOSITORY,
   PIPELINE_LEASES_REPOSITORY,
@@ -165,7 +165,7 @@ test("Notion audit lifecycle retains atomic claim, completion, and retry functio
   ]);
 });
 
-test("OperationsModule exports narrow interface tokens backed by one repository instance", async () => {
+test("OperationsPersistenceModule exports narrow interface tokens backed by one repository instance", async () => {
   class FakePool extends EventEmitter {
     query(): never {
       throw new Error("The dependency-injection test must not query PostgreSQL");
@@ -176,7 +176,7 @@ test("OperationsModule exports narrow interface tokens backed by one repository 
 
   const pool = new FakePool() as unknown as Pool;
   const moduleRef = await Test.createTestingModule({
-    imports: [OperationsModule],
+    imports: [OperationsPersistenceModule],
   })
     .overrideProvider(PG_POOL)
     .useValue(pool)
