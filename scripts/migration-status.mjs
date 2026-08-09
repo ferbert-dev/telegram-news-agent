@@ -7,6 +7,14 @@ import { Pool } from "pg";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migrationDirectory = path.join(root, "db", "migrations");
 const connectionString = process.env.DATABASE_URL?.trim();
+const argumentsList = process.argv.slice(2);
+const requireApplied = argumentsList.includes("--require-applied");
+
+for (const argument of argumentsList) {
+  if (argument !== "--require-applied") {
+    throw new Error(`Unknown argument: ${argument}`);
+  }
+}
 
 if (!connectionString) {
   throw new Error("DATABASE_URL is required");
@@ -66,9 +74,15 @@ try {
   }, {});
 
   console.table(status);
-  console.log(JSON.stringify({ event: "migration_status", counts }));
+  console.log(
+    JSON.stringify({ event: "migration_status", counts, requireApplied }),
+  );
 
-  if (counts.changed || counts.missing_locally) {
+  if (
+    counts.changed ||
+    counts.missing_locally ||
+    (requireApplied && status.some((entry) => entry.status !== "applied"))
+  ) {
     process.exitCode = 1;
   }
 } finally {

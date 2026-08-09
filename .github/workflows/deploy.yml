@@ -82,9 +82,28 @@ jobs:
             -f compose.yaml \
             -f compose.test.yaml \
             run --rm migrate
+          docker compose \
+            -p telegram-news-agent-ci \
+            -f compose.yaml \
+            -f compose.test.yaml \
+            run --rm migrate
+          DATABASE_URL="$DATABASE_TEST_URL" \
+            npm run database:status -- --require-applied
+          DATABASE_URL="$DATABASE_TEST_URL" \
+            npm run database:contract -- \
+              --output "$RUNNER_TEMP/postgres-contract.json"
           DATABASE_URL="$DATABASE_TEST_URL" npm run database:drift
           npm run test:integration
           DATABASE_TEST_URL="$DATABASE_TEST_URL" npm run test:integration:drizzle
+
+      - name: Upload PostgreSQL contract inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-contract-${{ github.sha }}
+          path: ${{ runner.temp }}/postgres-contract.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Show container logs after failure
         if: failure()
