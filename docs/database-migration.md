@@ -115,6 +115,8 @@ Then:
 
 ### Slice 2: sources repository
 
+- Status: parallel typed implementation complete; production wiring remains
+  intentionally off until the foundation is reviewed and merged.
 - Introduce a `SourcesRepository` interface.
 - Move source listing and source-health queries to Drizzle.
 - Keep atomic discovery and health functions in SQL and call them through the

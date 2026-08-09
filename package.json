@@ -6,6 +6,8 @@
   "scripts": {
     "test": "node --test",
     "test:drizzle": "tsx --test checks/drizzle-schema.ts",
+    "test:drizzle:sources": "tsx --test checks/sources-repository.ts",
+    "test:integration:drizzle": "RUN_DATABASE_INTEGRATION=1 tsx --test checks/integration/*.ts",
     "test:integration": "RUN_DATABASE_INTEGRATION=1 node --test test/integration/*.test.js",
     "typecheck": "tsc --noEmit",
     "database:migrate": "node scripts/migrate.mjs",
