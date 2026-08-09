@@ -1,0 +1,95 @@
+import assert from "node:assert/strict";
+
+const { CatalogService } = await import(
+  "../dist/catalog/application/catalog.service.js"
+);
+const { CatalogApplicationModule } = await import(
+  "../dist/catalog/catalog-application.module.js"
+);
+const { ResearchService } = await import(
+  "../dist/research/application/research.service.js"
+);
+const { RunResearchUseCase } = await import(
+  "../dist/research/application/run-research.use-case.js"
+);
+const { ResearchApplicationModule } = await import(
+  "../dist/research/research-application.module.js"
+);
+const tokens = await import("../dist/research/research-gateway.tokens.js");
+
+const source = {
+  id: "source-1",
+  name: "Example",
+  homepage_url: null,
+  feed_url: "https://example.test/feed.xml",
+  source_type: "rss",
+  reliability_score: 80,
+  enabled: true,
+  last_checked_at: null,
+  created_at: "2026-08-09T08:00:00.000Z",
+  updated_at: "2026-08-09T08:00:00.000Z",
+  is_primary: true,
+  last_success_at: null,
+  last_failed_at: null,
+  consecutive_failures: 0,
+  last_error_code: null,
+  disabled_until: null,
+  discovered_by: "seed",
+  discovery_metadata: {},
+};
+const catalog = new CatalogService({
+  async listEnabledSources() { return [{ ...source, topic_codes: ["science"] }]; },
+});
+assert.equal((await catalog.listEnabledSources())[0].id, source.id);
+
+const run = {
+  id: "run-1",
+  query: "science",
+  status: "running",
+  source_id: null,
+  started_at: "2026-08-09T08:00:00.000Z",
+  finished_at: null,
+  result_count: 0,
+  error: null,
+  metadata: {},
+};
+const persistence = {
+  async startSearchRun() { return run; },
+  async finishSearchRun(_id, input) {
+    assert.equal(input.resultCount, 0);
+    return { ...run, status: "completed", result_count: 0 };
+  },
+  async failSearchRun() { throw new Error("must not fail"); },
+};
+const usage = {
+  async recordAiUsage() { throw new Error("no usage expected"); },
+};
+const catalogPersistence = {
+  async listEnabledSources() { return []; },
+};
+const execution = {
+  async execute(_request, signal) {
+    assert.equal(signal, abort.signal);
+    return { candidates: [], usageEvents: [], finish: { metadata: { empty: true } } };
+  },
+};
+const abort = new AbortController();
+const useCase = new RunResearchUseCase(
+  persistence,
+  catalogPersistence,
+  usage,
+  execution,
+);
+const service = new ResearchService(persistence, usage, useCase);
+const result = await service.runResearch({ query: "science" }, abort.signal);
+assert.equal(result.completedRun.status, "completed");
+
+const module = ResearchApplicationModule.register({
+  ai: {},
+  search: {},
+  fetch: {},
+  execution,
+});
+assert.equal(module.module, ResearchApplicationModule);
+assert.equal(module.exports.includes(tokens.RESEARCH_EXECUTION_GATEWAY), true);
+assert.equal(typeof CatalogApplicationModule, "function");
