@@ -43,6 +43,9 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Create test-only Compose environment file
+        run: install -m 600 /dev/null .env.production
+
       - name: Validate deployment configuration
         env:
           POSTGRES_PASSWORD: ci-superuser-password
@@ -69,7 +72,6 @@ jobs:
 
       - name: Run PostgreSQL migration and integration tests
         run: |
-          touch .env.production
           docker compose \
             -p telegram-news-agent-ci \
             -f compose.yaml \
