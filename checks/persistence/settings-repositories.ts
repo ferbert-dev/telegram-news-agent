@@ -372,6 +372,9 @@ test("SettingsModule exposes only narrow Symbol-token repository contracts", asy
     assert.ok(settings instanceof NewsSettingsRepository);
     assert.ok(features instanceof FeatureFlagsRepository);
     assert.ok(inputs instanceof TelegramSettingsInputRepository);
+    assert.equal(settings, moduleRef.get(NewsSettingsRepository));
+    assert.equal(features, moduleRef.get(FeatureFlagsRepository));
+    assert.equal(inputs, moduleRef.get(TelegramSettingsInputRepository));
     assert.equal(
       new Set([
         NEWS_SETTINGS_REPOSITORY,

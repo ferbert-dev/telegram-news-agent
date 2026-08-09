@@ -13,17 +13,20 @@ import {
 import { TelegramSettingsInputRepository } from "./telegram-settings-input-repository.js";
 
 const settingsRepositoryProviders: Provider[] = [
+  NewsSettingsRepository,
+  FeatureFlagsRepository,
+  TelegramSettingsInputRepository,
   {
     provide: NEWS_SETTINGS_REPOSITORY,
-    useClass: NewsSettingsRepository,
+    useExisting: NewsSettingsRepository,
   },
   {
     provide: NEWS_FEATURE_FLAGS_REPOSITORY,
-    useClass: FeatureFlagsRepository,
+    useExisting: FeatureFlagsRepository,
   },
   {
     provide: TELEGRAM_SETTINGS_INPUT_REPOSITORY,
-    useClass: TelegramSettingsInputRepository,
+    useExisting: TelegramSettingsInputRepository,
   },
 ];
 
