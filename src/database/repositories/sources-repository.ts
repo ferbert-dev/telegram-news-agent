@@ -14,6 +14,8 @@ import {
   postgresScalar,
   RepositorySupport,
   timestamp,
+  toIsoTimestamp,
+  toNullableIsoTimestamp,
 } from "./repository-support.js";
 
 export type SourceRow = {
@@ -40,6 +42,44 @@ export type SourceRow = {
 export type SourceWithTopics = SourceRow & {
   topic_codes: string[];
 };
+
+type SourceTimestampFields = {
+  last_checked_at: string | Date | null;
+  created_at: string | Date;
+  updated_at: string | Date;
+  last_success_at: string | Date | null;
+  last_failed_at: string | Date | null;
+  disabled_until: string | Date | null;
+};
+
+export type SourceDatabaseRow = Omit<
+  SourceRow,
+  keyof SourceTimestampFields
+> & SourceTimestampFields;
+
+type CanonicalSourceRow<T extends SourceDatabaseRow> = Omit<
+  T,
+  keyof SourceTimestampFields
+> & SourceRow;
+
+/**
+ * Canonical typed repository boundary: normalize only the six named timestamp
+ * fields and preserve every other value, including JSON metadata. The later
+ * legacy facade owns any external legacy timestamp adaptation that is required.
+ */
+export function mapSourceRow<T extends SourceDatabaseRow>(
+  row: T,
+): CanonicalSourceRow<T> {
+  return {
+    ...row,
+    last_checked_at: toNullableIsoTimestamp(row.last_checked_at),
+    created_at: toIsoTimestamp(row.created_at),
+    updated_at: toIsoTimestamp(row.updated_at),
+    last_success_at: toNullableIsoTimestamp(row.last_success_at),
+    last_failed_at: toNullableIsoTimestamp(row.last_failed_at),
+    disabled_until: toNullableIsoTimestamp(row.disabled_until),
+  };
+}
 
 export type UpsertSourceInput = {
   name: string;
@@ -91,11 +131,11 @@ const sourceSelection = {
   discovery_metadata: sources.discoveryMetadata,
 };
 
-const markSourceFetchSuccessFunction = postgresRows<SourceRow>(
+const markSourceFetchSuccessFunction = postgresRows<SourceDatabaseRow>(
   "public.mark_source_fetch_success",
   1,
 );
-const markSourceFetchFailureFunction = postgresRows<SourceRow>(
+const markSourceFetchFailureFunction = postgresRows<SourceDatabaseRow>(
   "public.mark_source_fetch_failure",
   2,
 );
@@ -107,7 +147,7 @@ const completeSourceDiscoveryFunction = postgresScalar<boolean>(
   "public.complete_source_discovery",
   5,
 );
-const upsertDiscoveredSourceFunction = postgresRows<SourceRow>(
+const upsertDiscoveredSourceFunction = postgresRows<SourceDatabaseRow>(
   "public.upsert_discovered_source",
   7,
 );
@@ -138,8 +178,8 @@ export class SourcesRepository extends RepositorySupport {
 
   async listEnabledSources(): Promise<SourceWithTopics[]> {
     const topicsBySource = this.topicsBySource();
-    return this.operation("List enabled sources", () =>
-      this.database
+    return this.operation("List enabled sources", async () => {
+      const rows = await this.database
         .select({
           ...sourceSelection,
           topic_codes: sql<string[]>`coalesce(${topicsBySource.topicCodes}, '{}'::text[])`,
@@ -161,14 +201,15 @@ export class SourcesRepository extends RepositorySupport {
         .orderBy(
           sql`${sources.reliabilityScore} desc nulls last`,
           asc(sources.name),
-        ),
-    );
+        );
+      return rows.map(mapSourceRow);
+    });
   }
 
   async listSourceHealth(): Promise<SourceWithTopics[]> {
     const topicsBySource = this.topicsBySource();
-    return this.operation("List source health", () =>
-      this.database
+    return this.operation("List source health", async () => {
+      const rows = await this.database
         .select({
           ...sourceSelection,
           topic_codes: sql<string[]>`coalesce(${topicsBySource.topicCodes}, '{}'::text[])`,
@@ -183,8 +224,9 @@ export class SourcesRepository extends RepositorySupport {
           sql`${sources.disabledUntil} nulls first`,
           sql`${sources.reliabilityScore} desc nulls last`,
           asc(sources.name),
-        ),
-    );
+        );
+      return rows.map(mapSourceRow);
+    });
   }
 
   async upsertSource(input: UpsertSourceInput): Promise<SourceRow> {
@@ -232,7 +274,7 @@ export class SourcesRepository extends RepositorySupport {
         })
         .returning(sourceSelection),
     );
-    return this.one(rows, "Upsert source");
+    return mapSourceRow(this.one(rows, "Upsert source"));
   }
 
   async setSourceEnabled(id: string, enabled: boolean): Promise<SourceRow> {
@@ -244,7 +286,7 @@ export class SourcesRepository extends RepositorySupport {
         .where(eq(sources.id, id))
         .returning(sourceSelection),
     );
-    return this.one(rows, operation);
+    return mapSourceRow(this.one(rows, operation));
   }
 
   async markSourceChecked(id: string): Promise<SourceRow> {
@@ -256,28 +298,28 @@ export class SourcesRepository extends RepositorySupport {
         .where(eq(sources.id, id))
         .returning(sourceSelection),
     );
-    return this.one(rows, "Mark source checked");
+    return mapSourceRow(this.one(rows, "Mark source checked"));
   }
 
   async markSourceFetchSuccess(id: string): Promise<SourceRow> {
-    const rows = await this.functionRows<SourceRow>(
+    const rows = await this.functionRows<SourceDatabaseRow>(
       "Mark source fetch success",
       markSourceFetchSuccessFunction,
       [id],
     );
-    return this.one(rows, "Mark source fetch success");
+    return mapSourceRow(this.one(rows, "Mark source fetch success"));
   }
 
   async markSourceFetchFailure(
     id: string,
     errorCode: string,
   ): Promise<SourceRow> {
-    const rows = await this.functionRows<SourceRow>(
+    const rows = await this.functionRows<SourceDatabaseRow>(
       "Mark source fetch failure",
       markSourceFetchFailureFunction,
       [id, errorCode],
     );
-    return this.one(rows, "Mark source fetch failure");
+    return mapSourceRow(this.one(rows, "Mark source fetch failure"));
   }
 
   async claimSourceDiscovery(topicKey: string): Promise<boolean> {
@@ -311,7 +353,7 @@ export class SourcesRepository extends RepositorySupport {
     discoveredBy,
     discoveryMetadata = {},
   }: UpsertDiscoveredSourceInput): Promise<SourceRow> {
-    const rows = await this.functionRows<SourceRow>(
+    const rows = await this.functionRows<SourceDatabaseRow>(
       "Upsert discovered source",
       upsertDiscoveredSourceFunction,
       [
@@ -324,6 +366,6 @@ export class SourcesRepository extends RepositorySupport {
         discoveryMetadata,
       ],
     );
-    return this.one(rows, "Upsert discovered source");
+    return mapSourceRow(this.one(rows, "Upsert discovered source"));
   }
 }

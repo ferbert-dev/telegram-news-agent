@@ -15,9 +15,9 @@
     "semantic_hash": "894ac92044299a19b604c0a3172535b6"
   },
   "checks/sources-repository.ts": {
-    "mtime": 1786283068.5231745,
-    "ast_hash": "9442c750facbcd81e78475c26caa51b7",
-    "semantic_hash": "9442c750facbcd81e78475c26caa51b7"
+    "mtime": 1786284994.6710186,
+    "ast_hash": "f443e89d5e0fe04b2e1888171add63ca",
+    "semantic_hash": "f443e89d5e0fe04b2e1888171add63ca"
   },
   "db/migrations/20260626175510_create_news_memory_schema.sql": {
     "mtime": 1786281471.1157677,
@@ -250,9 +250,9 @@
     "semantic_hash": "4094a942c8c5cbd0b2516c5a1d5989da"
   },
   "src/database/repositories/sources-repository.ts": {
-    "mtime": 1786282705.636165,
-    "ast_hash": "90534cda6c335cb087df63ce8a00f784",
-    "semantic_hash": "90534cda6c335cb087df63ce8a00f784"
+    "mtime": 1786284936.4316065,
+    "ast_hash": "ee736aac2cf9b80586670dd6637d3712",
+    "semantic_hash": "ee736aac2cf9b80586670dd6637d3712"
   },
   "src/database/schema/catalog.ts": {
     "mtime": 1786281471.1437244,
@@ -870,9 +870,9 @@
     "semantic_hash": "c213f2d29acea380988d1cd8ec3f0a1a"
   },
   "checks/integration/database-module.ts": {
-    "mtime": 1786283001.7440567,
-    "ast_hash": "9aba8389a73d8857fde49c7af855af63",
-    "semantic_hash": "9aba8389a73d8857fde49c7af855af63"
+    "mtime": 1786284994.737063,
+    "ast_hash": "8b7a0e0dd0168dbb245c1cbbac4463c6",
+    "semantic_hash": "8b7a0e0dd0168dbb245c1cbbac4463c6"
   },
   "checks/persistence/database-module.ts": {
     "mtime": 1786283456.796425,
@@ -880,9 +880,9 @@
     "semantic_hash": "1722cd346384839c151c4583abab19f2"
   },
   "checks/persistence/repository-support.ts": {
-    "mtime": 1786283619.0390291,
-    "ast_hash": "b9d947b80b5244945b0757bc9bc40fd1",
-    "semantic_hash": "b9d947b80b5244945b0757bc9bc40fd1"
+    "mtime": 1786284994.5370803,
+    "ast_hash": "49dcd75b50557272175fa5f2b4b30c1d",
+    "semantic_hash": "49dcd75b50557272175fa5f2b4b30c1d"
   },
   "db/contracts/postgres-17.json": {
     "mtime": 1786281471.1153529,
@@ -910,13 +910,18 @@
     "semantic_hash": "931b48c09429ef75c0e20131402072f4"
   },
   "src/database/repositories/repository-support.ts": {
-    "mtime": 1786283108.150382,
-    "ast_hash": "d3180d9f9019c57be1c09c5817596641",
-    "semantic_hash": "d3180d9f9019c57be1c09c5817596641"
+    "mtime": 1786284936.3535175,
+    "ast_hash": "0d25d2b3a0f5c10bae7049ab8964ee25",
+    "semantic_hash": "0d25d2b3a0f5c10bae7049ab8964ee25"
   },
   "tsconfig.build.json": {
     "mtime": 1786282964.0581045,
     "ast_hash": "044760a6bdb94da3c6afa0c69d949d60",
     "semantic_hash": "044760a6bdb94da3c6afa0c69d949d60"
+  },
+  "checks/persistence/sources-mapper.ts": {
+    "mtime": 1786284994.6016288,
+    "ast_hash": "c16c5a290ba6adc5669ca059183c55b4",
+    "semantic_hash": "c16c5a290ba6adc5669ca059183c55b4"
   }
 }

@@ -73,11 +73,46 @@ test(
       .compile();
     let checkedOutClient: PoolClient | null = null;
     let closePromise: Promise<void> | null = null;
+    let sourceId: string | null = null;
 
     try {
       await moduleRef.init();
       const repository = moduleRef.get(SourcesRepository);
       assert.ok(Array.isArray(await repository.listSourceHealth()));
+
+      const sourceSuffix = randomUUID();
+      const postgresTimestamp = "2026-08-09 12:34:56.123456+02";
+      const typedSource = await repository.upsertSource({
+        name: `DatabaseModule timestamp ${sourceSuffix}`,
+        homepage_url: "https://database-module.integration.test",
+        feed_url: `https://database-module.integration.test/${sourceSuffix}.xml`,
+        source_type: "rss",
+        last_checked_at: postgresTimestamp,
+      });
+      sourceId = typedSource.id;
+      const typedLegacyRow = await pool.query<{ last_checked_at: Date }>(
+        "select last_checked_at from public.sources where id = $1",
+        [sourceId],
+      );
+      assert.ok(typedLegacyRow.rows[0].last_checked_at instanceof Date);
+      assert.equal(
+        typedSource.last_checked_at,
+        typedLegacyRow.rows[0].last_checked_at.toISOString(),
+      );
+
+      const functionSource = await repository.markSourceFetchSuccess(sourceId);
+      const functionLegacyRow = await pool.query<{ last_success_at: Date }>(
+        "select last_success_at from public.sources where id = $1",
+        [sourceId],
+      );
+      assert.ok(functionLegacyRow.rows[0].last_success_at instanceof Date);
+      assert.equal(
+        functionSource.last_success_at,
+        functionLegacyRow.rows[0].last_success_at.toISOString(),
+      );
+
+      await pool.query("delete from public.sources where id = $1", [sourceId]);
+      sourceId = null;
 
       const topicKey = randomUUID().replaceAll("-", "").padEnd(64, "0");
       await assert.rejects(
@@ -104,6 +139,11 @@ test(
       await closePromise;
     } finally {
       checkedOutClient?.release();
+      if (sourceId !== null && closePromise === null) {
+        await pool
+          .query("delete from public.sources where id = $1", [sourceId])
+          .catch(() => {});
+      }
       if (closePromise === null) {
         await moduleRef.close().catch(() => {});
       } else {

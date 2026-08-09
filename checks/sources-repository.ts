@@ -8,6 +8,27 @@ import { SourcesRepository } from "../src/database/repositories/sources-reposito
 
 test("source health and discovery mutations keep atomic PostgreSQL functions", async () => {
   const calls: [string, unknown[]][] = [];
+  const functionTimestamp = new Date("2026-08-09T10:34:56.123Z");
+  const functionSourceRow = {
+    id: "source-1",
+    name: "Function source",
+    homepage_url: "https://example.com",
+    feed_url: "https://example.com/feed.xml",
+    source_type: "rss",
+    reliability_score: 90,
+    enabled: true,
+    last_checked_at: functionTimestamp,
+    created_at: functionTimestamp,
+    updated_at: functionTimestamp,
+    is_primary: true,
+    last_success_at: functionTimestamp,
+    last_failed_at: null,
+    consecutive_failures: 0,
+    last_error_code: null,
+    disabled_until: null,
+    discovered_by: "manual",
+    discovery_metadata: {},
+  };
   const pool = {
     async query(
       query: string | { text: string; values?: unknown[] },
@@ -24,12 +45,16 @@ test("source health and discovery mutations keep atomic PostgreSQL functions", a
       if (text.includes("complete_source_discovery")) {
         return { rows: [{ value: true }] };
       }
-      return { rows: [{ id: "source-1" }] };
+      return { rows: [functionSourceRow] };
     },
   } as unknown as Pool;
   const repository = new SourcesRepository(pool, createDrizzleDatabase(pool));
 
-  await repository.markSourceFetchSuccess("source-1");
+  const successfulSource = await repository.markSourceFetchSuccess("source-1");
+  assert.equal(
+    successfulSource.last_success_at,
+    "2026-08-09T10:34:56.123Z",
+  );
   await repository.markSourceFetchFailure("source-1", "http_503");
   assert.equal(await repository.claimSourceDiscovery("a".repeat(64)), true);
   assert.equal(

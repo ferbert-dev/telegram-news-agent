@@ -119,12 +119,27 @@ test("retained functions use the transaction-scoped executor and preserve errors
   assert.deepEqual(renderedQueries[0].params, ["transaction-topic"]);
 });
 
-test("timestamp adapters preserve strings and explicitly normalize Date values", () => {
-  const timestamp = "2026-08-09T10:11:12.345Z";
-  assert.equal(toIsoTimestamp(timestamp), timestamp);
-  assert.equal(toIsoTimestamp(new Date(timestamp)), timestamp);
+test("timestamp adapters canonicalize PostgreSQL strings and Date values", () => {
+  const canonicalTimestamp = "2026-08-09T10:34:56.123Z";
+  const postgresTimestamp = "2026-08-09 12:34:56.123456+02";
+  assert.equal(toIsoTimestamp(postgresTimestamp), canonicalTimestamp);
+  assert.equal(
+    toIsoTimestamp(new Date(canonicalTimestamp)),
+    canonicalTimestamp,
+  );
   assert.equal(toNullableIsoTimestamp(null), null);
-  assert.equal(toNullableIsoTimestamp(new Date(timestamp)), timestamp);
+  assert.equal(
+    toNullableIsoTimestamp(postgresTimestamp),
+    canonicalTimestamp,
+  );
+  assert.throws(
+    () => toIsoTimestamp("not-a-postgresql-timestamp"),
+    /Invalid PostgreSQL timestamp/,
+  );
+  assert.throws(
+    () => toIsoTimestamp("   "),
+    /Invalid PostgreSQL timestamp/,
+  );
   assert.throws(
     () => toIsoTimestamp(new Date(Number.NaN)),
     /Invalid PostgreSQL timestamp/,

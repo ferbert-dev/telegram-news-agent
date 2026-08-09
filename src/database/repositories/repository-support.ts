@@ -75,13 +75,11 @@ export function timestamp(): string {
 }
 
 export function toIsoTimestamp(value: string | Date): string {
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) {
-      throw new Error("Invalid PostgreSQL timestamp");
-    }
-    return value.toISOString();
+  const parsed = value instanceof Date ? value : new Date(value.trim());
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("Invalid PostgreSQL timestamp");
   }
-  return value;
+  return parsed.toISOString();
 }
 
 export function toNullableIsoTimestamp(
