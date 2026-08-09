@@ -30,7 +30,12 @@ for variable in "${required_variables[@]}"; do
 done
 
 chmod 600 .env.production
-compose=(docker compose --env-file .env.production)
+compose=(
+  docker compose
+  --env-file .env.production
+  -f compose.yaml
+  -f compose.ssh-access.yaml
+)
 previous_container="$("${compose[@]}" ps -q bot 2>/dev/null || true)"
 previous_image=""
 if [[ -n "$previous_container" ]]; then

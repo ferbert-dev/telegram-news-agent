@@ -232,8 +232,10 @@ not bot tokens, article bodies, or upstream response details.
 
 Production runs as two private Docker Compose services on the Oracle instance:
 the polling bot (including the database-backed scheduler) and PostgreSQL. The
-database has no published host port. The one-shot `migrate` service applies the
-checked-in SQL migrations before each bot update.
+database has no public host port; its optional `127.0.0.1:55432` binding is
+reachable only through SSH. The one-shot `migrate` service applies the
+checked-in SQL migrations before each bot update. See the
+[read-only DBeaver setup](docs/database-access.md).
 
 Database changes use SQL migrations as the source of truth and a Drizzle
 TypeScript snapshot for typed repository work and CI drift detection. See the
