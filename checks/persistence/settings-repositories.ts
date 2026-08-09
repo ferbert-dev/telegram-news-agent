@@ -25,7 +25,7 @@ import type {
   NewsSettingsPersistence,
   TelegramSettingsInputPersistence,
 } from "../../src/settings/settings.contracts.js";
-import { SettingsModule } from "../../src/settings/settings.module.js";
+import { SettingsPersistenceModule } from "../../src/settings/settings-persistence.module.js";
 import {
   mapNewsFeatureFlagRow,
   mapNewsSettingsRow,
@@ -344,11 +344,11 @@ test("settings reads use typed Drizzle selections instead of PostgreSQL function
   assert.deepEqual(selectedTables, [newsBotSettings, newsFeatureFlags]);
 });
 
-test("SettingsModule exposes only narrow Symbol-token repository contracts", async () => {
+test("SettingsPersistenceModule exposes only narrow Symbol-token repository contracts", async () => {
   const pool = new FunctionPool();
   const database = createDrizzleDatabase(pool as unknown as Pool);
   const moduleRef = await Test.createTestingModule({
-    imports: [SettingsModule],
+    imports: [SettingsPersistenceModule],
   })
     .overrideProvider(PG_POOL)
     .useValue(pool as unknown as Pool)

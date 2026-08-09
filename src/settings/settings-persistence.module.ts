@@ -39,4 +39,4 @@ const settingsRepositoryProviders: Provider[] = [
     TELEGRAM_SETTINGS_INPUT_REPOSITORY,
   ],
 })
-export class SettingsModule {}
+export class SettingsPersistenceModule {}

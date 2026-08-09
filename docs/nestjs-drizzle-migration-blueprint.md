@@ -1,6 +1,7 @@
 # NestJS and Drizzle migration blueprint
 
-Status: approved planning baseline; implementation is gated by the executable database-contract ticket.
+Status: Drizzle persistence and legacy-facade parity are complete; the first
+reversible NestJS application-service slice is in progress.
 
 Notion Epic: [Engineer Telegram News Agent into a modular NestJS platform](https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb)
 
@@ -19,10 +20,15 @@ The baseline audit found:
 - 46 current PostgreSQL function names and 47 live signatures. `update_news_settings` intentionally has two overloads for compatibility. A clean PostgreSQL 17 inventory corrected the earlier static 45/46 count: the old two-argument `claim_telegram_update` is dropped and replaced by its current three-argument signature, so the function name remains live.
 - 65 domain persistence methods and six infrastructure helpers in `NewsRepository`.
 - 29 domain paths suitable for typed Drizzle queries and 36 paths that should retain a PostgreSQL function as their atomic boundary.
-- Four public methods with no repository call sites: `createDraft`, `recordPublication`, `transitionArticle`, and `transitionDraft`. They are compatibility candidates, not required public Nest contracts.
-- `SourcesRepository` already implements ten of eleven source/catalog methods; `listEnabledArticleTags` remains for a typed topic catalogue.
+- Five public methods with no production call sites: `createDraft`,
+  `recordPublication`, `transitionArticle`, `transitionDraft`, and
+  `replaceArticleTopics`. They remain facade compatibility methods, not new
+  application ports; `createReviewDraft` now owns atomic topic assignment.
+- `CatalogPersistenceModule` exposes all eleven source/catalog methods through
+  its narrow token, including the typed article-tag catalogue read.
 
-These counts are planning assertions until the database-contract gate confirms them against a clean PostgreSQL 17 instance. Ordered SQL migrations and live PostgreSQL introspection remain authoritative.
+These counts are verified by the executable clean PostgreSQL 17 contract.
+Ordered SQL migrations and live PostgreSQL introspection remain authoritative.
 
 ## Data ownership
 
@@ -41,12 +47,12 @@ Foreign keys do not define application dependency direction. Repositories do not
 ```mermaid
 flowchart LR
   DB["DatabaseModule"]
-  Catalog["CatalogModule"]
-  Operations["OperationsModule"]
-  Research["ResearchModule"]
-  Editorial["EditorialModule"]
-  Settings["SettingsModule"]
-  Telegram["TelegramModule"]
+  Catalog["CatalogPersistenceModule"]
+  Operations["OperationsPersistenceModule"]
+  Research["ResearchPersistenceModule"]
+  Editorial["EditorialPersistenceModule"]
+  Settings["SettingsPersistenceModule"]
+  Telegram["TelegramPersistenceModule"]
   App["Application services"]
   Runtime["Standalone Nest runtime"]
 
@@ -75,14 +81,21 @@ flowchart LR
 
 ### Persistence modules
 
-- `CatalogModule`: `SourcesRepository`, `TopicsRepository`.
-- `OperationsModule`: `PipelineLeasesRepository`, `NotionAuditOutboxRepository`.
-- `ResearchModule`: `SearchRunsRepository`, `ArticlesRepository`, `ArticleTopicsRepository`, `AiUsageRepository`.
-- `EditorialModule`: `DraftsRepository`, `PublicationsRepository`.
-- `SettingsModule`: `NewsSettingsRepository`, `FeatureFlagsRepository`, `NewsScheduleRepository`, `TelegramSettingsInputRepository`.
-- `TelegramModule`: `TelegramUpdatesRepository`, `TelegramReviewSessionsRepository`, `TelegramCheckpointsRepository`.
+- `CatalogPersistenceModule`: source and topic catalogue persistence.
+- `OperationsPersistenceModule`: `PipelineLeasesRepository`,
+  `NotionAuditOutboxRepository`.
+- `ResearchPersistenceModule`: search-run, article and raw-content persistence.
+- `EditorialPersistenceModule`: draft and publication persistence.
+- `UsagePersistenceModule`: AI usage writes and reporting reads.
+- `SettingsPersistenceModule`: `NewsSettingsRepository`,
+  `FeatureFlagsRepository`, `TelegramSettingsInputRepository`.
+- `SchedulerPersistenceModule`: schedule claim/checkpoint persistence.
+- `TelegramPersistenceModule`: update, review-session and checkpoint persistence.
 
 Each module exposes narrow interfaces and injection tokens. While JavaScript consumers remain, adapters explicitly map Drizzle camelCase records to the existing snake_case DTO shape.
+Persistence module classes end in `PersistenceModule`; new application modules
+end in `ApplicationModule`; transports end in `TransportModule`. The legacy
+facade imports persistence modules only.
 
 ### Application services and adapters
 

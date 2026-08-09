@@ -27,4 +27,4 @@ import {
     NOTION_AUDIT_OUTBOX_REPOSITORY,
   ],
 })
-export class OperationsModule {}
+export class OperationsPersistenceModule {}

@@ -143,9 +143,11 @@ Then:
 
 ### Slice 5: NestJS application shell
 
-- Add `DatabaseModule`, `SourcesModule`, `ResearchModule`, `EditorialModule`,
-  `SettingsModule`, and `TelegramModule` around the already separated
-  repositories.
+- Compose the existing `DatabaseModule`, `CatalogPersistenceModule`,
+  `ResearchPersistenceModule`, `EditorialPersistenceModule`,
+  `UsagePersistenceModule`, `OperationsPersistenceModule`,
+  `SettingsPersistenceModule`, `SchedulerPersistenceModule`, and
+  `TelegramPersistenceModule` behind separately named application modules.
 - Start one Nest application process with explicit dependency injection and
   lifecycle hooks.
 
