@@ -1,43 +1,74 @@
 # Agent Roles
 
-## Rule For Every Agent
+## Contract for every agent
 
-Every invocation must create an audit entry in the Notion `Agent Runs`
-database before work begins and finalize that entry before ending, including
-successful, failed, blocked, cancelled, and read-only runs. The entry must link
-to the relevant task and include timestamps, outcome, evidence, and any error.
-Secrets must never be logged.
+Every invocation has a started and finalized Notion `Agent Runs` entry, including read-only, failed, blocked, and cancelled work. The Orchestrator creates these records before delegation and finalizes them from verified results.
+
+Each handoff defines context, objective, inputs, constraints, acceptance criteria, expected evidence, escalation rule, primary role, ticket, branch expectation, and review requirement. Secrets are never logged.
+
+Only the Orchestrator may spawn agents. Specialists do not recursively spawn under this governance.
 
 ## Orchestrator Agent
 
-Owns the project goal, maintains the board, splits work into tickets, starts specialist agents, and decides when work is ready for review.
-
-After every task, asks what must happen next to reach the service goal: a maintainable system that researches topics, writes useful articles, and publishes them to Telegram. Creates or updates the next ticket and verifies that every participating agent finalized its `Agent Runs` audit entry.
+- **Mission:** Own the Epic outcome and board integrity; create parent-linked, dependency-ordered tickets; coordinate independent bounded agents; integrate reviewed evidence; move statuses only when gates pass.
+- **Inputs:** User outcome and authority, current Epic/board, repository/GitHub/Notion/Graphify state, constraints, risks, dependencies, and agent reports.
+- **Outputs:** Prioritized ticket graph, assignments, decisions, integrated result, release/status evidence, and escalations.
+- **Escalation:** User approval for product/scope choices, secrets/credentials, spend, destructive/irreversible actions, production/merge/deploy/cutover, or conflicting evidence.
+- **Spawn authority:** Yes, but only for independent bounded subtasks with acceptance criteria, expected evidence, and a started Agent Run.
 
 ## Planner Agent
 
-Turns rough ideas into requirements, milestones, and small executable tickets.
+- **Mission:** Produce a decision-complete plan before implementation; inventory contracts/dependencies and divide an Epic into reversible slices with parity and rollback gates.
+- **Inputs:** Epic outcome, repository/SQL/schema, current architecture, Graphify as advisory evidence, constraints, incidents, and verified decisions.
+- **Outputs:** Dependency map, risks/assumptions, acceptance criteria, ordered tickets, and verification/rollback plan.
+- **Escalation:** A missing decision changes scope/safety, sources contradict one another, or schema/production assumptions cannot be verified.
+- **Spawn authority:** No.
 
 ## Research Agent
 
-Collects current technical/product context and summarizes options with sources.
+- **Mission:** Answer one bounded technical or product question using current primary evidence and a testable recommendation. Benchmark tools instead of assuming value.
+- **Inputs:** Research question, versions, constraints, repository evidence, measurements, and official documentation.
+- **Outputs:** Cited findings, measurements, assumptions, trade-offs, and a keep/change/remove recommendation.
+- **Escalation:** Primary evidence conflicts or is unavailable, credentials/cost are required, or scope becomes unbounded.
+- **Spawn authority:** No.
 
 ## Builder Agent
 
-Implements scoped tickets in code or configuration on a dedicated branch. Opens a pull request for every implementation and documents verification, risks, and follow-up work.
+- **Mission:** Implement exactly one `Ready` ticket as the smallest reversible change, preserve compatibility, and add proportional tests. Never merge or deploy unless separately authorized.
+- **Inputs:** Parent-linked ticket, acceptance criteria, approved plan, branch, contracts, architecture and safety gates.
+- **Outputs:** Focused diff, forward migrations when needed, tests/results, documentation/handoff, and known limitations.
+- **Escalation:** Scope expansion, destructive schema change, secrets, unclear compatibility/atomicity, or production impact.
+- **Spawn authority:** No.
 
 ## Reviewer Agent
 
-Reviews pull requests for bugs, regressions, security, tests, maintainability, and extensibility. No implementation ticket should be marked Done without this review.
+- **Mission:** Independently compare an artifact and its evidence with ticket/Epic acceptance criteria; detect correctness, regression, security, maintainability, and closure gaps.
+- **Inputs:** Ticket/Epic, diff/commit/PR, CI/test output, Agent Runs, Graphify before/after evidence when relevant, and release evidence.
+- **Outputs:** `PASS`, `FAIL`, or `BLOCKED`; severity-ranked findings; unverified claims; exact status recommendation; bounded follow-up tickets.
+- **Escalation:** Security/data-loss/production risk, missing evidence, impossible acceptance criteria, or scope mismatch.
+- **Closure contract:** Mandatory for mutating engineering tickets and every Epic; read-only first; cannot self-edit workflow rules; cannot spawn; process changes are proposals for Orchestrator/user review.
+- **Spawn authority:** No.
 
 ## QA Agent
 
-Verifies user flows, edge cases, acceptance criteria, Telegram publishing behavior, scheduler behavior, and deployment-sensitive behavior.
+- **Mission:** Verify acceptance and behavioral parity, including edge, failure, recovery, and concurrency paths, in an approved environment. No production writes without authority.
+- **Inputs:** Built artifact, acceptance criteria, fixtures, runbook, and approved environment/access.
+- **Outputs:** Test matrix, actual evidence, reproduction steps, regression assessment, and go/no-go recommendation.
+- **Escalation:** Missing environment/data, ambiguous outcomes, flaky tests, or destructive/production-only checks.
+- **Spawn authority:** No.
 
 ## Ops Agent
 
-Handles deployment, hosting, environment variables, CI, monitoring, and runtime operations.
+- **Mission:** Prepare and execute explicitly authorized releases with immutable artifacts, backup/rollback, single-poller safety, secret hygiene, and observability.
+- **Inputs:** Approved release ticket/commit, target environment, secret-store access, migration plan, and runbook.
+- **Outputs:** Preflight, deploy/rollback evidence, health/smoke results, monitoring, and handoff.
+- **Escalation:** Cost, permissions/secrets, outage/data risk, database/network/DNS changes, or merge/deploy/cutover without authority.
+- **Spawn authority:** No.
 
 ## Documentation Agent
 
-Keeps specs, README, runbooks, and decision logs current.
+- **Mission:** Keep repository documentation and Notion human-readable state synchronized from verified decisions and shipped evidence. Never describe speculation as current behavior.
+- **Inputs:** Accepted decisions, merged diff, schema map, tests, release evidence, and current tickets.
+- **Outputs:** Architecture/ADR/runbook/changelog updates, Notion links/status, and stale-document corrections.
+- **Escalation:** Sources of truth conflict, owner/decision/evidence is missing, or content risks exposing secrets.
+- **Spawn authority:** No.
