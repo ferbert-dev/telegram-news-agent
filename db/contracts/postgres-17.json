@@ -1,0 +1,20 @@
+{
+  "contractVersion": 1,
+  "postgresqlMajor": 17,
+  "requiredCounts": {
+    "tables": 21,
+    "foreignKeys": 19,
+    "functionNames": 46,
+    "functionSignatures": 47
+  },
+  "sectionHashes": {
+    "tables": "7ee03b816db71177e7315e5653c81564e7bc6fde99435e588ffe092d7f003cb3",
+    "columns": "6563df0da8f350b9c4c2859ac860e870521f9401721165d2d2f171fd1ba6d2a6",
+    "constraints": "6896329ab965be3fd311d7640e2259762fae024561f4ff045946a26d687b2c2b",
+    "indexes": "4dfc90732cdadf2a4255ebead9acdb630772795726c4726153efa9d02eed72cb",
+    "functions": "8219cb38612a9e1cbd9ff2c2258e4b29db963fb64eb637cd71034e8b1dc1dd66",
+    "policies": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "grants": "b5e68e96b56eac578c8df90d08ee5a60caf80211f445cc2f8178493b6af085f8",
+    "migrations": "e60b4dd14d9fc2e73513e8053dc48ceef8de9d81a233512444aeec6c33b03239"
+  }
+}

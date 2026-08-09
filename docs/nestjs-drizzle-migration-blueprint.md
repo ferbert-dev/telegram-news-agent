@@ -16,7 +16,7 @@ The baseline audit found:
 
 - 21 PostgreSQL tables: 20 application tables plus `schema_migrations`.
 - 19 foreign keys in the Drizzle schema snapshot.
-- 45 current PostgreSQL function names and 46 live signatures. `update_news_settings` intentionally has two overloads for compatibility.
+- 46 current PostgreSQL function names and 47 live signatures. `update_news_settings` intentionally has two overloads for compatibility. A clean PostgreSQL 17 inventory corrected the earlier static 45/46 count: the old two-argument `claim_telegram_update` is dropped and replaced by its current three-argument signature, so the function name remains live.
 - 65 domain persistence methods and six infrastructure helpers in `NewsRepository`.
 - 29 domain paths suitable for typed Drizzle queries and 36 paths that should retain a PostgreSQL function as their atomic boundary.
 - Four public methods with no repository call sites: `createDraft`, `recordPublication`, `transitionArticle`, and `transitionDraft`. They are compatibility candidates, not required public Nest contracts.
@@ -136,7 +136,7 @@ Before repository migration resumes, CI must create a clean PostgreSQL 17 databa
 - columns, PostgreSQL types, nullability and defaults;
 - primary, unique and check constraints;
 - expected and unexpected indexes, including partial indexes;
-- 45 function names, 46 signatures, return types, volatility, security mode and configured search path;
+- 46 function names, 47 signatures, return types, volatility, security mode and configured search path;
 - function-body checksums or normalized definitions;
 - RLS state, policies, grants and revoked public access;
 - migration idempotency: apply the ordered migrations twice, then require every local migration to report `applied` and no unexpected object drift.

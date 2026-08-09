@@ -14,6 +14,7 @@
     "database:new": "node scripts/new-migration.mjs",
     "database:status": "node --env-file-if-exists=.env scripts/migration-status.mjs",
     "database:drift": "tsx scripts/schema-drift.ts",
+    "database:contract": "node scripts/postgres-contract.mjs",
     "database:check": "node --env-file=.env src/database-check.js",
     "audit:flush": "node --env-file=.env src/audit-outbox-cli.js",
     "drafts": "node --env-file=.env src/drafts-cli.js",
