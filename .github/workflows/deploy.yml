@@ -50,6 +50,7 @@ jobs:
         run: |
           npm run typecheck
           npm run test:drizzle
+          npm run test:drizzle:sources
 
       - name: Build test image
         run: docker build --tag "$APP_IMAGE" .
@@ -69,6 +70,7 @@ jobs:
             run --rm migrate
           DATABASE_URL="$DATABASE_TEST_URL" npm run database:drift
           npm run test:integration
+          DATABASE_TEST_URL="$DATABASE_TEST_URL" npm run test:integration:drizzle
 
       - name: Show container logs after failure
         if: failure()
