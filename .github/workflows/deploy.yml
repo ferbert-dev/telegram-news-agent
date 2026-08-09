@@ -53,7 +53,7 @@ jobs:
           docker compose \
             -f compose.yaml \
             -f compose.ssh-access.yaml \
-            config --quiet
+            config --quiet --no-env-resolution
 
       - name: Run unit tests
         run: npm test
