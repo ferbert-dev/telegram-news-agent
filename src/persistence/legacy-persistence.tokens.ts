@@ -1,0 +1,1 @@
+export const LEGACY_PERSISTENCE = Symbol("LEGACY_PERSISTENCE");
