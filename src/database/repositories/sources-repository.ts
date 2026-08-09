@@ -1,15 +1,22 @@
+import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
-import type { Pool, QueryResult, QueryResultRow } from "pg";
+import type { Pool } from "pg";
 
 import {
   sourceTopics,
   sources,
   topics,
 } from "../schema/catalog.js";
+import type { DrizzleDatabase } from "../drizzle-client.js";
+import { DRIZZLE_DB, PG_POOL } from "../database.tokens.js";
 import {
-  createDrizzleDatabase,
-  type DrizzleDatabase,
-} from "../drizzle-client.js";
+  postgresRows,
+  postgresScalar,
+  RepositorySupport,
+  timestamp,
+  toIsoTimestamp,
+  toNullableIsoTimestamp,
+} from "./repository-support.js";
 
 export type SourceRow = {
   id: string;
@@ -35,6 +42,44 @@ export type SourceRow = {
 export type SourceWithTopics = SourceRow & {
   topic_codes: string[];
 };
+
+type SourceTimestampFields = {
+  last_checked_at: string | Date | null;
+  created_at: string | Date;
+  updated_at: string | Date;
+  last_success_at: string | Date | null;
+  last_failed_at: string | Date | null;
+  disabled_until: string | Date | null;
+};
+
+export type SourceDatabaseRow = Omit<
+  SourceRow,
+  keyof SourceTimestampFields
+> & SourceTimestampFields;
+
+type CanonicalSourceRow<T extends SourceDatabaseRow> = Omit<
+  T,
+  keyof SourceTimestampFields
+> & SourceRow;
+
+/**
+ * Canonical typed repository boundary: normalize only the six named timestamp
+ * fields and preserve every other value, including JSON metadata. The later
+ * legacy facade owns any external legacy timestamp adaptation that is required.
+ */
+export function mapSourceRow<T extends SourceDatabaseRow>(
+  row: T,
+): CanonicalSourceRow<T> {
+  return {
+    ...row,
+    last_checked_at: toNullableIsoTimestamp(row.last_checked_at),
+    created_at: toIsoTimestamp(row.created_at),
+    updated_at: toIsoTimestamp(row.updated_at),
+    last_success_at: toNullableIsoTimestamp(row.last_success_at),
+    last_failed_at: toNullableIsoTimestamp(row.last_failed_at),
+    disabled_until: toNullableIsoTimestamp(row.disabled_until),
+  };
+}
 
 export type UpsertSourceInput = {
   name: string;
@@ -86,54 +131,34 @@ const sourceSelection = {
   discovery_metadata: sources.discoveryMetadata,
 };
 
-function timestamp() {
-  return new Date().toISOString();
-}
+const markSourceFetchSuccessFunction = postgresRows<SourceDatabaseRow>(
+  "public.mark_source_fetch_success",
+  1,
+);
+const markSourceFetchFailureFunction = postgresRows<SourceDatabaseRow>(
+  "public.mark_source_fetch_failure",
+  2,
+);
+const claimSourceDiscoveryFunction = postgresScalar<boolean>(
+  "public.claim_source_discovery",
+  1,
+);
+const completeSourceDiscoveryFunction = postgresScalar<boolean>(
+  "public.complete_source_discovery",
+  5,
+);
+const upsertDiscoveredSourceFunction = postgresRows<SourceDatabaseRow>(
+  "public.upsert_discovered_source",
+  7,
+);
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-export class SourcesRepository {
-  readonly database: DrizzleDatabase;
-
+@Injectable()
+export class SourcesRepository extends RepositorySupport {
   constructor(
-    private readonly pool: Pool,
-    database?: DrizzleDatabase,
+    @Inject(PG_POOL) pool: Pool,
+    @Inject(DRIZZLE_DB) database: DrizzleDatabase,
   ) {
-    if (!pool?.query) {
-      throw new Error("A PostgreSQL pool is required");
-    }
-    this.database = database ?? createDrizzleDatabase(pool);
-  }
-
-  private async operation<T>(name: string, task: () => Promise<T>): Promise<T> {
-    try {
-      return await task();
-    } catch (error) {
-      throw new Error(`${name} failed: ${errorMessage(error)}`, { cause: error });
-    }
-  }
-
-  private one<T>(rows: T[], operation: string): T {
-    if (rows.length !== 1) {
-      throw new Error(
-        `${operation} failed: expected one row, received ${rows.length}`,
-      );
-    }
-    return rows[0];
-  }
-
-  private async functionRows<T extends QueryResultRow>(
-    operation: string,
-    text: string,
-    parameters: unknown[],
-  ): Promise<T[]> {
-    const result = await this.operation<QueryResult<T>>(
-      operation,
-      () => this.pool.query<T>(text, parameters),
-    );
-    return result.rows;
+    super(pool, database);
   }
 
   private topicsBySource() {
@@ -153,8 +178,8 @@ export class SourcesRepository {
 
   async listEnabledSources(): Promise<SourceWithTopics[]> {
     const topicsBySource = this.topicsBySource();
-    return this.operation("List enabled sources", () =>
-      this.database
+    return this.operation("List enabled sources", async () => {
+      const rows = await this.database
         .select({
           ...sourceSelection,
           topic_codes: sql<string[]>`coalesce(${topicsBySource.topicCodes}, '{}'::text[])`,
@@ -176,14 +201,15 @@ export class SourcesRepository {
         .orderBy(
           sql`${sources.reliabilityScore} desc nulls last`,
           asc(sources.name),
-        ),
-    );
+        );
+      return rows.map(mapSourceRow);
+    });
   }
 
   async listSourceHealth(): Promise<SourceWithTopics[]> {
     const topicsBySource = this.topicsBySource();
-    return this.operation("List source health", () =>
-      this.database
+    return this.operation("List source health", async () => {
+      const rows = await this.database
         .select({
           ...sourceSelection,
           topic_codes: sql<string[]>`coalesce(${topicsBySource.topicCodes}, '{}'::text[])`,
@@ -198,8 +224,9 @@ export class SourcesRepository {
           sql`${sources.disabledUntil} nulls first`,
           sql`${sources.reliabilityScore} desc nulls last`,
           asc(sources.name),
-        ),
-    );
+        );
+      return rows.map(mapSourceRow);
+    });
   }
 
   async upsertSource(input: UpsertSourceInput): Promise<SourceRow> {
@@ -247,7 +274,7 @@ export class SourcesRepository {
         })
         .returning(sourceSelection),
     );
-    return this.one(rows, "Upsert source");
+    return mapSourceRow(this.one(rows, "Upsert source"));
   }
 
   async setSourceEnabled(id: string, enabled: boolean): Promise<SourceRow> {
@@ -259,7 +286,7 @@ export class SourcesRepository {
         .where(eq(sources.id, id))
         .returning(sourceSelection),
     );
-    return this.one(rows, operation);
+    return mapSourceRow(this.one(rows, operation));
   }
 
   async markSourceChecked(id: string): Promise<SourceRow> {
@@ -271,37 +298,36 @@ export class SourcesRepository {
         .where(eq(sources.id, id))
         .returning(sourceSelection),
     );
-    return this.one(rows, "Mark source checked");
+    return mapSourceRow(this.one(rows, "Mark source checked"));
   }
 
   async markSourceFetchSuccess(id: string): Promise<SourceRow> {
-    const rows = await this.functionRows<SourceRow>(
+    const rows = await this.functionRows<SourceDatabaseRow>(
       "Mark source fetch success",
-      "select * from public.mark_source_fetch_success($1)",
+      markSourceFetchSuccessFunction,
       [id],
     );
-    return this.one(rows, "Mark source fetch success");
+    return mapSourceRow(this.one(rows, "Mark source fetch success"));
   }
 
   async markSourceFetchFailure(
     id: string,
     errorCode: string,
   ): Promise<SourceRow> {
-    const rows = await this.functionRows<SourceRow>(
+    const rows = await this.functionRows<SourceDatabaseRow>(
       "Mark source fetch failure",
-      "select * from public.mark_source_fetch_failure($1, $2)",
+      markSourceFetchFailureFunction,
       [id, errorCode],
     );
-    return this.one(rows, "Mark source fetch failure");
+    return mapSourceRow(this.one(rows, "Mark source fetch failure"));
   }
 
   async claimSourceDiscovery(topicKey: string): Promise<boolean> {
-    const rows = await this.functionRows<{ value: boolean }>(
+    return this.functionScalar(
       "Claim source discovery",
-      "select public.claim_source_discovery($1) as value",
+      claimSourceDiscoveryFunction,
       [topicKey],
     );
-    return this.one(rows, "Claim source discovery").value;
   }
 
   async completeSourceDiscovery({
@@ -311,12 +337,11 @@ export class SourcesRepository {
     resultCount = 0,
     errorCode = null,
   }: CompleteSourceDiscoveryInput): Promise<boolean> {
-    const rows = await this.functionRows<{ value: boolean }>(
+    return this.functionScalar(
       "Complete source discovery",
-      "select public.complete_source_discovery($1, $2, $3, $4, $5) as value",
+      completeSourceDiscoveryFunction,
       [topicKey, provider, model, resultCount, errorCode],
     );
-    return this.one(rows, "Complete source discovery").value;
   }
 
   async upsertDiscoveredSource({
@@ -328,9 +353,9 @@ export class SourcesRepository {
     discoveredBy,
     discoveryMetadata = {},
   }: UpsertDiscoveredSourceInput): Promise<SourceRow> {
-    const rows = await this.functionRows<SourceRow>(
+    const rows = await this.functionRows<SourceDatabaseRow>(
       "Upsert discovered source",
-      "select * from public.upsert_discovered_source($1, $2, $3, $4, $5, $6, $7)",
+      upsertDiscoveredSourceFunction,
       [
         name,
         homepageUrl,
@@ -341,6 +366,6 @@ export class SourcesRepository {
         discoveryMetadata,
       ],
     );
-    return this.one(rows, "Upsert discovered source");
+    return mapSourceRow(this.one(rows, "Upsert discovered source"));
   }
 }
