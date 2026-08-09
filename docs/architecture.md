@@ -69,6 +69,15 @@ allows every mutation to be re-authorized and guarded by an optimistic settings
 version. PostgreSQL stores language, preset/custom topics, review chat,
 publication policy, interval, night-pause state, and schedule state.
 
+### Database access
+
+SQL migrations remain the executable source of truth. A modular Drizzle schema
+mirrors the database and supplies TypeScript types for the gradual repository
+and NestJS migration. The production runtime still uses the current `pg`
+repositories during the foundation slice; CI migrates a clean PostgreSQL
+database and rejects structural drift. The detailed boundaries and rollout
+order are in [database-migration.md](database-migration.md).
+
 ## First Technical Decision
 
 Use polling for local development unless deployment requires webhook behavior immediately.

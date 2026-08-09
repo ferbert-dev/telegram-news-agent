@@ -46,6 +46,11 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      - name: Validate Drizzle schema snapshot
+        run: |
+          npm run typecheck
+          npm run test:drizzle
+
       - name: Build test image
         run: docker build --tag "$APP_IMAGE" .
 
@@ -62,6 +67,7 @@ jobs:
             -f compose.yaml \
             -f compose.test.yaml \
             run --rm migrate
+          DATABASE_URL="$DATABASE_TEST_URL" npm run database:drift
           npm run test:integration
 
       - name: Show container logs after failure

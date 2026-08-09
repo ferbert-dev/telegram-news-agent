@@ -5,8 +5,13 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "test:drizzle": "tsx --test checks/drizzle-schema.ts",
     "test:integration": "RUN_DATABASE_INTEGRATION=1 node --test test/integration/*.test.js",
+    "typecheck": "tsc --noEmit",
     "database:migrate": "node scripts/migrate.mjs",
+    "database:new": "node scripts/new-migration.mjs",
+    "database:status": "node --env-file-if-exists=.env scripts/migration-status.mjs",
+    "database:drift": "tsx scripts/schema-drift.ts",
     "database:check": "node --env-file=.env src/database-check.js",
     "audit:flush": "node --env-file=.env src/audit-outbox-cli.js",
     "drafts": "node --env-file=.env src/drafts-cli.js",
@@ -25,9 +30,16 @@
   "dependencies": {
     "@google/genai": "^2.10.0",
     "cheerio": "^1.1.2",
+    "drizzle-orm": "^0.45.2",
     "fast-xml-parser": "^5.10.1",
     "openai": "^7.4.0",
     "pg": "^8.22.0",
     "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "@types/pg": "^8.21.0",
+    "tsx": "^4.23.11",
+    "typescript": "^7.0.2"
   }
 }

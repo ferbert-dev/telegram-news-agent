@@ -235,6 +235,16 @@ the polling bot (including the database-backed scheduler) and PostgreSQL. The
 database has no published host port. The one-shot `migrate` service applies the
 checked-in SQL migrations before each bot update.
 
+Database changes use SQL migrations as the source of truth and a Drizzle
+TypeScript snapshot for typed repository work and CI drift detection. See the
+[Drizzle migration roadmap](docs/database-migration.md). Useful commands:
+
+```bash
+npm run database:new -- describe_the_change
+DATABASE_URL=postgresql://... npm run database:status
+DATABASE_URL=postgresql://... npm run database:drift
+```
+
 The GitHub Actions workflow in `.github/workflows/deploy.yml` performs this
 sequence on every merge to `main`:
 
