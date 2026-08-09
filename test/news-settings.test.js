@@ -19,8 +19,16 @@ test("news settings normalize safe defaults and supported options", () => {
   assert.equal(settings.quietHoursEnabled, true);
   assert.deepEqual(settings.topicCodes, DEFAULT_TOPIC_CODES);
   assert.deepEqual(Object.keys(LANGUAGE_OPTIONS), ["en", "uk", "de"]);
-  assert.deepEqual(SCHEDULE_INTERVAL_MINUTES, [60, 360, 720, 1440]);
+  assert.deepEqual(SCHEDULE_INTERVAL_MINUTES, [60, 180, 360, 720, 1440]);
   assert.ok(TOPIC_PRESETS.nature);
+});
+
+test("news settings accept the three-hour schedule interval", () => {
+  assert.equal(
+    normalizeNewsSettings({ schedule_interval_minutes: 180 })
+      .scheduleIntervalMinutes,
+    180,
+  );
 });
 
 test("news settings normalize a persisted database row", () => {

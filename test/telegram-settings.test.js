@@ -107,6 +107,11 @@ test("/settings and compact callbacks are strictly parsed and bounded", () => {
   });
   assert.equal(parseSettingsCallback("cfg:l:fr:3"), null);
   assert.equal(parseSettingsCallback("cfg:i:5:3"), null);
+  assert.deepEqual(parseSettingsCallback("cfg:i:180:3"), {
+    action: "interval",
+    value: 180,
+    version: 3,
+  });
   assert.equal(parseSettingsCallback(`cfg:l:en:${"9".repeat(70)}`), null);
   assert.deepEqual(parseSettingsCallback("cfg:s:ok:3"), {
     action: "status",
@@ -412,14 +417,39 @@ test("next run is displayed in Europe/Madrid with daylight-saving time", () => {
 
 test("frequency page marks the currently applied interval", () => {
   const active = renderSettingsKeyboard(
-    { ...BASE_ROW, schedule_interval_minutes: 360 },
+    { ...BASE_ROW, schedule_interval_minutes: 180 },
     "frequency",
   );
-  assert.equal(active[0][1].text, "✅ Every 6 hours");
-  assert.equal(active[2][0].text, "Pause automatic search");
+  assert.equal(active[0][1].text, "✅ Every 3 hours");
+  assert.equal(active[1][0].text, "Every 6 hours");
+  assert.equal(active[2][0].text, "Every 24 hours");
+  assert.equal(active[3][0].text, "Pause automatic search");
 
   const paused = renderSettingsKeyboard(BASE_ROW, "frequency");
-  assert.equal(paused[2][0].text, "✅ Pause automatic search");
+  assert.equal(paused[3][0].text, "✅ Pause automatic search");
+});
+
+test("three-hour frequency is saved and applied immediately", async () => {
+  const flow = callbackFixture();
+
+  await handleSettingsCallback(
+    flow.callback,
+    parseSettingsCallback(createSettingsCallback("interval", 180, 3)),
+    {
+      token: "token",
+      channelId: "@channel",
+      userId: 5,
+      repository: flow.repository,
+      callTelegram: flow.callTelegram,
+    },
+  );
+
+  const payload = flow.calls.find(([name]) => name === "update")[1];
+  assert.equal(payload.scheduleIntervalMinutes, 180);
+  assert.equal(flow.row().schedule_interval_minutes, 180);
+  const edit = flow.calls.find(([name]) => name === "editMessageText")[1];
+  assert.match(edit.text, /Frequency: Every 3 hours/);
+  assert.equal(edit.reply_markup.inline_keyboard[0][1].text, "✅ Every 3 hours");
 });
 
 test("selected topics use Telegram's native pill color styles", () => {

@@ -19,7 +19,7 @@ const PAGES = new Set([
   "frequency",
   "quiet",
 ]);
-const INTERVALS = new Set([0, 60, 360, 720, 1440]);
+const INTERVALS = new Set([0, 60, 180, 360, 720, 1440]);
 
 const languageEntries = Object.values(LANGUAGE_OPTIONS);
 const topicEntries = Object.values(TOPIC_PRESETS);
@@ -378,19 +378,27 @@ export function renderSettingsKeyboard(row, page = "home") {
           version,
         ),
         button(
+          `${selectedInterval === 180 ? "✅ " : ""}Every 3 hours`,
+          "interval",
+          180,
+          version,
+        ),
+      ],
+      [
+        button(
           `${selectedInterval === 360 ? "✅ " : ""}Every 6 hours`,
           "interval",
           360,
           version,
         ),
-      ],
-      [
         button(
           `${selectedInterval === 720 ? "✅ " : ""}Every 12 hours`,
           "interval",
           720,
           version,
         ),
+      ],
+      [
         button(
           `${selectedInterval === 1440 ? "✅ " : ""}Every 24 hours`,
           "interval",
