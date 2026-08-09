@@ -29,6 +29,9 @@ function importsOf(file: string, source: string): string[] {
   const patterns = [
     /^\s*import\s+["']([^"']+)["'];?/gm,
     /^\s*import(?:\s+type)?\s+[\s\S]*?\sfrom\s+["']([^"']+)["'];?/gm,
+    /^\s*export(?:\s+type)?\s+[\s\S]*?\sfrom\s+["']([^"']+)["'];?/gm,
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
   ];
   for (const pattern of patterns) {
     for (const match of source.matchAll(pattern)) {
@@ -37,6 +40,10 @@ function importsOf(file: string, source: string): string[] {
   }
   assert.ok(file.endsWith(".ts"));
   return [...specifiers];
+}
+
+function isDirectDatabasePackage(specifier: string): boolean {
+  return /^pg(?:\/|$)/.test(specifier) || /^drizzle-orm(?:\/|$)/.test(specifier);
 }
 
 function relative(file: string): string {
@@ -94,6 +101,34 @@ test("legacy facade composes persistence modules only", async () => {
   }
 });
 
+test("dependency scanner covers re-exports, dynamic imports, and database package subpaths", () => {
+  const found = importsOf(
+    "adversarial-fixture.ts",
+    `
+      import "reflect-metadata";
+      import type { Pool } from "pg";
+      export { DatabaseModule } from "../../database/database.module.js";
+      export type { Sql } from "drizzle-orm/sql";
+      const adapter = await import("drizzle-orm/pg-core");
+      const client = require("pg/lib/client");
+    `,
+  );
+
+  assert.deepEqual(found.sort(), [
+    "../../database/database.module.js",
+    "drizzle-orm/pg-core",
+    "drizzle-orm/sql",
+    "pg",
+    "pg/lib/client",
+    "reflect-metadata",
+  ]);
+  assert.equal(isDirectDatabasePackage("pg"), true);
+  assert.equal(isDirectDatabasePackage("pg/lib/client"), true);
+  assert.equal(isDirectDatabasePackage("drizzle-orm"), true);
+  assert.equal(isDirectDatabasePackage("drizzle-orm/pg-core"), true);
+  assert.equal(isDirectDatabasePackage("@app/drizzle-orm"), false);
+});
+
 test("application layer has no direct database, legacy runtime, provider, or HTTP dependency", async () => {
   const files = await sourceFiles(sourceRoot);
   const applicationFiles = files.filter((file) => {
@@ -111,8 +146,11 @@ test("application layer has no direct database, legacy runtime, provider, or HTT
     const source = await readFile(file, "utf8");
     const name = relative(file);
     for (const specifier of importsOf(file, source)) {
-      assert.notEqual(specifier, "pg", `${name} imports pg`);
-      assert.notEqual(specifier, "drizzle-orm", `${name} imports drizzle-orm`);
+      assert.equal(
+        isDirectDatabasePackage(specifier),
+        false,
+        `${name} imports database package ${specifier}`,
+      );
       assert.doesNotMatch(specifier, /(?:^|\/)database(?:\/|$)/, name);
       assert.doesNotMatch(specifier, /news-repository/, name);
       assert.doesNotMatch(specifier, /(?:openai|gemini)-provider/, name);
