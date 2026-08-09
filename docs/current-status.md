@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-08-07
+Last updated: 2026-08-09
 
 ## Project
 
@@ -38,7 +38,7 @@ Last updated: 2026-08-07
   approval, and idempotent Telegram publication.
 - Private admin `/settings` controls English/Ukrainian/German output, a broad
   preset/custom topic mix, review-required versus automatic publication, and a
-  paused/1h/6h/12h/24h database-backed schedule. It also controls an enabled-by-
+  paused/1h/3h/6h/12h/24h database-backed schedule. It also controls an enabled-by-
   default scheduled night pause from 22:00 to 08:00 Europe/Madrid. Due work is
   deferred to 08:00, and a draft completed after 22:00 is checkpointed for
   morning recovery without repeating research. Safe defaults remain broad,

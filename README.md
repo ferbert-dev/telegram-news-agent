@@ -147,7 +147,7 @@ Send `/settings` in a private chat with the bot to configure, in order:
 1. output language: English, Ukrainian, or German;
 2. preset topics plus up to five custom topic labels;
 3. review-required or automatic publication;
-4. paused, every 1, 6, 12, or 24 hours;
+4. paused, every 1, 3, 6, 12, or 24 hours;
 5. the scheduled night pause from 22:00 to 08:00 Europe/Madrid.
 
 The native Telegram inline menu writes a versioned configuration to PostgreSQL;

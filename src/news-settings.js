@@ -53,7 +53,13 @@ export const TOPIC_PRESETS = Object.freeze({
 });
 
 export const DEFAULT_TOPIC_CODES = Object.freeze(Object.keys(TOPIC_PRESETS));
-export const SCHEDULE_INTERVAL_MINUTES = Object.freeze([60, 360, 720, 1440]);
+export const SCHEDULE_INTERVAL_MINUTES = Object.freeze([
+  60,
+  180,
+  360,
+  720,
+  1440,
+]);
 
 const APPROVAL_POLICIES = new Set(["manual", "automatic"]);
 const CUSTOM_TOPIC_PATTERN = /^[\p{L}\p{N}\p{M}][\p{L}\p{N}\p{M}\s&'’()+,./:\-]*$/u;
@@ -156,7 +162,7 @@ export function normalizeNewsSettings(row = {}) {
     !SCHEDULE_INTERVAL_MINUTES.includes(scheduleIntervalMinutes)
   ) {
     throw new Error(
-      "scheduleIntervalMinutes must be null, 60, 360, 720, or 1440",
+      "scheduleIntervalMinutes must be null, 60, 180, 360, 720, or 1440",
     );
   }
 

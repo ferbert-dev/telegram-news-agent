@@ -520,6 +520,7 @@ test("deliverReviewDraft resumes a committed session after an ambiguous database
     },
     draftId: "draft-scheduled",
     preview: "Scheduled preview",
+    now: () => new Date("2026-08-08T08:00:00Z"),
   });
 
   assert.equal(result.resumed, true);

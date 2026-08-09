@@ -51,7 +51,7 @@ write tag assignments. The Labs menu applies each change immediately, uses
 optimistic version fencing for stale callbacks, and can be closed with
 `Done & close`. Story connections are displayed only as a planned V2 feature.
 
-Frequency choices are paused, 1 hour, 6 hours, 12 hours, and 24 hours. A due row
+Frequency choices are paused, 1 hour, 3 hours, 6 hours, 12 hours, and 24 hours. A due row
 is claimed atomically in PostgreSQL, so a process restart or a second transient
 worker does not create a parallel run. The selected draft and publication
 receipt are checkpointed under that claim, so stale-claim recovery resumes the

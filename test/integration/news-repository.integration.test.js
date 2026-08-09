@@ -161,7 +161,7 @@ test(
       const updatedSettings = await repository.updateNewsSettings({
         channelId: settingsChannel,
         reviewChatId,
-        scheduleIntervalMinutes: 60,
+        scheduleIntervalMinutes: 180,
         languageCode: "de",
         topicCodes: ["world", "nature"],
         customTopics: ["Ocean exploration"],
@@ -172,6 +172,7 @@ test(
       });
       assert.equal(updatedSettings.version, defaultSettings.version + 1);
       assert.equal(updatedSettings.language_code, "de");
+      assert.equal(updatedSettings.schedule_interval_minutes, 180);
       assert.equal(updatedSettings.quiet_hours_enabled, false);
       assert.equal(
         await repository.updateNewsSettings({
