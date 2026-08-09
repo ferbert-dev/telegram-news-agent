@@ -9,6 +9,8 @@ the bot; it does not build application images.
 
 The Telegram bot uses long polling, so neither the bot nor PostgreSQL needs an
 inbound internet port. Only SSH is required for this deployment design.
+PostgreSQL may additionally bind `55432` to the VM's `127.0.0.1` interface for
+an SSH tunnel; that loopback socket is not an internet-facing port.
 
 Checked-in migrations seed 49 topic-mapped RSS/Atom sources and the GDELT DOC
 index. Normal runs fetch these free sources and use tool-free AI curation.
@@ -31,7 +33,8 @@ repository, enables Docker, adds the SSH user to the `docker` group, creates a
 `/opt/telegram-news-agent`. Reconnect over SSH after it finishes.
 
 Do not run the bootstrap script again as part of each deployment. Do not expose
-ports `5432` or `55432` in the Oracle security list.
+ports `5432` or `55432` in the Oracle security list. Read-only local access is
+documented in [`database-access.md`](database-access.md).
 
 ## GitHub production configuration
 
@@ -61,6 +64,7 @@ Store this complete file as the multiline `PRODUCTION_ENV_FILE` GitHub secret:
 ```dotenv
 POSTGRES_PASSWORD=<random-hex-value>
 POSTGRES_APP_PASSWORD=<different-random-hex-value>
+POSTGRES_SSH_TUNNEL_PORT=55432
 TELEGRAM_BOT_TOKEN=<secret>
 TELEGRAM_CHANNEL_ID=<channel-id-or-handle>
 TELEGRAM_UPDATE_MODE=polling
