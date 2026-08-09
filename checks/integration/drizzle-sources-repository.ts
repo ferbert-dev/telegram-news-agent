@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { Pool } from "pg";
 
+import { createDrizzleDatabase } from "../../src/database/drizzle-client.js";
 import { SourcesRepository } from "../../src/database/repositories/sources-repository.js";
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION === "1";
@@ -15,7 +16,10 @@ test(
   { skip: !enabled || !connectionString },
   async () => {
     const pool = new Pool({ connectionString, max: 2 });
-    const repository = new SourcesRepository(pool);
+    const repository = new SourcesRepository(
+      pool,
+      createDrizzleDatabase(pool),
+    );
     const suffix = randomUUID();
     const topicKey = suffix.replaceAll("-", "").padEnd(64, "0");
     let sourceId: string | null = null;

@@ -66,6 +66,8 @@ jobs:
           npm run typecheck
           npm run test:drizzle
           npm run test:drizzle:sources
+          npm run test:persistence
+          npm run test:nest:build
 
       - name: Build test image
         run: docker build --tag "$APP_IMAGE" .
