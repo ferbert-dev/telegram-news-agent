@@ -2,19 +2,23 @@
 
 ## Minimal Flow
 
-1. User describes an idea.
-2. Orchestrator creates or updates a ticket in Inbox.
-3. Planner converts unclear ideas into requirements and acceptance criteria.
-4. Orchestrator moves executable tickets to Ready.
-5. Every agent creates an `Agent Runs` audit entry before starting work.
-6. Builder creates a new branch for the implementation.
-7. A specialist agent executes the ticket on that branch.
-8. Builder opens a pull request for the implementation.
-9. Reviewer checks the pull request for bugs, maintainability, security, and extensibility.
-10. QA verifies behavior when needed.
-11. Every agent finalizes its audit entry with the outcome and evidence.
-12. Orchestrator moves the ticket to Done or Blocked.
-13. Orchestrator runs the next-step loop before starting more work.
+1. User describes an outcome.
+2. Orchestrator creates or updates a ticket in Inbox and links multi-slice work
+   to an Epic through `Parent Ticket`.
+3. Planner makes the outcome decision-complete: dependencies, acceptance,
+   risks, verification and rollback.
+4. Orchestrator moves a ticket to Ready only after its `Depends On` relations
+   are satisfied.
+5. Every agent gets an `Agent Runs` audit entry before work begins.
+6. Builder implements one Ready ticket on a dedicated `codex/*` branch.
+7. Reviewer performs one independent closure review; QA verifies user-visible,
+   database, scheduler or deployment behavior when required.
+8. Builder opens a pull request with ticket, evidence, risks and rollback.
+9. Every agent run is finalized. Orchestrator moves the ticket to Done,
+   Blocked or Won't Do and runs the next-step loop.
+
+Detailed gates, closure-review rules, durable role memory, and Graphify usage
+are defined in `AGENTS.md` and `docs/engineering-workflow.md`.
 
 ## Product Goal
 

@@ -43,7 +43,13 @@ version (`0.31.10`) brought moderate development-only audit findings through
 deprecated esbuild-kit dependencies. The project keeps its audited custom SQL
 runner and can reconsider Drizzle Kit when that dependency chain is clean.
 
-## Schema modules
+## Schema and data-flow groups
+
+The following arrows describe foreign-key/data relationships and a safe rollout
+order. They are **not** NestJS module imports and do not authorize repositories
+to call one another. The target NestJS import and orchestration contract is
+defined in `docs/nestjs-drizzle-migration-blueprint.md`; application services
+coordinate narrow repositories from these groups.
 
 ```mermaid
 flowchart LR
@@ -63,9 +69,9 @@ flowchart LR
   Operations -. "records" .-> Editorial
 ```
 
-The dependency direction is intentional: transport and configuration may
-reference editorial state, but the research and editorial core do not import
-Telegram behavior.
+The data direction is intentional: transport and configuration rows may
+reference editorial state, but research and editorial business logic do not
+import Telegram behavior.
 
 ## Migration workflow
 

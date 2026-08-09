@@ -4,10 +4,15 @@ Last updated: 2026-08-09
 
 ## Project
 
-- Local path: `/Users/ferbertigo/Development/VSCode/telegram-news-agent`
+- Primary local path: `/Users/ferbertigo/Development/VSCode/telegram-news-agent`
+- Engineering-workflow worktree: `/Users/ferbertigo/Development/VSCode/telegram-news-agent-workflow`
 - GitHub remote: `git@github.com:ferbert-dev/telegram-news-agent.git`
-- Main is deployed through the checked-in GitHub Actions workflow; this settings
-  change was based on `2ad1c5a Search the public web for news (#18)`.
+- `main` is at `68a4020` after PR #27 and is deployed through the checked-in
+  GitHub Actions workflow.
+- Active engineering setup branch: `codex/project-engineering-workflow`.
+- Active Epic: [Engineer Telegram News Agent into a modular NestJS platform](https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb).
+- Migration implementation is paused until the reviewed blueprint and executable
+  PostgreSQL contract gate are complete.
 
 ## What Exists
 
@@ -101,18 +106,12 @@ Scheduled routine
 
 ## Pending Work
 
-1. Use the operating loop in `docs/agent-operating-manual.md` for every new task.
-2. Add the local PostgreSQL `DATABASE_URL` to `.env`. Never commit database
-   credentials.
-3. Add at least one of `OPENAI_API_KEY` or `GEMINI_API_KEY` to local `.env`.
-4. Add the Notion HTTP integration values `NOTION_API_KEY`,
-   `NOTION_AGENT_RUNS_DATA_SOURCE_ID`, and `NOTION_PIPELINE_AGENT_PAGE_ID`.
-5. Run `npm run pipeline:run`, review the generated draft, and publish it with
-   the `drafts` CLI.
-6. Complete supervised end-to-end QA runs before enabling automatic
-   publication; begin scheduled QA in review-required mode.
-7. Complete live supervised Telegram QA for the persisted settings and scheduler.
-8. Keep `.env.example` variables current:
+1. Merge the engineering-workflow setup after independent closure review.
+2. Execute the PostgreSQL contract ticket on a disposable PostgreSQL 17 database.
+3. Complete and review `DatabaseModule` before resuming repository slices.
+4. Follow the ordered dependency graph in
+   `docs/nestjs-drizzle-migration-blueprint.md`; do not begin a blocked slice.
+5. Keep `.env.example` variables current:
 
 ```text
 TELEGRAM_BOT_TOKEN=
@@ -128,9 +127,10 @@ NOTION_PIPELINE_AGENT_PAGE_ID=38bd7885-0eab-81f4-9879-e8b4b990e314
 DATABASE_URL=postgresql://telegram_news_app:<password>@localhost:5432/telegram_news
 ```
 
-9. Keep review-required mode as the default gate.
-10. Add deployment monitoring and cost alerts before using the one-hour interval.
-11. After each completed task, run the Orchestrator Next-Step Loop and create/update the next Notion ticket.
+6. Keep review-required mode as the default gate.
+7. Add deployment monitoring and cost alerts before using the one-hour interval.
+8. After each completed task, run the Orchestrator Next-Step Loop and create or
+   update the next Notion ticket.
 
 ## Completed Since Handoff
 
@@ -186,7 +186,10 @@ notion.notion-create-database
 notion.notion-create-view
 ```
 
-`notion.notion-query-data-sources` is visible, but the workspace currently blocks it behind a Notion Business plan / Notion AI requirement. Use direct `fetch`, `search`, `create`, and `update` operations unless querying is upgraded.
+Single-data-source Notion queries are currently available with a plan limit.
+Use them for bounded audits and use direct `fetch`, `search`, `create`, and
+`update` operations when the limit is reached. Cross-data-source SQL may still
+require a higher plan.
 
 For the next chat, start with:
 
@@ -194,7 +197,7 @@ For the next chat, start with:
 Use Notion. Open docs/current-status.md first, then continue from the Agent Ops Hub.
 ```
 
-## Current Git Working Tree
+## Historical Git Working Tree Snapshot
 
 At the time this file was created, there were uncommitted documentation changes:
 
