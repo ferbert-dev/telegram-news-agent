@@ -9,8 +9,8 @@ test("publishApprovedDraft records a claimed draft after Telegram accepts it", a
     async findPublicationByDraft() {
       return null;
     },
-    async claimDraftForPublication(id) {
-      calls.push(["claim", id]);
+    async claimDraftForPublication(id, channelId) {
+      calls.push(["claim", id, channelId]);
       return {
         id,
         body: "Approved article",
@@ -34,7 +34,7 @@ test("publishApprovedDraft records a claimed draft after Telegram accepts it", a
 
   assert.equal(result.publication.telegram_message_id, 42);
   assert.deepEqual(calls, [
-    ["claim", "draft-1"],
+    ["claim", "draft-1", "@channel"],
     [
       "finalize",
       42,
@@ -162,6 +162,32 @@ test("publishApprovedDraft never resends a draft already in publishing", async (
       },
     }),
     /already being published/,
+  );
+  assert.equal(sent, false);
+});
+
+test("publishApprovedDraft does not call Telegram when the final story veto returns no draft", async () => {
+  let sent = false;
+  await assert.rejects(
+    publishApprovedDraft({
+      repository: {
+        async findPublicationByDraft() {
+          return null;
+        },
+        async claimDraftForPublication(id, channelId) {
+          assert.equal(id, "draft-duplicate");
+          assert.equal(channelId, "@channel");
+          return undefined;
+        },
+      },
+      token: "token",
+      channelId: "@channel",
+      draftId: "draft-duplicate",
+      sendMessage: async () => {
+        sent = true;
+      },
+    }),
+    /blocked as a duplicate story/,
   );
   assert.equal(sent, false);
 });

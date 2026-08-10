@@ -20,7 +20,12 @@ export async function publishApprovedDraft({
     return { publication: existing, alreadyPublished: true };
   }
 
-  const draft = await repository.claimDraftForPublication(draftId);
+  const draft = await repository.claimDraftForPublication(draftId, channelId);
+  if (!draft) {
+    throw new Error(
+      "Draft is not publishable or was blocked as a duplicate story",
+    );
+  }
 
   let sent;
   try {

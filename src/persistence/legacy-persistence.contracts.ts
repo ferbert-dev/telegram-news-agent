@@ -6,6 +6,7 @@ import type {
 } from "../operations/operations.interfaces.js";
 import type { ResearchIngestionPersistence } from "../research/research-persistence.contracts.js";
 import type { SchedulerPersistence } from "../scheduler/scheduler-persistence.contracts.js";
+import type { StoryDeduplicationPersistence } from "../story-deduplication/story-deduplication.contracts.js";
 import type {
   NewsFeatureFlagsPersistence,
   NewsSettingsPersistence,
@@ -20,7 +21,7 @@ import type {
 import type { UsageReportingPersistence } from "../usage/usage-persistence.contracts.js";
 
 /**
- * Typed compatibility boundary for the 65 domain methods on NewsRepository.
+ * Typed compatibility boundary for the 67 domain methods on NewsRepository.
  *
  * It intentionally keeps the two historical positional Telegram update
  * signatures. Every other method already has the same external shape as its
@@ -29,6 +30,7 @@ import type { UsageReportingPersistence } from "../usage/usage-persistence.contr
 export interface LegacyPersistence
   extends CatalogPersistence,
     ResearchIngestionPersistence,
+    StoryDeduplicationPersistence,
     EditorialPersistence,
     UsageReportingPersistence,
     PipelineLeasesRepositoryPort,
@@ -72,6 +74,8 @@ export const LEGACY_PERSISTENCE_METHOD_OWNERS = {
   saveRawContent: "research",
   transitionArticle: "research",
   replaceArticleTopics: "research",
+  listRecentPublishedStories: "storyDeduplication",
+  recordStoryDedupDecision: "storyDeduplication",
 
   createDraft: "editorial",
   createReviewDraft: "editorial",

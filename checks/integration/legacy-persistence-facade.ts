@@ -10,6 +10,7 @@ import { EditorialRepository } from "../../src/database/repositories/editorial-r
 import { NotionAuditOutboxRepository } from "../../src/database/repositories/notion-audit-outbox-repository.js";
 import { PipelineLeasesRepository } from "../../src/database/repositories/pipeline-leases-repository.js";
 import { ResearchIngestionRepository } from "../../src/database/repositories/research-ingestion-repository.js";
+import { StoryDeduplicationRepository } from "../../src/database/repositories/story-deduplication-repository.js";
 import { SchedulerRepository } from "../../src/database/repositories/scheduler-repository.js";
 import { SourcesRepository } from "../../src/database/repositories/sources-repository.js";
 import { UsageReportingRepository } from "../../src/database/repositories/usage-reporting-repository.js";
@@ -60,6 +61,7 @@ test(
     const legacy = new NewsRepository(pool) as unknown as LegacyPersistence;
     const catalog = new SourcesRepository(pool, database);
     const research = new ResearchIngestionRepository(pool, database);
+    const storyDeduplication = new StoryDeduplicationRepository(pool, database);
     const editorial = new EditorialRepository(pool, database);
     const usage = new UsageReportingRepository(pool, database);
     const pipelineLeases = new PipelineLeasesRepository(pool, database);
@@ -74,6 +76,7 @@ test(
     const facade = new LegacyPersistenceFacade(
       catalog,
       research,
+      storyDeduplication,
       editorial,
       usage,
       pipelineLeases,

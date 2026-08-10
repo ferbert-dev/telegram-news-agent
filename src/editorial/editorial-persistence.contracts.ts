@@ -128,7 +128,10 @@ export interface EditorialPersistence {
     id: string,
     reason?: string | null,
   ): Promise<DraftRow | undefined>;
-  claimDraftForPublication(id: string): Promise<DraftRow | undefined>;
+  claimDraftForPublication(
+    id: string,
+    channelId: string,
+  ): Promise<DraftRow | undefined>;
   finalizeDraftPublication(
     input: FinalizeDraftPublicationInput,
   ): Promise<PublishedPostRow | undefined>;

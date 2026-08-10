@@ -88,9 +88,32 @@ export function createFallbackAiProvider(
     throw new AiProvidersExhaustedError(operation, errors);
   };
 
+  const executeOnce = async (operation, input) => {
+    const provider = available.find(
+      (candidate) => typeof candidate[operation] === "function",
+    );
+    if (!provider) {
+      throw new AiProvidersExhaustedError(operation, []);
+    }
+    try {
+      return await provider[operation](input);
+    } catch (error) {
+      log.warn?.(
+        JSON.stringify({
+          event: "ai_provider_failed",
+          operation,
+          provider: provider.name,
+          error_code: classifyProviderError(error),
+        }),
+      );
+      throw new AiProvidersExhaustedError(operation, [error]);
+    }
+  };
+
   return {
     names: available.map((provider) => provider.name),
     generateStructured: (input) => execute("generateStructured", input),
+    generateStructuredOnce: (input) => executeOnce("generateStructured", input),
     searchNews: (input) => execute("searchNews", input),
     searchFeeds: (input) => execute("searchFeeds", input),
   };

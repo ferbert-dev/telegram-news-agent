@@ -60,6 +60,37 @@ test("fallback tries the next provider and logs only a safe error code", async (
   assert.doesNotMatch(warnings[0], /sensitive|secret-value/);
 });
 
+test("one-shot structured generation never spends a second provider attempt", async () => {
+  const calls = [];
+  const provider = createFallbackAiProvider(
+    [
+      {
+        name: "openai",
+        async generateStructured() {
+          calls.push("openai");
+          throw Object.assign(new Error("rate limit"), { status: 429 });
+        },
+      },
+      {
+        name: "gemini",
+        async generateStructured() {
+          calls.push("gemini");
+          return { value: { ok: true } };
+        },
+      },
+    ],
+    { log: { warn() {} } },
+  );
+
+  await assert.rejects(
+    provider.generateStructuredOnce({}),
+    (error) =>
+      error instanceof AiProvidersExhaustedError &&
+      error.errors.length === 1,
+  );
+  assert.deepEqual(calls, ["openai"]);
+});
+
 test("fallback reports a stable error after every provider fails", async () => {
   const provider = createFallbackAiProvider(
     [

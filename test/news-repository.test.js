@@ -2,6 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NewsRepository } from "../src/news-repository.js";
 
+test("recent story history canonicalizes legacy PostgreSQL Date timestamps", async () => {
+  const repository = new NewsRepository({
+    async query() {
+      return {
+        rows: [
+          {
+            article_id: "article-1",
+            published_at: new Date("2026-08-09T10:00:00.000Z"),
+          },
+        ],
+      };
+    },
+  });
+
+  const rows = await repository.listRecentPublishedStories({
+    since: "2026-08-01T00:00:00.000Z",
+  });
+  assert.equal(rows[0].published_at, "2026-08-09T10:00:00.000Z");
+});
+
 test("createReviewDraft delegates all state changes to one transactional function", async () => {
   const calls = [];
   const repository = new NewsRepository({

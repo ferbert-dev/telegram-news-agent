@@ -19,11 +19,15 @@ import {
   normalizeNewsSettings,
 } from "./news-settings.js";
 import { withRetry } from "./retry.js";
+import { evaluateStoryDuplicate } from "./story-deduplication.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const FEED_CONCURRENCY = 8;
 const MAX_ENTRIES_PER_FEED = 40;
 const MAX_PERSISTED_CANDIDATES = 80;
+const STORY_HISTORY_DAYS = 14;
+const MAX_STORY_HISTORY = 100;
+const MAX_SEMANTIC_STORY_AI_CALLS = 3;
 
 export class NoResearchCandidatesError extends Error {
   constructor(message) {
@@ -650,8 +654,84 @@ export async function runResearch({
     }
 
     const extractionErrors = [];
+    const storyDeduplication = {
+      enabled:
+        typeof repository.listRecentPublishedStories === "function" &&
+        typeof repository.recordStoryDedupDecision === "function",
+      compared: 0,
+      duplicates: 0,
+      followUps: 0,
+      uncertain: 0,
+      aiCalls: 0,
+    };
+    const deduplicationRejectedArticleIds = new Set();
+    const recentPublishedStories = storyDeduplication.enabled
+      ? await repository.listRecentPublishedStories({
+          channelId: normalizedSettings?.channelId ?? null,
+          since: new Date(
+            now.valueOf() - STORY_HISTORY_DAYS * 24 * HOUR_MS,
+          ).toISOString(),
+          limit: MAX_STORY_HISTORY,
+        })
+      : [];
     let selected = null;
     for (const candidate of articles) {
+      if (storyDeduplication.enabled) {
+        const storyDecision = await evaluateStoryDuplicate({
+          candidate,
+          publishedStories: recentPublishedStories,
+          aiProvider:
+            storyDeduplication.aiCalls < MAX_SEMANTIC_STORY_AI_CALLS
+              ? discoveryProvider?.generateStructuredOnce
+                ? {
+                    generateStructured: (input) =>
+                      discoveryProvider.generateStructuredOnce(input),
+                  }
+                : discoveryProvider
+              : null,
+        });
+        if (storyDecision.classifierAttempted) {
+          storyDeduplication.aiCalls += 1;
+        }
+        await recordAiUsageEvents(repository, storyDecision.usageEvents, {
+          channelId: normalizedSettings?.channelId ?? null,
+          searchRunId: run.id,
+          articleId: candidate.article.id,
+        });
+        await repository.recordStoryDedupDecision({
+          articleId: candidate.article.id,
+          storyFingerprint: storyDecision.fingerprint,
+          relation: storyDecision.relation,
+          duplicateOfArticleId: storyDecision.duplicateOfArticleId,
+          confidence: storyDecision.confidence,
+          reason: storyDecision.reason,
+          decisionSource: storyDecision.decisionSource,
+          metadata: {
+            comparison_window_days: STORY_HISTORY_DAYS,
+            semantic_ai_call_limit: MAX_SEMANTIC_STORY_AI_CALLS,
+            shortlist: storyDecision.shortlist,
+          },
+        });
+        storyDeduplication.compared += 1;
+        if (storyDecision.relation === "duplicate") {
+          storyDeduplication.duplicates += 1;
+          deduplicationRejectedArticleIds.add(candidate.article.id);
+          await repository.transitionArticle(
+            candidate.article.id,
+            "discovered",
+            "rejected",
+          );
+          continue;
+        }
+        if (storyDecision.relation === "uncertain") {
+          storyDeduplication.uncertain += 1;
+          deduplicationRejectedArticleIds.add(candidate.article.id);
+          continue;
+        }
+        if (storyDecision.relation === "follow_up") {
+          storyDeduplication.followUps += 1;
+        }
+      }
       if (candidate.verificationStatus === "unverified_community") {
         selected = {
           ...candidate,
@@ -695,6 +775,7 @@ export async function runResearch({
     if (!selected) {
       const webSearchFallback = articles.find(
         (candidate) =>
+          !deduplicationRejectedArticleIds.has(candidate.article.id) &&
           candidate.verificationStatus === "web_source" &&
           String(candidate.summary || candidate.title).trim(),
       );
@@ -711,6 +792,7 @@ export async function runResearch({
     if (!selected) {
       const feedFallback = articles.find(
         (candidate) =>
+          !deduplicationRejectedArticleIds.has(candidate.article.id) &&
           candidate.source.is_primary &&
           String(candidate.summary || candidate.title).trim(),
       );
@@ -781,6 +863,17 @@ export async function runResearch({
               error: candidateCuration.error ?? null,
             }
           : null,
+        story_deduplication: {
+          enabled: storyDeduplication.enabled,
+          comparison_window_days: STORY_HISTORY_DAYS,
+          history_count: recentPublishedStories.length,
+          compared_count: storyDeduplication.compared,
+          duplicate_count: storyDeduplication.duplicates,
+          follow_up_count: storyDeduplication.followUps,
+          uncertain_count: storyDeduplication.uncertain,
+          semantic_ai_call_count: storyDeduplication.aiCalls,
+          semantic_ai_call_limit: MAX_SEMANTIC_STORY_AI_CALLS,
+        },
         news_settings: settingsSnapshot,
       },
     });

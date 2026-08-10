@@ -23,6 +23,7 @@ import { PersistenceFacadeModule } from "../../src/persistence/persistence-facad
 import { LEGACY_PERSISTENCE } from "../../src/persistence/legacy-persistence.tokens.js";
 import { RESEARCH_INGESTION_PERSISTENCE } from "../../src/research/research-persistence.tokens.js";
 import { SCHEDULER_PERSISTENCE } from "../../src/scheduler/scheduler-persistence.tokens.js";
+import { STORY_DEDUPLICATION_PERSISTENCE } from "../../src/story-deduplication/story-deduplication.tokens.js";
 import {
   NEWS_FEATURE_FLAGS_REPOSITORY,
   NEWS_SETTINGS_REPOSITORY,
@@ -81,6 +82,8 @@ const samples = {
   saveRawContent: [{ article_id: "article-id", content: "body", content_hash: "hash" }],
   transitionArticle: ["article-id", "discovered", "extracted", {}],
   replaceArticleTopics: [{ articleId: "article-id", assignments: [] }],
+  listRecentPublishedStories: [{ channelId: "@channel", since: "2026-08-01T00:00:00.000Z", limit: 100 }],
+  recordStoryDedupDecision: [{ articleId: "article-id", storyFingerprint: "fingerprint", relation: "distinct", decisionSource: "deterministic" }],
   createDraft: [{ article_id: "article-id", body: "body" }],
   createReviewDraft: [{ article_id: "article-id", body: "body" }],
   getDraft: ["draft-id"],
@@ -88,7 +91,7 @@ const samples = {
   transitionDraft: ["draft-id", "draft", "review", {}],
   approveDraft: ["draft-id"],
   rejectDraft: ["draft-id"],
-  claimDraftForPublication: ["draft-id"],
+  claimDraftForPublication: ["draft-id", "@channel"],
   finalizeDraftPublication: [{ draftId: "draft-id", channelId: "@channel", messageId: 7, messageText: "post" }],
   findPublicationByDraft: ["draft-id"],
   resetDraftPublication: ["draft-id", "RESET"],
@@ -151,6 +154,7 @@ function fixture(calls: Call[] = []) {
   const ports = {
     catalog: port("catalog", calls),
     research: port("research", calls),
+    storyDeduplication: port("storyDeduplication", calls),
     editorial: port("editorial", calls),
     usage: port("usage", calls),
     pipelineLeases: port("pipelineLeases", calls),
@@ -166,6 +170,7 @@ function fixture(calls: Call[] = []) {
   const facade = new LegacyPersistenceFacade(
     ports.catalog as never,
     ports.research as never,
+    ports.storyDeduplication as never,
     ports.editorial as never,
     ports.usage as never,
     ports.pipelineLeases as never,
@@ -181,7 +186,7 @@ function fixture(calls: Call[] = []) {
   return { facade, ports };
 }
 
-test("facade and owner manifest cover exactly all 65 live NewsRepository domain methods", () => {
+test("facade and owner manifest cover exactly all 67 live NewsRepository domain methods", () => {
   const legacyMethods = Object.getOwnPropertyNames(NewsRepository.prototype)
     .filter((method) => !infrastructureMethods.has(method))
     .sort();
@@ -190,13 +195,13 @@ test("facade and owner manifest cover exactly all 65 live NewsRepository domain 
     .sort();
   const manifestMethods = Object.keys(LEGACY_PERSISTENCE_METHOD_OWNERS).sort();
 
-  assert.equal(legacyMethods.length, 65);
+  assert.equal(legacyMethods.length, 67);
   assert.deepEqual(facadeMethods, legacyMethods);
   assert.deepEqual(manifestMethods, legacyMethods);
   assert.equal(Object.values(LEGACY_PERSISTENCE_METHOD_OWNERS).includes("fallback" as Owner), false);
 });
 
-test("all 65 methods delegate once to their declared owner and preserve legacy arguments", async () => {
+test("all 67 methods delegate once to their declared owner and preserve legacy arguments", async () => {
   const calls: Call[] = [];
   const { facade } = fixture(calls);
   const dynamicFacade = facade as unknown as DynamicPort;
@@ -224,6 +229,7 @@ test("Nest module exports the Symbol token as the same useExisting facade instan
   const tokenPorts = [
     [CATALOG_PERSISTENCE, ports.catalog],
     [RESEARCH_INGESTION_PERSISTENCE, ports.research],
+    [STORY_DEDUPLICATION_PERSISTENCE, ports.storyDeduplication],
     [EDITORIAL_PERSISTENCE, ports.editorial],
     [USAGE_REPORTING_PERSISTENCE, ports.usage],
     [PIPELINE_LEASES_REPOSITORY, ports.pipelineLeases],
