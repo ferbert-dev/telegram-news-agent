@@ -26,6 +26,10 @@ import {
   telegramSettingsInputs,
 } from "./settings.js";
 import {
+  articleStoryDecisions,
+  storyPublicationClaims,
+} from "./story-deduplication.js";
+import {
   telegramNewsRequestCheckpoints,
   telegramReviewSessions,
   telegramUpdates,
@@ -33,6 +37,7 @@ import {
 
 export const databaseTables = [
   aiUsageEvents,
+  articleStoryDecisions,
   articles,
   articleTopics,
   drafts,
@@ -47,6 +52,7 @@ export const databaseTables = [
   sourceDiscoveryState,
   sources,
   sourceTopics,
+  storyPublicationClaims,
   telegramNewsRequestCheckpoints,
   telegramReviewSessions,
   telegramSettingsInputs,

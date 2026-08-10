@@ -280,7 +280,10 @@ test("seven atomic Editorial methods retain eight exact parameterized PostgreSQL
   });
   await repository.approveDraft(draftRow.id);
   await repository.rejectDraft(draftRow.id);
-  await repository.claimDraftForPublication(draftRow.id);
+  await repository.claimDraftForPublication(
+    draftRow.id,
+    publicationRow.telegram_channel_id,
+  );
   const finalized = await repository.finalizeDraftPublication({
     draftId: draftRow.id,
     channelId: publicationRow.telegram_channel_id,
@@ -320,8 +323,8 @@ test("seven atomic Editorial methods retain eight exact parameterized PostgreSQL
       values: [draftRow.id, null],
     },
     {
-      text: 'select * from "public"."claim_draft_for_publication"($1)',
-      values: [draftRow.id],
+      text: 'select * from "public"."claim_draft_for_publication"($1, $2)',
+      values: [draftRow.id, publicationRow.telegram_channel_id],
     },
     {
       text: 'select * from "public"."finalize_draft_publication"($1, $2, $3, $4, $5)',

@@ -14,6 +14,8 @@ import {
 } from "../operations/operations.tokens.js";
 import type { ResearchIngestionPersistence } from "../research/research-persistence.contracts.js";
 import { RESEARCH_INGESTION_PERSISTENCE } from "../research/research-persistence.tokens.js";
+import type { StoryDeduplicationPersistence } from "../story-deduplication/story-deduplication.contracts.js";
+import { STORY_DEDUPLICATION_PERSISTENCE } from "../story-deduplication/story-deduplication.tokens.js";
 import type { SchedulerPersistence } from "../scheduler/scheduler-persistence.contracts.js";
 import { SCHEDULER_PERSISTENCE } from "../scheduler/scheduler-persistence.tokens.js";
 import type {
@@ -48,6 +50,8 @@ export class LegacyPersistenceFacade implements LegacyPersistence {
     private readonly catalog: CatalogPersistence,
     @Inject(RESEARCH_INGESTION_PERSISTENCE)
     private readonly research: ResearchIngestionPersistence,
+    @Inject(STORY_DEDUPLICATION_PERSISTENCE)
+    private readonly storyDeduplication: StoryDeduplicationPersistence,
     @Inject(EDITORIAL_PERSISTENCE)
     private readonly editorial: EditorialPersistence,
     @Inject(USAGE_REPORTING_PERSISTENCE)
@@ -126,6 +130,12 @@ export class LegacyPersistenceFacade implements LegacyPersistence {
   }
   replaceArticleTopics(...args: Parameters<ResearchIngestionPersistence["replaceArticleTopics"]>) {
     return this.research.replaceArticleTopics(...args);
+  }
+  listRecentPublishedStories(...args: Parameters<StoryDeduplicationPersistence["listRecentPublishedStories"]>) {
+    return this.storyDeduplication.listRecentPublishedStories(...args);
+  }
+  recordStoryDedupDecision(...args: Parameters<StoryDeduplicationPersistence["recordStoryDedupDecision"]>) {
+    return this.storyDeduplication.recordStoryDedupDecision(...args);
   }
 
   createDraft(...args: Parameters<EditorialPersistence["createDraft"]>) {

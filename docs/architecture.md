@@ -40,6 +40,17 @@ normalized topic set so repeated empty runs cannot repeatedly incur search-tool
 costs. Automatically discovered sources are additive and can be disabled by an
 operator; the pipeline never deletes them automatically.
 
+### Story Deduplication
+
+Cross-run story memory compares a candidate with a bounded window of prior
+publications. Deterministic fingerprints and token similarity avoid unnecessary
+AI calls; only an ambiguous shortlist receives one tool-free structured
+semantic comparison. Decisions distinguish duplicate coverage from a material
+follow-up and are persisted for audit. The final PostgreSQL publication claim
+reserves `(channel, story fingerprint)`, so manual, automatic, scheduler and
+recovery paths share the same race-safe veto. See
+[story-deduplication.md](story-deduplication.md).
+
 ### Scheduler
 
 Runs inside the polling bot process, but stores all durable state in PostgreSQL.

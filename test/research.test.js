@@ -129,6 +129,216 @@ test("runResearch persists candidates and completes the run", async () => {
   assert.equal(result.selected.evidenceText, "Extracted primary article evidence.");
 });
 
+test("runResearch rejects a cross-publisher duplicate and selects the next distinct story", async () => {
+  const decisions = [];
+  const transitions = [];
+  const extractedUrls = [];
+  let articleSequence = 0;
+  let finished;
+  const duplicateCandidate = candidate({
+    title: "AI models can escape test environments",
+    canonicalUrl: "https://second-publisher.example/model-escape",
+    summary:
+      "A technology publication revisits a Kimi attempt to bypass a cybersecurity test.",
+    contentHash: "duplicate-hash",
+  });
+  const distinctCandidate = candidate({
+    title: "Scientists map a deep-sea coral nursery",
+    canonicalUrl: "https://example.com/coral-nursery",
+    summary: "The Atlantic habitat contains hundreds of new coral colonies.",
+    contentHash: "distinct-hash",
+  });
+  const repository = {
+    async startSearchRun() {
+      return { id: "run-story-dedup" };
+    },
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(article) {
+      articleSequence += 1;
+      return { id: `article-${articleSequence}`, ...article };
+    },
+    async saveRawContent() {},
+    async listRecentPublishedStories() {
+      return [
+        {
+          article_id: "published-kimi",
+          title: "AI models can escape test environments",
+          feed_summary:
+            "Researchers reported that a Kimi model bypassed a test harness.",
+          message_text:
+            "A Kimi model attempted to escape a controlled cybersecurity evaluation.",
+          telegram_channel_id: "@HonestAINews",
+          telegram_message_id: 37,
+          published_at: "2026-06-26T12:00:00.000Z",
+          story_fingerprint: null,
+        },
+      ];
+    },
+    async recordStoryDedupDecision(input) {
+      decisions.push(input);
+      return input;
+    },
+    async transitionArticle(id, from, to) {
+      transitions.push([id, from, to]);
+    },
+    async finishSearchRun(_id, details) {
+      finished = details;
+    },
+    async failSearchRun() {},
+  };
+  const aiProvider = {
+    async generateStructured(request) {
+      if (request.schemaName === "news_candidate_curation") {
+        return {
+          value: {
+            rankedCandidateIds: ["candidate-2", "candidate-1"],
+          },
+          usageEvents: [],
+        };
+      }
+      assert.equal(request.schemaName, "semantic_story_deduplication");
+      return {
+        value: {
+          relation: "same_story",
+          matchedPublishedArticleId: "published-kimi",
+          confidence: 0.97,
+          reason: "Same Kimi model escape event",
+        },
+        usageEvents: [],
+      };
+    },
+  };
+
+  const result = await runResearch({
+    repository,
+    query: "world news",
+    now: NOW,
+    discoveryProvider: aiProvider,
+    retryImpl: async (operation) => operation(),
+    fetchFeedImpl: async () => [duplicateCandidate, distinctCandidate],
+    fetchArticleImpl: async (url) => {
+      extractedUrls.push(url);
+      throw new Error("Publisher blocked extraction");
+    },
+  });
+
+  assert.equal(result.selected.canonicalUrl, distinctCandidate.canonicalUrl);
+  assert.equal(result.selected.evidenceKind, "primary_feed_summary");
+  assert.deepEqual(extractedUrls, [distinctCandidate.canonicalUrl]);
+  const duplicateDecision = decisions.find(
+    (entry) => entry.relation === "duplicate",
+  );
+  assert.equal(duplicateDecision.duplicateOfArticleId, "published-kimi");
+  assert.equal(
+    decisions.filter((entry) => entry.relation === "distinct").length,
+    1,
+  );
+  assert.equal(transitions.length, 1);
+  assert.deepEqual(transitions[0].slice(1), ["discovered", "rejected"]);
+  assert.equal(finished.metadata.story_deduplication.duplicate_count, 1);
+  assert.equal(finished.metadata.story_deduplication.compared_count, 2);
+  assert.equal(finished.metadata.story_deduplication.semantic_ai_call_count, 1);
+  assert.equal(finished.metadata.story_deduplication.semantic_ai_call_limit, 3);
+});
+
+test("runResearch spends at most three one-shot semantic provider attempts and never falls back to rejected evidence", async () => {
+  const decisions = [];
+  const extractedUrls = [];
+  let semanticAttempts = 0;
+  let articleSequence = 0;
+  const candidates = Array.from({ length: 5 }, (_, index) =>
+    candidate({
+      title: `AI models can escape test environments report ${index + 1}`,
+      canonicalUrl: `https://publisher-${index + 1}.example/model-escape`,
+      summary:
+        "Researchers examine the Kimi model attempt to bypass a controlled cybersecurity test harness.",
+      contentHash: `ambiguous-${index + 1}`,
+    }),
+  );
+  const repository = {
+    async startSearchRun() {
+      return { id: "run-semantic-budget" };
+    },
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(article) {
+      articleSequence += 1;
+      return { id: `ambiguous-article-${articleSequence}`, ...article };
+    },
+    async saveRawContent() {},
+    async listRecentPublishedStories() {
+      return [
+        {
+          article_id: "published-kimi-budget",
+          title: "Kimi AI model escaped cybersecurity testing",
+          feed_summary:
+            "Researchers reported that a Kimi model tried to bypass its test harness.",
+          message_text:
+            "A Kimi model attempted to escape a controlled cybersecurity evaluation.",
+          telegram_channel_id: "@HonestAINews",
+          telegram_message_id: 37,
+          published_at: "2026-06-26T12:00:00.000Z",
+          story_fingerprint: null,
+        },
+      ];
+    },
+    async recordStoryDedupDecision(input) {
+      decisions.push(input);
+      return input;
+    },
+    async transitionArticle() {},
+    async finishSearchRun() {},
+    async failSearchRun() {},
+  };
+  const aiProvider = {
+    async generateStructured(request) {
+      assert.equal(request.schemaName, "news_candidate_curation");
+      return {
+        value: {
+          rankedCandidateIds: candidates.map(
+            (_item, index) => `candidate-${index + 1}`,
+          ),
+        },
+        usageEvents: [],
+      };
+    },
+    async generateStructuredOnce(request) {
+      assert.equal(request.schemaName, "semantic_story_deduplication");
+      semanticAttempts += 1;
+      throw new Error("semantic provider unavailable");
+    },
+  };
+
+  await assert.rejects(
+    runResearch({
+      repository,
+      query: "AI news",
+      now: NOW,
+      discoveryProvider: aiProvider,
+      retryImpl: async (operation) => operation(),
+      fetchFeedImpl: async () => candidates,
+      fetchArticleImpl: async (url) => {
+        extractedUrls.push(url);
+        throw new Error("must not extract uncertain candidates");
+      },
+    }),
+    /No ranked news evidence could be extracted/,
+  );
+
+  assert.equal(semanticAttempts, 3);
+  assert.equal(decisions.length, 5);
+  assert.deepEqual(
+    decisions.map((entry) => entry.relation),
+    ["uncertain", "uncertain", "uncertain", "uncertain", "uncertain"],
+  );
+  assert.deepEqual(extractedUrls, []);
+});
+
 test("runResearch falls back to persisted primary RSS evidence when pages block extraction", async () => {
   let finished;
   const repository = {

@@ -96,7 +96,7 @@ const rejectDraftFunction = postgresRows<DraftDatabaseRow>(
 );
 const claimDraftForPublicationFunction = postgresRows<DraftDatabaseRow>(
   "public.claim_draft_for_publication",
-  1,
+  2,
 );
 const finalizeDraftPublicationFunction =
   postgresRows<PublishedPostDatabaseRow>(
@@ -290,11 +290,12 @@ export class EditorialRepository
 
   async claimDraftForPublication(
     id: string,
+    channelId: string,
   ): Promise<DraftRow | undefined> {
     const rows = await this.functionRows(
       "Claim draft for publication",
       claimDraftForPublicationFunction,
-      [id],
+      [id, channelId],
     );
     return optionalDraft(rows[0]);
   }

@@ -65,6 +65,10 @@ const expectedPersistenceModules = new Map([
   ["src/settings/settings-persistence.module.ts", "SettingsPersistenceModule"],
   ["src/scheduler/scheduler-persistence.module.ts", "SchedulerPersistenceModule"],
   ["src/telegram/telegram-persistence.module.ts", "TelegramPersistenceModule"],
+  [
+    "src/story-deduplication/story-deduplication-persistence.module.ts",
+    "StoryDeduplicationPersistenceModule",
+  ],
 ]);
 
 test("persistence modules have explicit names and never depend on application or transport layers", async () => {

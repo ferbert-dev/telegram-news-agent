@@ -6,6 +6,7 @@ import { OperationsPersistenceModule } from "../operations/operations-persistenc
 import { ResearchPersistenceModule } from "../research/research-persistence.module.js";
 import { SchedulerPersistenceModule } from "../scheduler/scheduler-persistence.module.js";
 import { SettingsPersistenceModule } from "../settings/settings-persistence.module.js";
+import { StoryDeduplicationPersistenceModule } from "../story-deduplication/story-deduplication-persistence.module.js";
 import { TelegramPersistenceModule } from "../telegram/telegram-persistence.module.js";
 import { UsagePersistenceModule } from "../usage/usage-persistence.module.js";
 import type { LegacyPersistence } from "./legacy-persistence.contracts.js";
@@ -21,6 +22,7 @@ const legacyPersistenceProvider: Provider<LegacyPersistence> = {
   imports: [
     CatalogPersistenceModule,
     ResearchPersistenceModule,
+    StoryDeduplicationPersistenceModule,
     EditorialPersistenceModule,
     UsagePersistenceModule,
     OperationsPersistenceModule,

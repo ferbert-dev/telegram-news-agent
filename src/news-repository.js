@@ -4,6 +4,14 @@ function now() {
   return new Date().toISOString();
 }
 
+function toIsoTimestamp(value, field) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.valueOf())) {
+    throw new Error(`${field} is not a valid timestamp`);
+  }
+  return date.toISOString();
+}
+
 function selectedEntries(record, allowedColumns) {
   return allowedColumns
     .filter((column) => record[column] !== undefined)
@@ -406,6 +414,80 @@ export class NewsRepository {
     return rows[0] ?? null;
   }
 
+  async listRecentPublishedStories({
+    channelId = null,
+    since,
+    limit = 100,
+  }) {
+    const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : 100;
+    const boundedLimit = Math.max(1, Math.min(200, requestedLimit));
+    const result = await this.query(
+      "List recent published stories",
+      `select
+         a.id as article_id,
+         a.title,
+         a.metadata ->> 'feed_summary' as feed_summary,
+         p.message_text,
+         p.telegram_channel_id,
+         p.telegram_message_id,
+         p.published_at,
+         decision.story_fingerprint
+       from public.published_posts p
+       join public.articles a on a.id = p.article_id
+       left join public.article_story_decisions decision
+         on decision.article_id = a.id
+       where p.published_at >= $1::timestamptz
+         and ($2::text is null or p.telegram_channel_id = $2)
+       order by p.published_at desc
+       limit $3`,
+      [since, channelId, boundedLimit],
+    );
+    return result.rows.map((row) => ({
+      ...row,
+      published_at: toIsoTimestamp(row.published_at, "published_at"),
+    }));
+  }
+
+  async recordStoryDedupDecision({
+    articleId,
+    storyFingerprint,
+    relation,
+    duplicateOfArticleId = null,
+    confidence = null,
+    reason = null,
+    decisionSource,
+    metadata = {},
+  }) {
+    const result = await this.query(
+      "Record story deduplication decision",
+      `insert into public.article_story_decisions (
+         article_id, story_fingerprint, relation, duplicate_of_article_id,
+         confidence, reason, decision_source, metadata
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+       on conflict (article_id) do update set
+         story_fingerprint = excluded.story_fingerprint,
+         relation = excluded.relation,
+         duplicate_of_article_id = excluded.duplicate_of_article_id,
+         confidence = excluded.confidence,
+         reason = excluded.reason,
+         decision_source = excluded.decision_source,
+         metadata = excluded.metadata,
+         updated_at = now()
+       returning *`,
+      [
+        articleId,
+        storyFingerprint,
+        relation,
+        duplicateOfArticleId,
+        confidence,
+        reason,
+        decisionSource,
+        metadata,
+      ],
+    );
+    return this.one(result, "Record story deduplication decision");
+  }
+
   async saveRawContent(rawContent) {
     return this.upsertRow(
       "raw_contents",
@@ -520,11 +602,11 @@ export class NewsRepository {
     )[0];
   }
 
-  async claimDraftForPublication(id) {
+  async claimDraftForPublication(id, channelId) {
     return (
       await this.functionRows(
         "claim_draft_for_publication",
-        [id],
+        [id, channelId],
         "Claim draft for publication",
       )
     )[0];

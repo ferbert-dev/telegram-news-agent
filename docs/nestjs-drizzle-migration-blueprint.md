@@ -15,11 +15,11 @@ This is a query-layer and composition-root migration. It does **not** copy produ
 
 The baseline audit found:
 
-- 21 PostgreSQL tables: 20 application tables plus `schema_migrations`.
-- 19 foreign keys in the Drizzle schema snapshot.
+- 23 PostgreSQL tables: 22 application tables plus `schema_migrations`.
+- 23 foreign keys in the Drizzle schema snapshot.
 - 46 current PostgreSQL function names and 47 live signatures. `update_news_settings` intentionally has two overloads for compatibility. A clean PostgreSQL 17 inventory corrected the earlier static 45/46 count: the old two-argument `claim_telegram_update` is dropped and replaced by its current three-argument signature, so the function name remains live.
-- 65 domain persistence methods and six infrastructure helpers in `NewsRepository`.
-- 29 domain paths suitable for typed Drizzle queries and 36 paths that should retain a PostgreSQL function as their atomic boundary.
+- 67 domain persistence methods and six infrastructure helpers in `NewsRepository`.
+- 31 domain paths suitable for typed Drizzle queries and 36 paths that should retain a PostgreSQL function as their atomic boundary.
 - Five public methods with no production call sites: `createDraft`,
   `recordPublication`, `transitionArticle`, `transitionDraft`, and
   `replaceArticleTopics`. They remain facade compatibility methods, not new
@@ -37,6 +37,7 @@ Ordered SQL migrations and live PostgreSQL introspection remain authoritative.
 | Catalog | `sources`, `topics`, `source_topics`, `topic_translations`, `source_discovery_state` | Source registry, health, discovery and tag catalogue |
 | Research | `search_runs`, `articles`, `raw_contents`, `article_topics`, `ai_usage_events` | Candidate ingestion, evidence, classification and provider usage |
 | Editorial | `drafts`, `published_posts` | Draft review, publication state and receipts |
+| Story deduplication | `article_story_decisions`, `story_publication_claims` | Cross-run story memory, semantic relation audit and race-safe publication reservation |
 | Settings | `news_bot_settings`, `news_feature_flags`, `telegram_settings_inputs` | Channel configuration, experiments and settings input |
 | Telegram | `telegram_updates`, `telegram_review_sessions`, `telegram_news_request_checkpoints` | Update idempotency, review controls and resumable `/news` requests |
 | Operations | `pipeline_leases`, `notion_audit_outbox` | Cross-process ownership and durable audit delivery |
@@ -85,6 +86,7 @@ flowchart LR
 - `OperationsPersistenceModule`: `PipelineLeasesRepository`,
   `NotionAuditOutboxRepository`.
 - `ResearchPersistenceModule`: search-run, article and raw-content persistence.
+- `StoryDeduplicationPersistenceModule`: recent publication memory and durable story decisions.
 - `EditorialPersistenceModule`: draft and publication persistence.
 - `UsagePersistenceModule`: AI usage writes and reporting reads.
 - `SettingsPersistenceModule`: `NewsSettingsRepository`,
@@ -145,11 +147,11 @@ Do not compare writes by dual-writing production. Mutation parity runs only on i
 
 Before repository migration resumes, CI must create a clean PostgreSQL 17 database and produce a machine-readable inventory that verifies:
 
-- all 21 tables and 19 foreign keys;
+- all 23 tables and 23 foreign keys;
 - columns, PostgreSQL types, nullability and defaults;
 - primary, unique and check constraints;
 - expected and unexpected indexes, including partial indexes;
-- 46 function names, 47 signatures, return types, volatility, security mode and configured search path;
+- 46 function names, 48 signatures, return types, volatility, security mode and configured search path; the extra signature is the N-1-compatible one-argument publication claim overload;
 - function-body checksums or normalized definitions;
 - RLS state, policies, grants and revoked public access;
 - migration idempotency: apply the ordered migrations twice, then require every local migration to report `applied` and no unexpected object drift.
