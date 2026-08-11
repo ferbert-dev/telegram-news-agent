@@ -2,6 +2,10 @@ import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { NewsDiscovery } from "./ai-news-discovery.js";
 import { FeedDiscovery } from "./ai-feed-discovery.js";
+import {
+  FactSearchEvidence,
+  groundedFactEvidence,
+} from "./ai-fact-search.js";
 import { openAiUsageEvent } from "./ai-usage.js";
 import { LANGUAGE_OPTIONS } from "./news-settings.js";
 
@@ -12,6 +16,21 @@ const OPENAI_REASONING_EFFORTS = new Set([
   "high",
   "xhigh",
 ]);
+
+function responseSourceUrls(response) {
+  const urls = [];
+  for (const item of response.output ?? []) {
+    for (const source of item.action?.sources ?? []) {
+      if (source?.url) urls.push(source.url);
+    }
+    for (const content of item.content ?? []) {
+      for (const annotation of content.annotations ?? []) {
+        if (annotation?.url) urls.push(annotation.url);
+      }
+    }
+  }
+  return urls;
+}
 
 export function getOpenAiConfig(env = process.env) {
   const apiKey = env.OPENAI_API_KEY?.trim();
@@ -190,6 +209,53 @@ export function createOpenAiProvider(
           openAiUsageEvent(response, {
             model: config.model,
             operation: "feed_source_search",
+          }),
+        ].filter(Boolean),
+      };
+    },
+
+    async searchFact({ query, expectedClaim, languageCode = "en" }) {
+      const languageName = LANGUAGE_OPTIONS[languageCode]?.name ?? "English";
+      const response = await openai.responses.parse({
+        model: config.model,
+        store: false,
+        reasoning: { effort: config.reasoningEffort },
+        max_tool_calls: 1,
+        tools: [
+          {
+            type: "web_search",
+            search_context_size: "low",
+          },
+        ],
+        tool_choice: "required",
+        include: ["web_search_call.action.sources"],
+        input: [
+          {
+            role: "system",
+            content:
+              `Verify one narrowly requested fact for an evidence-grounded Telegram article. Search once. Prefer an official first-party page, government source, academic publication, or otherwise a reputable newsroom. Return at most one material fact with a direct public source URL and a short exact supporting excerpt. If no reliable source directly supports the expected claim, return fact as null. Do not broaden the topic, add background facts, or invent a URL. Write claim and source title in ${languageName}; preserve the source excerpt verbatim.`,
+          },
+          {
+            role: "user",
+            content: JSON.stringify({ query, expectedClaim, languageCode }),
+          },
+        ],
+        text: {
+          format: zodTextFormat(FactSearchEvidence, "editorial_fact_search"),
+        },
+      });
+      const evidence = groundedFactEvidence(
+        response.output_parsed ?? { fact: null },
+        responseSourceUrls(response),
+      );
+      return {
+        ...evidence,
+        provider: "openai",
+        model: config.model,
+        usageEvents: [
+          openAiUsageEvent(response, {
+            model: config.model,
+            operation: "editorial_fact_search",
           }),
         ].filter(Boolean),
       };

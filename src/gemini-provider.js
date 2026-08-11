@@ -7,6 +7,7 @@ import {
   FEED_DISCOVERY_JSON_SCHEMA,
   FeedDiscovery,
 } from "./ai-feed-discovery.js";
+import { groundedFactEvidence } from "./ai-fact-search.js";
 import { LANGUAGE_OPTIONS } from "./news-settings.js";
 import { geminiUsageEvent } from "./ai-usage.js";
 
@@ -27,6 +28,14 @@ function parseJsonText(text) {
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/, "");
   return JSON.parse(normalized);
+}
+
+function responseSourceUrls(response) {
+  return (response.candidates ?? []).flatMap((candidate) =>
+    (candidate.groundingMetadata?.groundingChunks ?? [])
+      .map((chunk) => chunk?.web?.uri)
+      .filter(Boolean),
+  );
 }
 
 export function createGeminiProvider(
@@ -185,6 +194,42 @@ export function createGeminiProvider(
         provider: "gemini",
         model: config.model,
         usageEvents,
+      };
+    },
+
+    async searchFact({ query, expectedClaim, languageCode = "en" }) {
+      const languageName = LANGUAGE_OPTIONS[languageCode]?.name ?? "English";
+      const response = await gemini.models.generateContent({
+        model: config.model,
+        contents: JSON.stringify({ query, expectedClaim, languageCode }),
+        config: {
+          systemInstruction:
+            `Use Google Search once to verify one narrowly requested fact for an evidence-grounded Telegram article. Prefer an official first-party page, government source, academic publication, or otherwise a reputable newsroom. Return one JSON object with fact set to either null or one object containing claim, sourceUrl, sourceTitle, sourceKind, and a short exact evidenceText excerpt. sourceKind must be official, government, academic, or reputable_news. If no reliable direct source supports the expected claim, return fact as null. Do not broaden the topic, add background facts, or invent a URL. Write claim and source title in ${languageName}; preserve evidenceText verbatim.`,
+          tools: [{ googleSearch: {} }],
+        },
+      });
+      let parsed = { fact: null };
+      if (response.text) {
+        try {
+          parsed = parseJsonText(response.text);
+        } catch {
+          parsed = { fact: null };
+        }
+      }
+      const evidence = groundedFactEvidence(
+        parsed,
+        responseSourceUrls(response),
+      );
+      return {
+        ...evidence,
+        provider: "gemini",
+        model: config.model,
+        usageEvents: [
+          geminiUsageEvent(response, {
+            model: config.model,
+            operation: "editorial_fact_search",
+          }),
+        ].filter(Boolean),
       };
     },
   };

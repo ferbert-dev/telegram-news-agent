@@ -143,3 +143,34 @@ test("feed-source search uses the same OpenAI to Gemini fallback order", async (
   assert.equal((await provider.searchFeeds({})).provider, "gemini");
   assert.deepEqual(calls, ["openai", "gemini"]);
 });
+
+test("editorial fact search uses the configured provider fallback without changing models", async () => {
+  const calls = [];
+  const provider = createFallbackAiProvider(
+    [
+      {
+        name: "openai",
+        async searchFact() {
+          calls.push("openai");
+          throw Object.assign(new Error("rate limit"), { status: 429 });
+        },
+      },
+      {
+        name: "gemini",
+        async searchFact() {
+          calls.push("gemini");
+          return {
+            provider: "gemini",
+            model: "configured-gemini-model",
+            fact: null,
+          };
+        },
+      },
+    ],
+    { log: { warn() {} } },
+  );
+
+  const result = await provider.searchFact({ query: "one narrow fact" });
+  assert.equal(result.model, "configured-gemini-model");
+  assert.deepEqual(calls, ["openai", "gemini"]);
+});

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildDraftEvidence,
   loadArticleTagging,
+  loadEditorialEnrichment,
   runPipeline,
   startPipelineLeaseHeartbeat,
 } from "../src/pipeline.js";
@@ -15,6 +16,33 @@ test("article tagging defaults off without a persisted channel feature", async (
     }),
     { state: "off", catalog: [] },
   );
+});
+
+test("editorial enrichment defaults off and loads the persisted per-channel state", async () => {
+  assert.deepEqual(
+    await loadEditorialEnrichment({
+      repository: {},
+      newsSettings: { languageCode: "en" },
+    }),
+    { state: "off" },
+  );
+  const calls = [];
+  assert.deepEqual(
+    await loadEditorialEnrichment({
+      repository: {
+        async getNewsFeatureFlags(channelId) {
+          calls.push(channelId);
+          return [
+            { feature_key: "article_tags", state: "off" },
+            { feature_key: "editorial_enrichment", state: "enabled" },
+          ];
+        },
+      },
+      newsSettings: { channelId: "@channel", languageCode: "en" },
+    }),
+    { state: "enabled" },
+  );
+  assert.deepEqual(calls, ["@channel"]);
 });
 
 test("article tagging loads the localized catalog only for active modes", async () => {
@@ -297,6 +325,7 @@ test("runPipeline carries configured topics and language through research and dr
     { code: "science", confidence: 0.92 },
   ]);
   assert.equal(result.features.articleTags, "enabled");
+  assert.equal(result.features.editorialEnrichment, "off");
   assert.equal(result.settings.version, 5);
   assert.equal(result.settings.languageCode, "de");
 });

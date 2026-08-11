@@ -281,3 +281,124 @@ test("Gemini feed maintenance uses Google Search and validates the result", asyn
   assert.deepEqual(request.config.tools, [{ googleSearch: {} }]);
   assert.match(request.config.systemInstruction, /source maintenance, not article search/i);
 });
+
+test("OpenAI editorial fact search is one bounded tool call with its own usage operation", async () => {
+  let request;
+  const provider = createOpenAiProvider(
+    {
+      apiKey: "test-key",
+      model: "configured-openai-model",
+      reasoningEffort: "high",
+    },
+    {
+      client: {
+        responses: {
+          async parse(input) {
+            request = input;
+            return {
+              id: "resp_editorial_fact",
+              output: [
+                {
+                  type: "web_search_call",
+                  action: {
+                    sources: [
+                      { url: "https://agency.example.gov/decision" },
+                    ],
+                  },
+                },
+              ],
+              usage: { input_tokens: 40, output_tokens: 12 },
+              output_parsed: {
+                fact: {
+                  claim: "The agency approved the system.",
+                  sourceUrl: "https://agency.example.gov/decision",
+                  sourceTitle: "Agency decision",
+                  sourceKind: "government",
+                  evidenceText: "The agency approved the system.",
+                },
+              },
+            };
+          },
+        },
+      },
+    },
+  );
+
+  const result = await provider.searchFact({
+    query: "agency system approval",
+    expectedClaim: "The agency approved the system.",
+    languageCode: "de",
+  });
+
+  assert.equal(result.fact.sourceKind, "government");
+  assert.equal(result.model, "configured-openai-model");
+  assert.equal(result.usageEvents[0].operation, "editorial_fact_search");
+  assert.equal(result.usageEvents[0].webSearchCalls, 1);
+  assert.equal(request.max_tool_calls, 1);
+  assert.equal(request.tool_choice, "required");
+  assert.deepEqual(request.tools, [
+    { type: "web_search", search_context_size: "low" },
+  ]);
+  assert.deepEqual(request.include, ["web_search_call.action.sources"]);
+  assert.match(request.input[0].content, /Search once/);
+  assert.match(request.input[0].content, /German/);
+});
+
+test("Gemini editorial fact search uses one grounded request and validates evidence", async () => {
+  let request;
+  const provider = createGeminiProvider(
+    { apiKey: "test-key", model: "configured-gemini-model" },
+    {
+      client: {
+        models: {
+          async generateContent(input) {
+            request = input;
+            return {
+              text: JSON.stringify({
+                fact: {
+                  claim: "The university published the result.",
+                  sourceUrl: "https://university.example.edu/result",
+                  sourceTitle: "University result",
+                  sourceKind: "academic",
+                  evidenceText: "The university published the result.",
+                },
+              }),
+              usageMetadata: {
+                promptTokenCount: 30,
+                candidatesTokenCount: 8,
+              },
+              candidates: [
+                {
+                  groundingMetadata: {
+                    webSearchQueries: ["one query"],
+                    groundingChunks: [
+                      {
+                        web: {
+                          uri: "https://university.example.edu/result",
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            };
+          },
+        },
+      },
+    },
+  );
+
+  const result = await provider.searchFact({
+    query: "university result publication",
+    expectedClaim: "The university published the result.",
+    languageCode: "uk",
+  });
+
+  assert.equal(result.fact.sourceKind, "academic");
+  assert.equal(result.model, "configured-gemini-model");
+  assert.equal(result.usageEvents[0].operation, "editorial_fact_search");
+  assert.equal(result.usageEvents[0].webSearchCalls, 1);
+  assert.deepEqual(request.config.tools, [{ googleSearch: {} }]);
+  assert.match(request.config.systemInstruction, /Search once/);
+  assert.match(request.config.systemInstruction, /Ukrainian/);
+});

@@ -103,10 +103,16 @@ test(
           channelId,
           updatedBy,
         });
-      assert.equal(createdFlags.length, 1);
-      assert.equal(createdFlags[0].feature_key, "article_tags");
-      assert.equal(createdFlags[0].state, "off");
-      assert.equal(createdFlags[0].updated_by, updatedBy);
+      assert.deepEqual(
+        createdFlags.map((flag) => flag.feature_key),
+        ["article_tags", "editorial_enrichment"],
+      );
+      const articleTagsFlag = createdFlags.find(
+        (flag) => flag.feature_key === "article_tags",
+      );
+      assert.ok(articleTagsFlag);
+      assert.equal(articleTagsFlag.state, "off");
+      assert.equal(articleTagsFlag.updated_by, updatedBy);
       assert.deepEqual(
         await featureFlagsRepository.getNewsFeatureFlags(` ${channelId} `),
         createdFlags,
@@ -117,18 +123,18 @@ test(
         featureKey: " ARTICLE_TAGS ",
         state: " COLLECT ",
         updatedBy,
-        expectedVersion: createdFlags[0].version,
+        expectedVersion: articleTagsFlag.version,
       });
       assert.ok(updatedFlag);
       assert.equal(updatedFlag.state, "collect");
-      assert.equal(updatedFlag.version, createdFlags[0].version + 1);
+      assert.equal(updatedFlag.version, articleTagsFlag.version + 1);
       assert.equal(
         await featureFlagsRepository.updateNewsFeatureFlag({
           channelId,
           featureKey: "article_tags",
           state: "enabled",
           updatedBy,
-          expectedVersion: createdFlags[0].version,
+          expectedVersion: articleTagsFlag.version,
         }),
         null,
       );

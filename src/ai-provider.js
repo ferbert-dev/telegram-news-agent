@@ -116,6 +116,7 @@ export function createFallbackAiProvider(
     generateStructuredOnce: (input) => executeOnce("generateStructured", input),
     searchNews: (input) => execute("searchNews", input),
     searchFeeds: (input) => execute("searchFeeds", input),
+    searchFact: (input) => execute("searchFact", input),
   };
 }
 

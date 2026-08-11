@@ -131,7 +131,13 @@ test(
       const articleTagsFeature = defaultFeatures.find(
         (feature) => feature.feature_key === "article_tags",
       );
+      const editorialFeature = defaultFeatures.find(
+        (feature) => feature.feature_key === "editorial_enrichment",
+      );
+      assert.ok(articleTagsFeature);
+      assert.ok(editorialFeature);
       assert.equal(articleTagsFeature.state, "off");
+      assert.equal(editorialFeature.state, "off");
       const collectingTags = await repository.updateNewsFeatureFlag({
         channelId: settingsChannel,
         featureKey: "article_tags",
@@ -151,6 +157,15 @@ test(
         }),
         null,
       );
+      const enabledEditorial = await repository.updateNewsFeatureFlag({
+        channelId: settingsChannel,
+        featureKey: "editorial_enrichment",
+        state: "enabled",
+        updatedBy: settingsUserId,
+        expectedVersion: editorialFeature.version,
+      });
+      assert.equal(enabledEditorial.state, "enabled");
+      assert.equal(enabledEditorial.version, editorialFeature.version + 1);
       const germanTags = await repository.listEnabledArticleTags("de");
       assert.ok(
         germanTags.some(

@@ -7,6 +7,7 @@ import {
 import { runResearch } from "./research.js";
 
 const ARTICLE_TAGS_FEATURE_KEY = "article_tags";
+const EDITORIAL_ENRICHMENT_FEATURE_KEY = "editorial_enrichment";
 
 function featureState(row) {
   return row?.state === "collect" || row?.state === "enabled"
@@ -14,13 +15,25 @@ function featureState(row) {
     : "off";
 }
 
-export async function loadArticleTagging({ repository, newsSettings }) {
+export async function loadNewsFeatureFlags({ repository, newsSettings }) {
   const channelId = newsSettings?.channelId ?? null;
   if (!channelId || typeof repository.getNewsFeatureFlags !== "function") {
-    return { state: "off", catalog: [] };
+    return [];
   }
+  return repository.getNewsFeatureFlags(channelId);
+}
 
-  const flags = await repository.getNewsFeatureFlags(channelId);
+export async function loadArticleTagging({
+  repository,
+  newsSettings,
+  featureFlags,
+}) {
+  const channelId = newsSettings?.channelId ?? null;
+  if (!channelId) return { state: "off", catalog: [] };
+
+  const flags =
+    featureFlags ??
+    (await loadNewsFeatureFlags({ repository, newsSettings }));
   const state = featureState(
     flags.find((row) => row.feature_key === ARTICLE_TAGS_FEATURE_KEY),
   );
@@ -38,6 +51,25 @@ export async function loadArticleTagging({ repository, newsSettings }) {
     throw new Error("No enabled article tags are configured");
   }
   return { state, catalog };
+}
+
+export async function loadEditorialEnrichment({
+  repository,
+  newsSettings,
+  featureFlags,
+}) {
+  const channelId = newsSettings?.channelId ?? null;
+  if (!channelId) return { state: "off" };
+  const flags =
+    featureFlags ??
+    (await loadNewsFeatureFlags({ repository, newsSettings }));
+  return {
+    state: featureState(
+      flags.find(
+        (row) => row.feature_key === EDITORIAL_ENRICHMENT_FEATURE_KEY,
+      ),
+    ),
+  };
 }
 
 export function buildDraftEvidence(selected) {
@@ -178,9 +210,19 @@ export async function runPipeline({
   });
 
   try {
+    const featureFlags = await loadNewsFeatureFlags({
+      repository,
+      newsSettings: settingsSnapshot,
+    });
     const articleTagging = await loadArticleTagging({
       repository,
       newsSettings: settingsSnapshot,
+      featureFlags,
+    });
+    const editorialEnrichment = await loadEditorialEnrichment({
+      repository,
+      newsSettings: settingsSnapshot,
+      featureFlags,
     });
     const research = await runResearch({
       repository,
@@ -208,6 +250,7 @@ export async function runPipeline({
       newsSettings: settingsSnapshot,
       editor,
       articleTagging,
+      editorialEnrichment,
     });
     heartbeat.assertOwned();
 
@@ -222,6 +265,7 @@ export async function runPipeline({
       settings: settingsSnapshot,
       features: {
         articleTags: articleTagging.state,
+        editorialEnrichment: editorialEnrichment.state,
       },
     };
   } finally {

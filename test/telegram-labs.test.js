@@ -12,10 +12,14 @@ import {
 } from "../src/telegram-labs.js";
 import { classifyControlUpdate } from "../src/telegram-control.js";
 
-function feature(state = "off", version = 7) {
+function feature(
+  state = "off",
+  version = 7,
+  featureKey = "article_tags",
+) {
   return {
     telegram_channel_id: "@channel",
-    feature_key: "article_tags",
+    feature_key: featureKey,
     state,
     config: {},
     version,
@@ -23,9 +27,21 @@ function feature(state = "off", version = 7) {
   };
 }
 
+function featureRows(
+  articleState = "off",
+  articleVersion = 7,
+  editorialState = "off",
+  editorialVersion = 3,
+) {
+  return [
+    feature(articleState, articleVersion),
+    feature(editorialState, editorialVersion, "editorial_enrichment"),
+  ];
+}
+
 function callbackFixture({ state = "off", version = 7, stale = false } = {}) {
   const calls = [];
-  let rows = [feature(state, version)];
+  let rows = featureRows(state, version);
   const repository = {
     async getNewsFeatureFlags() {
       calls.push(["get"]);
@@ -33,9 +49,22 @@ function callbackFixture({ state = "off", version = 7, stale = false } = {}) {
     },
     async updateNewsFeatureFlag(payload) {
       calls.push(["update", payload]);
-      if (stale || payload.expectedVersion !== rows[0].version) return null;
-      rows = [{ ...rows[0], state: payload.state, version: version + 1 }];
-      return rows[0];
+      const index = rows.findIndex(
+        (row) => row.feature_key === payload.featureKey,
+      );
+      if (
+        stale ||
+        index === -1 ||
+        payload.expectedVersion !== rows[index].version
+      ) {
+        return null;
+      }
+      rows[index] = {
+        ...rows[index],
+        state: payload.state,
+        version: rows[index].version + 1,
+      };
+      return rows[index];
     },
   };
   const callTelegram = async (_token, method, body) => {
@@ -90,8 +119,9 @@ test("/labs and versioned callbacks are strictly parsed, addressed, and byte-saf
   );
 
   const callbacks = [
-    ...renderLabsKeyboard([feature()], "home"),
-    ...renderLabsKeyboard([feature()], "article_tags"),
+    ...renderLabsKeyboard(featureRows(), "home"),
+    ...renderLabsKeyboard(featureRows(), "article_tags"),
+    ...renderLabsKeyboard(featureRows(), "editorial_enrichment"),
   ]
     .flat()
     .map((item) => item.callback_data);
@@ -103,6 +133,12 @@ test("/labs and versioned callbacks are strictly parsed, addressed, and byte-saf
     action: "state",
     value: "collect",
     version: 7,
+  });
+  assert.deepEqual(parseLabsCallback("lab:s:edit:e:3"), {
+    action: "state",
+    value: "enabled",
+    version: 3,
+    featureKey: "editorial_enrichment",
   });
   assert.equal(parseLabsCallback("lab:s:x:7"), null);
   assert.equal(parseLabsCallback("lab:s:c:0"), null);
@@ -117,8 +153,12 @@ test("Labs home and article detail render all unambiguous states", () => {
     ["collect", "Collect only"],
     ["enabled", "Enabled"],
   ]) {
-    const rows = [feature(state)];
+    const rows = featureRows(state, 7, state, 3);
     assert.match(renderLabsText(rows), new RegExp(`Article tags: ${label}`));
+    assert.match(
+      renderLabsText(rows),
+      new RegExp(`Editorial enrichment: ${label}`),
+    );
     assert.match(renderLabsText(rows), /Story connections: Planned for V2/);
     assert.match(
       renderLabsKeyboard(rows, "home")[0][0].text,
@@ -132,8 +172,12 @@ test("Labs home and article detail render all unambiguous states", () => {
         .flat()
         .some((item) => item.text === `✅ ${label}`),
     );
+    assert.match(
+      renderLabsText(rows, "editorial_enrichment"),
+      new RegExp(`Current status: ${label}`),
+    );
   }
-  const allButtons = renderLabsKeyboard([feature()])
+  const allButtons = renderLabsKeyboard(featureRows())
     .flat()
     .map((item) => item.text)
     .join(" ");
@@ -144,7 +188,7 @@ test("Labs home and article detail render all unambiguous states", () => {
 
 test("showLabs initializes flags and sends the private Labs home", async () => {
   const calls = [];
-  const rows = [feature("collect")];
+  const rows = featureRows("collect");
   const result = await showLabs({
     token: "token",
     channelId: "@channel",
@@ -204,7 +248,7 @@ test("showLabs never rewrites an existing news settings owner or review chat", a
       },
       async getOrCreateNewsFeatureFlags(payload) {
         calls.push(["create", payload]);
-        return [feature("off")];
+        return featureRows("off");
       },
     },
     callTelegram: async (_token, method, body) => {
@@ -251,6 +295,41 @@ test("article-tags state changes immediately with an optimistic version fence", 
     flow.calls.find(([name]) => name === "answerCallbackQuery")[1].text,
     /Active now/,
   );
+});
+
+test("editorial enrichment state uses its own version fence and callback key", async () => {
+  const flow = callbackFixture({ state: "off", version: 7 });
+  const result = await handleLabsCallback(
+    flow.callback,
+    parseLabsCallback(
+      createLabsCallback(
+        "state",
+        "enabled",
+        3,
+        "editorial_enrichment",
+      ),
+    ),
+    {
+      token: "token",
+      channelId: "@channel",
+      userId: 5,
+      repository: flow.repository,
+      callTelegram: flow.callTelegram,
+    },
+  );
+
+  assert.equal(result.feature.feature_key, "editorial_enrichment");
+  assert.equal(result.feature.state, "enabled");
+  assert.deepEqual(flow.calls.find(([name]) => name === "update")[1], {
+    channelId: "@channel",
+    featureKey: "editorial_enrichment",
+    state: "enabled",
+    updatedBy: 5,
+    expectedVersion: 3,
+  });
+  const edit = flow.calls.find(([name]) => name === "editMessageText")[1];
+  assert.match(edit.text, /Editorial enrichment/);
+  assert.match(edit.text, /Current status: Enabled/);
 });
 
 test("stale or missing feature rows alert the admin to reopen /labs", async () => {
