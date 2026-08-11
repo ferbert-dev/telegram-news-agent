@@ -175,6 +175,163 @@ test("generateDraft stores a review draft and advances article state", async () 
     JSON.parse(writes[0].reviewer_notes).article_tagging_state,
     "off",
   );
+  assert.equal(
+    JSON.parse(writes[0].reviewer_notes).editorial_enrichment.status,
+    "disabled",
+  );
+});
+
+for (const [state, selectedVersion] of [
+  ["collect", "baseline"],
+  ["enabled", "enriched"],
+]) {
+  test(`editorial ${state} preserves both drafts and selects ${selectedVersion}`, async () => {
+    let calls = 0;
+    let stored;
+    const enrichedText = `A result that changes the clock
+
+A primary source announced a new AI agent. The practical question is whether the reported result survives wider testing.
+
+Sources:
+${SOURCE_URL}`;
+    const aiProvider = {
+      async generateStructured(request) {
+        calls += 1;
+        if (request.usageOperation === "editorial_enrichment") {
+          return {
+            value: {
+              draft: structuredDraft({
+                headline: "A result that changes the clock",
+                telegramText: enrichedText,
+              }),
+              evidenceMap: [
+                {
+                  claim: "A primary source announced a new AI agent.",
+                  sourceUrl: SOURCE_URL,
+                  evidenceExcerpt:
+                    "A primary source announced a new AI agent.",
+                },
+              ],
+              factRequest: null,
+            },
+            provider: "openai",
+            model: "configured-editor-model",
+          };
+        }
+        return {
+          value: structuredDraft(),
+          provider: "openai",
+          model: "configured-baseline-model",
+        };
+      },
+    };
+
+    const result = await generateDraft({
+      aiProvider,
+      repository: {
+        async createReviewDraft(draft) {
+          stored = draft;
+          return { id: `draft-${state}`, ...draft };
+        },
+      },
+      article: {
+        id: `article-${state}`,
+        title: "Primary announcement",
+        canonical_url: SOURCE_URL,
+      },
+      evidence: [
+        {
+          url: SOURCE_URL,
+          primary: true,
+          text: "A primary source announced a new AI agent.",
+        },
+      ],
+      editorialEnrichment: { state },
+    });
+
+    assert.equal(calls, 2);
+    const notes = JSON.parse(stored.reviewer_notes).editorial_enrichment;
+    assert.equal(notes.status, "completed");
+    assert.equal(notes.selected_version, selectedVersion);
+    assert.match(notes.baseline_draft.telegramText, /AI agents move forward/);
+    assert.match(notes.enriched_draft.telegramText, /changes the clock/);
+    assert.equal(notes.evidence_map[0].sourceUrl, SOURCE_URL);
+    if (state === "enabled") {
+      assert.match(stored.body, /changes the clock/);
+      assert.equal(stored.model, "configured-editor-model");
+      assert.match(stored.prompt_version, /editorial-enrichment-v1$/);
+    } else {
+      assert.match(stored.body, /AI agents move forward/);
+      assert.equal(stored.model, "configured-baseline-model");
+      assert.doesNotMatch(stored.prompt_version, /editorial-enrichment/);
+    }
+    assert.equal(result.editorialEnrichment.selectedVersion, selectedVersion);
+  });
+}
+
+test("invalid editorial output falls back to the baseline without blocking review", async () => {
+  let stored;
+  let calls = 0;
+  const result = await generateDraft({
+    aiProvider: {
+      async generateStructured(request) {
+        calls += 1;
+        if (request.usageOperation === "editorial_enrichment") {
+          return {
+            value: {
+              draft: structuredDraft({
+                claims: [
+                  {
+                    text: "An invented claim.",
+                    sourceUrl: SOURCE_URL,
+                  },
+                ],
+              }),
+              evidenceMap: [
+                {
+                  claim: "An invented claim.",
+                  sourceUrl: SOURCE_URL,
+                  evidenceExcerpt: "Text absent from the evidence.",
+                },
+              ],
+              factRequest: null,
+            },
+            provider: "openai",
+            model: "configured-editor-model",
+          };
+        }
+        return {
+          value: structuredDraft(),
+          provider: "openai",
+          model: "configured-baseline-model",
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        stored = draft;
+        return { id: "draft-fallback", ...draft };
+      },
+    },
+    article: {
+      id: "article-fallback",
+      title: "Primary announcement",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [
+      {
+        url: SOURCE_URL,
+        primary: true,
+        text: "A primary source announced a new AI agent.",
+      },
+    ],
+    editorialEnrichment: { state: "enabled" },
+  });
+
+  assert.equal(calls, 2);
+  assert.match(stored.body, /AI agents move forward/);
+  assert.equal(result.editorialEnrichment.status, "fallback_to_baseline");
+  assert.equal(result.editorialEnrichment.diagnostic, "enrichment_failed");
 });
 
 test("tagging off normalizes model assignments without persistence or hashtags", async () => {

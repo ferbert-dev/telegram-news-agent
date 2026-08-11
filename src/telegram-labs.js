@@ -1,8 +1,23 @@
 const CALLBACK_PREFIX = "lab";
 const CALLBACK_LIMIT_BYTES = 64;
 const ARTICLE_TAGS = "article_tags";
-const PAGES = new Set(["home", ARTICLE_TAGS]);
+const EDITORIAL_ENRICHMENT = "editorial_enrichment";
+const PAGES = new Set(["home", ARTICLE_TAGS, EDITORIAL_ENRICHMENT]);
 const STATES = new Set(["off", "collect", "enabled"]);
+
+const FEATURE_CODES = Object.freeze({
+  [ARTICLE_TAGS]: "tags",
+  [EDITORIAL_ENRICHMENT]: "edit",
+});
+const CODE_FEATURES = Object.freeze(
+  Object.fromEntries(
+    Object.entries(FEATURE_CODES).map(([feature, code]) => [code, feature]),
+  ),
+);
+const FEATURE_LABELS = Object.freeze({
+  [ARTICLE_TAGS]: "Article tags",
+  [EDITORIAL_ENRICHMENT]: "Editorial enrichment",
+});
 
 const STATE_CODES = Object.freeze({
   off: "o",
@@ -44,15 +59,35 @@ export function parseLabsCommand(text) {
   };
 }
 
-export function createLabsCallback(action, value, version) {
+export function createLabsCallback(
+  action,
+  value,
+  version,
+  featureKey = ARTICLE_TAGS,
+) {
   if (!Number.isSafeInteger(version) || version < 1) {
     throw new Error("Invalid Labs callback version");
   }
   if (action === "view" && PAGES.has(value)) {
-    return callbackData(["v", value === ARTICLE_TAGS ? "tags" : "home", version]);
+    return callbackData([
+      "v",
+      value === "home" ? "home" : FEATURE_CODES[value],
+      version,
+    ]);
   }
-  if (action === "state" && STATES.has(value)) {
-    return callbackData(["s", STATE_CODES[value], version]);
+  if (
+    action === "state" &&
+    STATES.has(value) &&
+    FEATURE_CODES[featureKey]
+  ) {
+    return featureKey === ARTICLE_TAGS
+      ? callbackData(["s", STATE_CODES[value], version])
+      : callbackData([
+          "s",
+          FEATURE_CODES[featureKey],
+          STATE_CODES[value],
+          version,
+        ]);
   }
   if (action === "close" && value === "done") {
     return callbackData(["x", "done", version]);
@@ -69,15 +104,36 @@ export function parseLabsCallback(data) {
     return null;
   }
   const parts = data.split(":");
-  if (parts.length !== 4 || parts[0] !== CALLBACK_PREFIX) return null;
+  if (![4, 5].includes(parts.length) || parts[0] !== CALLBACK_PREFIX) {
+    return null;
+  }
+  if (parts.length === 5) {
+    const [, code, rawFeature, rawValue, rawVersion] = parts;
+    const version = parseVersion(rawVersion);
+    const featureKey = CODE_FEATURES[rawFeature];
+    if (
+      code === "s" &&
+      featureKey &&
+      CODE_STATES[rawValue] &&
+      version
+    ) {
+      return {
+        action: "state",
+        value: CODE_STATES[rawValue],
+        version,
+        featureKey,
+      };
+    }
+    return null;
+  }
   const [, code, rawValue, rawVersion] = parts;
   const version = parseVersion(rawVersion);
   if (!version) return null;
 
-  if (code === "v" && (rawValue === "home" || rawValue === "tags")) {
+  if (code === "v" && (rawValue === "home" || CODE_FEATURES[rawValue])) {
     return {
       action: "view",
-      value: rawValue === "tags" ? ARTICLE_TAGS : "home",
+      value: rawValue === "home" ? "home" : CODE_FEATURES[rawValue],
       version,
     };
   }
@@ -90,9 +146,9 @@ export function parseLabsCallback(data) {
   return null;
 }
 
-function articleTagsRow(rows) {
+function featureRow(rows, featureKey) {
   if (!Array.isArray(rows)) return null;
-  const row = rows.find((item) => item?.feature_key === ARTICLE_TAGS);
+  const row = rows.find((item) => item?.feature_key === featureKey);
   if (
     !row ||
     !STATES.has(row.state) ||
@@ -109,9 +165,31 @@ function stateLabel(state) {
 }
 
 export function renderLabsText(rows, page = "home") {
-  const feature = articleTagsRow(rows);
-  if (!feature) throw new Error("Article tags feature flag is unavailable");
-  const status = stateLabel(feature.state);
+  const feature = page === "home" ? null : featureRow(rows, page);
+  if (page !== "home" && !feature) {
+    throw new Error(`${FEATURE_LABELS[page] ?? "Labs"} feature flag is unavailable`);
+  }
+  if (page === EDITORIAL_ENRICHMENT) {
+    const status = stateLabel(feature.state);
+    return [
+      "Labs · Editorial enrichment",
+      `Current status: ${status}`,
+      "",
+      "Off — keep the grounded baseline and skip the editorial model call.",
+      "Collect only — generate and store both versions, but keep the baseline as the review body.",
+      "Enabled — generate both versions and use the enriched article as the review body.",
+      "",
+      "The step uses full extracted evidence. It may make one narrow fact search only when necessary; searched facts must keep a source link and evidence mapping.",
+      "Changes take effect immediately.",
+    ].join("\n");
+  }
+  const articleTags = featureRow(rows, ARTICLE_TAGS);
+  if (page === ARTICLE_TAGS && !articleTags) {
+    throw new Error("Article tags feature flag is unavailable");
+  }
+  const editorial = featureRow(rows, EDITORIAL_ENRICHMENT);
+  const selected = page === ARTICLE_TAGS ? articleTags : null;
+  const status = selected ? stateLabel(selected.state) : null;
   if (page === ARTICLE_TAGS) {
     return [
       "Labs · Article tags",
@@ -128,35 +206,47 @@ export function renderLabsText(rows, page = "home") {
     "Experimental Labs",
     "These features may change while we evaluate them. Changes take effect immediately.",
     "",
-    `Article tags: ${status}`,
+    `Article tags: ${stateLabel(articleTags?.state ?? "unavailable")}`,
+    `Editorial enrichment: ${stateLabel(editorial?.state ?? "unavailable")}`,
     "Story connections: Planned for V2 (not available yet).",
   ].join("\n");
 }
 
 export function renderClosedLabsText(rows) {
-  const feature = articleTagsRow(rows);
-  if (!feature) throw new Error("Article tags feature flag is unavailable");
+  const articleTags = featureRow(rows, ARTICLE_TAGS);
+  const editorial = featureRow(rows, EDITORIAL_ENRICHMENT);
+  if (!articleTags || !editorial) {
+    throw new Error("Labs feature flags are unavailable");
+  }
   return [
     "✅ Labs changes are active",
-    `Article tags: ${stateLabel(feature.state)}`,
+    `Article tags: ${stateLabel(articleTags.state)}`,
+    `Editorial enrichment: ${stateLabel(editorial.state)}`,
     "",
     "The Labs menu is closed. Send /labs to open it again.",
   ].join("\n");
 }
 
-function button(text, action, value, version) {
+function button(text, action, value, version, featureKey) {
   return {
     text,
-    callback_data: createLabsCallback(action, value, version),
+    callback_data: createLabsCallback(action, value, version, featureKey),
   };
 }
 
 export function renderLabsKeyboard(rows, page = "home") {
-  const feature = articleTagsRow(rows);
-  if (!feature) throw new Error("Article tags feature flag is unavailable");
+  const feature =
+    page === "home"
+      ? featureRow(rows, ARTICLE_TAGS)
+      : featureRow(rows, page);
+  if (!feature) throw new Error("Labs feature flag is unavailable");
   const { version } = feature;
-  const close = [button("Done & close", "close", "done", version)];
-  if (page === ARTICLE_TAGS) {
+  const navigationVersion =
+    featureRow(rows, ARTICLE_TAGS)?.version ?? version;
+  const close = [
+    button("Done & close", "close", "done", navigationVersion),
+  ];
+  if (page !== "home") {
     return [
       ...["off", "collect", "enabled"].map((state) => [
         button(
@@ -164,21 +254,26 @@ export function renderLabsKeyboard(rows, page = "home") {
           "state",
           state,
           version,
+          page,
         ),
       ]),
-      [button("‹ Back", "view", "home", version)],
+      [button("‹ Back", "view", "home", navigationVersion)],
       close,
     ];
   }
-  return [
-    [
+  const featureButtons = [ARTICLE_TAGS, EDITORIAL_ENRICHMENT]
+    .map((featureKey) => featureRow(rows, featureKey))
+    .filter(Boolean)
+    .map((row) => [
       button(
-        `Article tags · ${stateLabel(feature.state)}`,
+        `${FEATURE_LABELS[row.feature_key]} · ${stateLabel(row.state)}`,
         "view",
-        ARTICLE_TAGS,
-        version,
+        row.feature_key,
+        row.version,
       ),
-    ],
+    ]);
+  return [
+    ...featureButtons,
     close,
   ];
 }
@@ -228,8 +323,11 @@ export async function showLabs({
     channelId,
     updatedBy: userId,
   });
-  if (!articleTagsRow(rows)) {
-    throw new Error("Article tags feature flag was not initialized");
+  if (
+    !featureRow(rows, ARTICLE_TAGS) ||
+    !featureRow(rows, EDITORIAL_ENRICHMENT)
+  ) {
+    throw new Error("Labs feature flags were not initialized");
   }
   const sent = await callTelegram(token, "sendMessage", {
     chat_id: chatId,
@@ -270,9 +368,13 @@ export async function handleLabsCallback(
     return stale("Rejected a malformed Labs callback.");
   }
   const rows = await repository.getNewsFeatureFlags(channelId);
-  const current = articleTagsRow(rows);
+  const featureKey =
+    parsed?.action === "view" && parsed.value !== "home"
+      ? parsed.value
+      : parsed?.featureKey ?? ARTICLE_TAGS;
+  const current = featureRow(rows, featureKey);
   if (!current) {
-    return stale("Labs callback had no article-tags feature row.");
+    return stale("Labs callback had no matching feature row.");
   }
   if (parsed.version !== current.version) {
     return stale("Rejected a stale Labs callback version.");
@@ -300,13 +402,17 @@ export async function handleLabsCallback(
       rows,
       page: parsed.value,
     });
-    await answer(parsed.value === "home" ? "Labs overview." : "Article tags opened.");
+    await answer(
+      parsed.value === "home"
+        ? "Labs overview."
+        : `${FEATURE_LABELS[parsed.value]} opened.`,
+    );
     return { auditResult: `Opened Labs page ${parsed.value}.` };
   }
 
   const updated = await repository.updateNewsFeatureFlag({
     channelId,
-    featureKey: ARTICLE_TAGS,
+    featureKey,
     state: parsed.value,
     updatedBy: userId,
     expectedVersion: parsed.version,
@@ -315,7 +421,7 @@ export async function handleLabsCallback(
     return stale("Labs feature update lost its version fence.");
   }
   const updatedRows = rows.map((row) =>
-    row?.feature_key === ARTICLE_TAGS ? updated : row,
+    row?.feature_key === featureKey ? updated : row,
   );
   await editLabsMessage({
     token,
@@ -323,11 +429,13 @@ export async function handleLabsCallback(
     chatId,
     messageId,
     rows: updatedRows,
-    page: ARTICLE_TAGS,
+    page: featureKey,
   });
-  await answer(`Article tags: ${stateLabel(updated.state)}. Active now.`);
+  await answer(
+    `${FEATURE_LABELS[featureKey]}: ${stateLabel(updated.state)}. Active now.`,
+  );
   return {
-    auditResult: `Changed article tags Labs state to ${updated.state}.`,
+    auditResult: `Changed ${featureKey} Labs state to ${updated.state}.`,
     feature: updated,
   };
 }

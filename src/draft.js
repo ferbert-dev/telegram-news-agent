@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { recordAiUsageEvents } from "./ai-usage.js";
 import {
   appendTopicHashtags,
@@ -6,85 +5,22 @@ import {
   validateTopicTagAssignments,
 } from "./article-tags.js";
 import { appendEditorCredit, DEFAULT_NEWS_EDITOR } from "./editor.js";
+import {
+  BASE_TELEGRAM_DRAFT_JSON_SCHEMA,
+  BaseTelegramDraft,
+  TELEGRAM_DRAFT_JSON_SCHEMA,
+  TelegramDraft,
+} from "./draft-contract.js";
+import { enrichEditorialDraft } from "./editorial-enrichment.js";
 import { LANGUAGE_OPTIONS, newsSettingsSnapshot } from "./news-settings.js";
 import { validateMessage } from "./telegram.js";
 
-const Claim = z.object({
-  text: z.string().min(1),
-  sourceUrl: z.string().url(),
-});
-
-const TopicTagAssignment = z
-  .object({
-    code: z
-      .string()
-      .min(1)
-      .max(64)
-      .regex(/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/),
-    confidence: z.number().min(0).max(1),
-  })
-  .strict();
-
-export const BaseTelegramDraft = z.object({
-  headline: z.string().min(1).max(120),
-  telegramText: z.string().min(1).max(4096),
-  claims: z.array(Claim).min(1).max(12),
-  sourceUrls: z.array(z.string().url()).min(1).max(6),
-  caveat: z.string().min(1).max(500),
-});
-
-export const TelegramDraft = BaseTelegramDraft.extend({
-  topicTags: z.array(TopicTagAssignment).max(3),
-});
-
-export const BASE_TELEGRAM_DRAFT_JSON_SCHEMA = {
-  type: "object",
-  properties: {
-    headline: { type: "string" },
-    telegramText: { type: "string" },
-    claims: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          text: { type: "string" },
-          sourceUrl: { type: "string" },
-        },
-        required: ["text", "sourceUrl"],
-      },
-    },
-    sourceUrls: {
-      type: "array",
-      items: { type: "string" },
-    },
-    caveat: { type: "string" },
-  },
-  required: ["headline", "telegramText", "claims", "sourceUrls", "caveat"],
-};
-
-export const TELEGRAM_DRAFT_JSON_SCHEMA = {
-  type: "object",
-  properties: {
-    ...BASE_TELEGRAM_DRAFT_JSON_SCHEMA.properties,
-    topicTags: {
-      type: "array",
-      maxItems: 3,
-      items: {
-        type: "object",
-        properties: {
-          code: {
-            type: "string",
-            pattern: "^[a-z0-9]+(?:[-_][a-z0-9]+)*$",
-          },
-          confidence: { type: "number", minimum: 0, maximum: 1 },
-        },
-        required: ["code", "confidence"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: [...BASE_TELEGRAM_DRAFT_JSON_SCHEMA.required, "topicTags"],
-};
+export {
+  BASE_TELEGRAM_DRAFT_JSON_SCHEMA,
+  BaseTelegramDraft,
+  TELEGRAM_DRAFT_JSON_SCHEMA,
+  TelegramDraft,
+} from "./draft-contract.js";
 
 const VERIFIED_SYSTEM_PROMPT = `You are the editor of a concise general-interest news channel.
 Use only the supplied primary-source evidence. Do not add facts from memory.
@@ -152,6 +88,46 @@ function proseMetrics(text) {
   return { words, sentences };
 }
 
+function editorialEnrichmentState(value) {
+  const state = value?.state;
+  return state === "collect" || state === "enabled" ? state : "off";
+}
+
+function completeDraft({
+  grounded,
+  topicTags,
+  unverified,
+  languageCode,
+  editor,
+  tagging,
+}) {
+  const unverifiedPrefix = UNVERIFIED_PREFIXES[languageCode];
+  const draft = unverified
+    ? TelegramDraft.parse({
+        ...grounded,
+        topicTags,
+        telegramText: grounded.telegramText.startsWith(unverifiedPrefix)
+          ? grounded.telegramText
+          : `${unverifiedPrefix}\n\n${grounded.telegramText}`,
+      })
+    : TelegramDraft.parse({ ...grounded, topicTags });
+  const creditedDraft = TelegramDraft.parse({
+    ...draft,
+    telegramText: appendEditorCredit(draft.telegramText, editor, languageCode),
+  });
+  const completedText = appendTopicHashtags(
+    creditedDraft.telegramText,
+    topicTags,
+    tagging,
+    { languageCode },
+  );
+  validateMessage(completedText);
+  return TelegramDraft.parse({
+    ...creditedDraft,
+    telegramText: completedText,
+  });
+}
+
 export function validateGroundedDraft(
   draft,
   evidence,
@@ -217,6 +193,7 @@ export async function generateDraft({
   newsSettings,
   editor = DEFAULT_NEWS_EDITOR,
   articleTagging,
+  editorialEnrichment,
 }) {
   if (!article?.id) {
     throw new Error("Article is required for draft generation");
@@ -344,44 +321,80 @@ export async function generateDraft({
   } catch {
     topicTaggingDiagnostic = "invalid_assignments_discarded";
   }
-  const unverifiedPrefix = UNVERIFIED_PREFIXES[languageCode];
-  const draft = unverified
-    ? TelegramDraft.parse({
-        ...grounded,
-        topicTags,
-        telegramText: grounded.telegramText.startsWith(unverifiedPrefix)
-          ? grounded.telegramText
-          : `${unverifiedPrefix}\n\n${grounded.telegramText}`,
-      })
-    : TelegramDraft.parse({ ...grounded, topicTags });
-  const creditedDraft = TelegramDraft.parse({
-    ...draft,
-    telegramText: appendEditorCredit(draft.telegramText, editor, languageCode),
-  });
-  const completedText = appendTopicHashtags(
-    creditedDraft.telegramText,
+  const baselineDraft = completeDraft({
+    grounded,
     topicTags,
-    normalizedTagging,
-    { languageCode },
-  );
-  validateMessage(completedText);
-  const completedDraft = TelegramDraft.parse({
-    ...creditedDraft,
-    telegramText: completedText,
+    unverified,
+    languageCode,
+    editor,
+    tagging: normalizedTagging,
   });
+
+  const enrichmentState = editorialEnrichmentState(editorialEnrichment);
+  let enrichment = null;
+  let enrichmentDiagnostic = null;
+  if (enrichmentState !== "off") {
+    if (!aiProvider || typeof aiProvider.generateStructured !== "function") {
+      enrichmentDiagnostic = "provider_unavailable";
+    } else {
+      try {
+        enrichment = await enrichEditorialDraft({
+          aiProvider,
+          repository,
+          article,
+          baselineDraft: grounded,
+          evidence,
+          languageCode,
+          newsSettings,
+          validateDraft: validateGroundedDraft,
+        });
+      } catch {
+        enrichmentDiagnostic = "enrichment_failed";
+      }
+    }
+  }
+  let enrichedDraft = null;
+  if (enrichment) {
+    try {
+      enrichedDraft = completeDraft({
+        grounded: enrichment.draft,
+        topicTags,
+        unverified,
+        languageCode,
+        editor,
+        tagging: normalizedTagging,
+      });
+    } catch {
+      enrichmentDiagnostic = "enriched_output_invalid";
+    }
+  }
+  const enrichmentCompleted = Boolean(enrichment && enrichedDraft);
+  const selectedVersion =
+    enrichmentState === "enabled" && enrichedDraft ? "enriched" : "baseline";
+  const completedDraft =
+    selectedVersion === "enriched" ? enrichedDraft : baselineDraft;
+  const selectedProvider =
+    selectedVersion === "enriched" ? enrichment.provider : generated.provider;
+  const selectedModel =
+    selectedVersion === "enriched" ? enrichment.model : generated.model;
+
+  const promptVersion = unverified
+    ? "telegram-unverified-trend-v2"
+    : verificationStatus === "web_search_summary"
+      ? "telegram-web-search-grounded-v1"
+      : verificationStatus === "web_source"
+        ? "telegram-web-grounded-v1"
+        : "telegram-grounded-v2";
 
   const saved = await repository.createReviewDraft({
     article_id: article.id,
     body: completedDraft.telegramText,
     status: "review",
-    model: generated.model,
-    prompt_version: unverified
-      ? "telegram-unverified-trend-v2"
-      : verificationStatus === "web_search_summary"
-        ? "telegram-web-search-grounded-v1"
-        : verificationStatus === "web_source"
-          ? "telegram-web-grounded-v1"
-          : "telegram-grounded-v2",
+    model: selectedModel,
+    prompt_version:
+      selectedVersion === "enriched"
+        ? `${promptVersion}+editorial-enrichment-v1`
+        : promptVersion,
     reviewer_notes: JSON.stringify({
       headline: completedDraft.headline,
       claims: completedDraft.claims,
@@ -390,11 +403,28 @@ export async function generateDraft({
       topic_tags: topicTags,
       article_tagging_state: normalizedTagging.state,
       topic_tagging_diagnostic: topicTaggingDiagnostic,
-      provider: generated.provider,
+      provider: selectedProvider,
       editor,
       verification_status: verificationStatus,
       language_code: languageCode,
       news_settings: newsSettings ? newsSettingsSnapshot(newsSettings) : null,
+      editorial_enrichment: {
+        state: enrichmentState,
+        status:
+          enrichmentState === "off"
+            ? "disabled"
+            : enrichmentCompleted
+              ? "completed"
+              : "fallback_to_baseline",
+        selected_version: selectedVersion,
+        baseline_draft: baselineDraft,
+        enriched_draft: enrichedDraft,
+        evidence_map: enrichment?.evidenceMap ?? [],
+        provider: enrichment?.provider ?? null,
+        model: enrichment?.model ?? null,
+        search: enrichment?.search ?? null,
+        diagnostic: enrichmentDiagnostic,
+      },
     }),
     lease_name: lease?.name,
     lease_owner_id: lease?.ownerId,
@@ -409,8 +439,22 @@ export async function generateDraft({
 
   return {
     draft: completedDraft,
+    baselineDraft,
+    enrichedDraft,
+    editorialEnrichment: {
+      state: enrichmentState,
+      selectedVersion,
+      status:
+        enrichmentState === "off"
+          ? "disabled"
+          : enrichmentCompleted
+            ? "completed"
+            : "fallback_to_baseline",
+      search: enrichment?.search ?? null,
+      diagnostic: enrichmentDiagnostic,
+    },
     saved,
-    provider: generated.provider,
-    model: generated.model,
+    provider: selectedProvider,
+    model: selectedModel,
   };
 }

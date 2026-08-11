@@ -88,6 +88,82 @@ export function parseReviewCallback(data) {
   };
 }
 
+export function editorialReviewComparison(draft) {
+  let notes;
+  try {
+    notes = JSON.parse(draft?.reviewer_notes ?? "{}");
+  } catch {
+    return null;
+  }
+  const editorial = notes?.editorial_enrichment;
+  if (editorial?.status !== "completed") return null;
+  const baseline = editorial.baseline_draft?.telegramText;
+  const enriched = editorial.enriched_draft?.telegramText;
+  if (
+    typeof baseline !== "string" ||
+    typeof enriched !== "string" ||
+    baseline === enriched
+  ) {
+    return null;
+  }
+  const selectedVersion = editorial.selected_version;
+  const selected = selectedVersion === "enriched" ? enriched : baseline;
+  if (draft?.body !== selected) return null;
+  return selectedVersion === "enriched"
+    ? {
+        alternateLabel: "Grounded baseline (for comparison)",
+        alternateBody: baseline,
+        selectedLabel: "Enriched version (selected for approval)",
+      }
+    : {
+        alternateLabel: "Enriched candidate (collect-only comparison)",
+        alternateBody: enriched,
+        selectedLabel: "Grounded baseline (selected for approval)",
+      };
+}
+
+async function sendEditorialComparison({
+  token,
+  chatId,
+  draftId,
+  repository,
+  callTelegram,
+}) {
+  if (typeof repository.getDraft !== "function") return;
+  let comparison;
+  try {
+    comparison = editorialReviewComparison(await repository.getDraft(draftId));
+  } catch {
+    return;
+  }
+  if (!comparison) return;
+  const heading = `${comparison.alternateLabel}\n\n`;
+  const footer = `\n\nNext: ${comparison.selectedLabel}, with Publish/Reject controls.`;
+  const combined = `${heading}${comparison.alternateBody}${footer}`;
+  try {
+    if (combined.length <= 4096) {
+      await callTelegram(token, "sendMessage", {
+        chat_id: chatId,
+        text: combined,
+        disable_web_page_preview: true,
+      });
+      return;
+    }
+    await callTelegram(token, "sendMessage", {
+      chat_id: chatId,
+      text: `${comparison.alternateLabel}. The following message is the alternative; the version after it has approval controls.`,
+    });
+    await callTelegram(token, "sendMessage", {
+      chat_id: chatId,
+      text: comparison.alternateBody,
+      disable_web_page_preview: true,
+    });
+  } catch {
+    // Comparison is additive. Failure must not hide the selected review draft
+    // or weaken the existing explicit approval gate.
+  }
+}
+
 function addressedElsewhere(command, botUsername) {
   return Boolean(
     command.botUsername &&
@@ -652,6 +728,13 @@ export async function deliverReviewDraft({
         resumed: true,
       };
     }
+    await sendEditorialComparison({
+      token,
+      chatId: existing.control_chat_id,
+      draftId,
+      repository,
+      callTelegram,
+    });
     const replacement = await callTelegram(token, "sendMessage", {
       chat_id: existing.control_chat_id,
       text: preview,
@@ -701,6 +784,13 @@ export async function deliverReviewDraft({
     };
   }
   const sessionId = newSessionId();
+  await sendEditorialComparison({
+    token,
+    chatId,
+    draftId,
+    repository,
+    callTelegram,
+  });
   const previewMessage = await callTelegram(token, "sendMessage", {
     chat_id: chatId,
     text: preview,

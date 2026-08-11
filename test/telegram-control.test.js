@@ -4,6 +4,7 @@ import {
   classifyControlUpdate,
   createReviewCallback,
   deliverReviewDraft,
+  editorialReviewComparison,
   handleControlUpdate,
   parseNewsCommand,
   parseStatsCommand,
@@ -208,6 +209,14 @@ test("/labs is claimed, audited, private-admin routed, and does not start resear
             version: 1,
             updated_by: payload.updatedBy,
           },
+          {
+            telegram_channel_id: "@channel",
+            feature_key: "editorial_enrichment",
+            state: "off",
+            config: {},
+            version: 1,
+            updated_by: payload.updatedBy,
+          },
         ];
       },
     },
@@ -235,6 +244,12 @@ test("/labs is claimed, audited, private-admin routed, and does not start resear
       ([name, body]) => name === "sendMessage" && /Experimental Labs/.test(body.text),
     )[1].text,
     /Article tags: Off/,
+  );
+  assert.match(
+    calls.find(
+      ([name, body]) => name === "sendMessage" && /Experimental Labs/.test(body.text),
+    )[1].text,
+    /Editorial enrichment: Off/,
   );
 });
 
@@ -446,6 +461,65 @@ test("/news confirms automatic publication without creating a review session", a
         name === "sendMessage" && /Published automatically.*501/.test(body.text),
     ),
   );
+});
+
+test("manual review shows the alternate editorial version before approval controls", async () => {
+  const calls = [];
+  const baseline = "Baseline grounded draft.";
+  const enriched = "Enriched memorable draft.";
+  const draft = {
+    id: "draft-compare",
+    body: enriched,
+    reviewer_notes: JSON.stringify({
+      editorial_enrichment: {
+        status: "completed",
+        selected_version: "enriched",
+        baseline_draft: { telegramText: baseline },
+        enriched_draft: { telegramText: enriched },
+      },
+    }),
+  };
+  assert.deepEqual(editorialReviewComparison(draft), {
+    alternateLabel: "Grounded baseline (for comparison)",
+    alternateBody: baseline,
+    selectedLabel: "Enriched version (selected for approval)",
+  });
+
+  const result = await deliverReviewDraft({
+    token: "token",
+    channelId: "@channel",
+    chatId: 9,
+    requestedBy: 5,
+    draftId: draft.id,
+    preview: enriched,
+    repository: {
+      async getDraft() {
+        return draft;
+      },
+      async findTelegramReviewSessionByDraft() {
+        return null;
+      },
+      async createTelegramReviewSession(input) {
+        calls.push(["session", input]);
+        return input;
+      },
+    },
+    callTelegram: async (_token, method, body) => {
+      calls.push([method, body]);
+      return { message_id: calls.length + 40 };
+    },
+    newSessionId: () => SESSION_ID,
+    now: () => new Date("2026-06-27T12:00:00Z"),
+  });
+
+  const messages = calls.filter(([name]) => name === "sendMessage");
+  assert.equal(messages.length, 2);
+  assert.match(messages[0][1].text, /Grounded baseline/);
+  assert.match(messages[0][1].text, /Baseline grounded draft/);
+  assert.equal(messages[0][1].reply_markup, undefined);
+  assert.equal(messages[1][1].text, enriched);
+  assert.ok(messages[1][1].reply_markup.inline_keyboard.length);
+  assert.equal(result.previewMessageId, 42);
 });
 
 test("deliverReviewDraft creates a bound reusable manual-review session", async () => {

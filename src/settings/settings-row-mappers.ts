@@ -100,7 +100,7 @@ function newsApprovalPolicy(
 }
 
 function newsFeatureKey(value: string): NewsFeatureFlagRow["feature_key"] {
-  if (value !== "article_tags") {
+  if (value !== "article_tags" && value !== "editorial_enrichment") {
     throw new Error("Invalid news feature key");
   }
   return value;
