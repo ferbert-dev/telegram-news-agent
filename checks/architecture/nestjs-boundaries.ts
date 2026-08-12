@@ -50,6 +50,34 @@ function relative(file: string): string {
   return path.relative(projectRoot, file).split(path.sep).join("/");
 }
 
+function isApplicationLayerFile(file: string): boolean {
+  return (
+    file.includes("/application/") ||
+    /(?:^|\/)[^/]+-application(?:\.[^/]+)?\.ts$/.test(file) ||
+    file.endsWith(".service.ts") ||
+    file.endsWith(".use-case.ts")
+  );
+}
+
+function assertApplicationDependencies(file: string, source: string): void {
+  for (const specifier of importsOf(file, source)) {
+    assert.equal(
+      isDirectDatabasePackage(specifier),
+      false,
+      `${file} imports database package ${specifier}`,
+    );
+    assert.doesNotMatch(specifier, /(?:^|\/)database(?:\/|$)/, file);
+    assert.doesNotMatch(specifier, /news-repository/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)notion-audit(?:\.js)?$/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)pipeline(?:\.js)?$/, file);
+    assert.doesNotMatch(specifier, /(?:openai|gemini)-provider/, file);
+    assert.doesNotMatch(specifier, /telegram-(?:bot|polling)/, file);
+    assert.doesNotMatch(specifier, /^(?:node:)?https?(?:\/|$)/, file);
+    assert.doesNotMatch(specifier, /^(?:axios|undici)(?:\/|$)/, file);
+  }
+  assert.doesNotMatch(source, /\b(?:globalThis\.)?fetch\s*\(/, file);
+}
+
 function resolveRelativeImport(from: string, specifier: string): string | null {
   if (!specifier.startsWith(".")) return null;
   const candidate = path.resolve(path.dirname(from), specifier).replace(/\.js$/, ".ts");
@@ -133,33 +161,85 @@ test("dependency scanner covers re-exports, dynamic imports, and database packag
   assert.equal(isDirectDatabasePackage("@app/drizzle-orm"), false);
 });
 
+test("application boundary scanner covers root contracts and tokens and rejects concrete infrastructure", () => {
+  const allowed = new Map([
+    [
+      "src/example/example-application.contracts.ts",
+      `
+        import type { DomainEvent } from "./example.interfaces.js";
+        export type { DomainEvent };
+      `,
+    ],
+    [
+      "src/example/example-application.tokens.ts",
+      `export const EXAMPLE_APPLICATION = Symbol("EXAMPLE_APPLICATION");`,
+    ],
+    [
+      "src/example/example-application.ts",
+      `export type ApplicationResult = { ok: boolean };`,
+    ],
+  ]);
+  for (const [file, source] of allowed) {
+    assert.equal(isApplicationLayerFile(file), true, file);
+    assert.doesNotThrow(() => assertApplicationDependencies(file, source), file);
+  }
+
+  const forbidden = new Map([
+    [
+      "src/example/notion-application.contracts.ts",
+      `import { NotionAuditLogger } from "../../notion-audit.js";`,
+    ],
+    [
+      "src/example/fetch-application.tokens.ts",
+      `export const request = () => globalThis.fetch("https://example.test");`,
+    ],
+    [
+      "src/example/http-application.contracts.ts",
+      `import type { RequestOptions } from "node:http";`,
+    ],
+    [
+      "src/example/axios-application.tokens.ts",
+      `import axios from "axios";`,
+    ],
+    [
+      "src/example/undici-application.contracts.ts",
+      `import { request } from "undici";`,
+    ],
+    [
+      "src/example/postgres-application.tokens.ts",
+      `import type { Pool } from "pg";`,
+    ],
+    [
+      "src/example/drizzle-application.contracts.ts",
+      `export type { SQL } from "drizzle-orm/sql";`,
+    ],
+    [
+      "src/example/legacy-application.tokens.ts",
+      `export { NewsRepository } from "../../news-repository.js";`,
+    ],
+  ]);
+  for (const [file, source] of forbidden) {
+    assert.equal(isApplicationLayerFile(file), true, file);
+    assert.throws(
+      () => assertApplicationDependencies(file, source),
+      (error: unknown) =>
+        error instanceof Error && error.name === "AssertionError",
+      `forbidden fixture ${file}`,
+    );
+  }
+});
+
 test("application layer has no direct database, legacy runtime, provider, or HTTP dependency", async () => {
   const files = await sourceFiles(sourceRoot);
-  const applicationFiles = files.filter((file) => {
-    const name = relative(file);
-    return (
-      name.includes("/application/") ||
-      name.endsWith("-application.module.ts") ||
-      name.endsWith(".service.ts") ||
-      name.endsWith(".use-case.ts")
-    );
-  });
+  const applicationFiles = files.filter((file) =>
+    isApplicationLayerFile(relative(file)),
+  );
 
   assert.ok(applicationFiles.length > 0, "at least one application slice must exist");
   for (const file of applicationFiles) {
     const source = await readFile(file, "utf8");
     const name = relative(file);
-    for (const specifier of importsOf(file, source)) {
-      assert.equal(
-        isDirectDatabasePackage(specifier),
-        false,
-        `${name} imports database package ${specifier}`,
-      );
-      assert.doesNotMatch(specifier, /(?:^|\/)database(?:\/|$)/, name);
-      assert.doesNotMatch(specifier, /news-repository/, name);
-      assert.doesNotMatch(specifier, /(?:openai|gemini)-provider/, name);
-      assert.doesNotMatch(specifier, /telegram-(?:bot|polling)/, name);
-    }
+    assertApplicationDependencies(name, source);
   }
 });
 
