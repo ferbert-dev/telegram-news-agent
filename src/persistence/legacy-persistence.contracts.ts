@@ -22,7 +22,7 @@ import type {
 import type { UsageReportingPersistence } from "../usage/usage-persistence.contracts.js";
 
 /**
- * Typed compatibility boundary for the 68 domain methods on NewsRepository.
+ * Typed compatibility boundary for the 69 domain methods on NewsRepository.
  *
  * It intentionally keeps the two historical positional Telegram update
  * signatures. Every other method already has the same external shape as its
@@ -114,6 +114,7 @@ export const LEGACY_PERSISTENCE_METHOD_OWNERS = {
   getOrCreateNewsSettings: "settings",
   getNewsSettings: "settings",
   updateNewsSettings: "settings",
+  updateNewsExcludedTopics: "settings",
   getOrCreateNewsFeatureFlags: "featureFlags",
   getNewsFeatureFlags: "featureFlags",
   updateNewsFeatureFlag: "featureFlags",

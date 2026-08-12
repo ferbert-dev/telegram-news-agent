@@ -56,7 +56,8 @@ recovery paths share the same race-safe veto. See
 Runs inside the polling bot process, but stores all durable state in PostgreSQL.
 `news_bot_settings.next_run_at` identifies due work; an atomic database claim
 fences concurrent workers and stale claims can be recovered after a crash. A
-run takes one immutable settings snapshot and advances the next due time only
+run takes one immutable settings snapshot, including excluded-topic codes and
+their settings-version provenance, and advances the next due time only
 after recording the outcome. Automatic mode checkpoints its draft before the
 external Telegram send and resumes that draft idempotently after a crash.
 An enabled 22:00–08:00 `Europe/Madrid` night pause moves due rows to the next
@@ -79,6 +80,11 @@ This keeps the control plane private, avoids a new public HTTP service, and
 allows every mutation to be re-authorized and guarded by an optimistic settings
 version. PostgreSQL stores language, preset/custom topics, review chat,
 publication policy, interval, night-pause state, and schedule state.
+Excluded-topic codes are a bounded taxonomy rather than free-form instructions.
+Their dedicated optimistic-CAS mutation keeps all existing settings function
+signatures compatible; an empty array is an explicit incident kill switch.
+The settings UI describes this as a preference because the foundation does not
+yet connect classification to research or publication.
 
 ### Database access
 

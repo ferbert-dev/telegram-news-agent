@@ -24,6 +24,7 @@ const settings = new NewsSettingsUseCases({
   async getOrCreateNewsSettings() { return settingsRow; },
   async getNewsSettings() { return settingsRow; },
   async updateNewsSettings() { return null; },
+  async updateNewsExcludedTopics() { return settingsRow; },
 });
 const featureFlags = new NewsFeatureFlagsUseCases({
   async getOrCreateNewsFeatureFlags() { return [featureRow]; },
@@ -37,6 +38,15 @@ const settingsInput = new TelegramSettingsInputUseCases({
 const service = new SettingsService(settings, featureFlags, settingsInput);
 
 assert.equal(await service.getNewsSettings("@emitted"), settingsRow);
+assert.equal(
+  await service.updateNewsExcludedTopics({
+    channelId: "@emitted",
+    excludedTopicCodes: [],
+    updatedBy: 5,
+    expectedVersion: 2,
+  }),
+  settingsRow,
+);
 assert.equal(
   (await service.getOrCreateNewsFeatureFlags({
     channelId: "@emitted",

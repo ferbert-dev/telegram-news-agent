@@ -18,12 +18,14 @@ The baseline audit found:
 
 - 23 PostgreSQL tables: 22 application tables plus `schema_migrations`.
 - 23 foreign keys in the Drizzle schema snapshot.
-- 47 current PostgreSQL function names and 49 live signatures.
+- 49 current PostgreSQL function names and 51 live signatures.
   `update_news_settings` and the publication-claim function each intentionally
   retain one compatibility overload. A clean PostgreSQL 17 inventory corrected
-  the earlier static count and remains authoritative for both overloads.
-- 68 domain persistence methods and six infrastructure helpers in `NewsRepository`.
-- 31 domain paths suitable for typed Drizzle queries and 37 paths that should retain a PostgreSQL function as their atomic boundary.
+  the earlier static count and remains authoritative for both overloads. The
+  excluded-topic foundation adds one validator and one dedicated optimistic-CAS
+  update without changing either `update_news_settings` signature.
+- 69 domain persistence methods and six infrastructure helpers in `NewsRepository`.
+- 31 domain paths suitable for typed Drizzle queries and 38 paths that should retain a PostgreSQL function as their atomic boundary.
 - Five public methods with no production call sites: `createDraft`,
   `recordPublication`, `transitionArticle`, `transitionDraft`, and
   `replaceArticleTopics`. They remain facade compatibility methods, not new
@@ -129,7 +131,8 @@ The retained groups include:
 - review-draft creation, approval and rejection;
 - publication claim, finalize, reset and rejected-release recovery;
 - pipeline lease acquire, renew and release;
-- settings creation/update and feature-flag version CAS;
+- settings creation/update, dedicated excluded-topic update, and feature-flag
+  version CAS;
 - schedule claim, checkpoint, renewal, quiet-hours deferral and completion;
 - Telegram update claims and review-session decisions;
 - Notion audit-outbox claim, completion and retry.
@@ -160,7 +163,10 @@ Before repository migration resumes, CI must create a clean PostgreSQL 17 databa
 - columns, PostgreSQL types, nullability and defaults;
 - primary, unique and check constraints;
 - expected and unexpected indexes, including partial indexes;
-- 47 function names, 49 signatures, return types, volatility, security mode and configured search path; the two extra signatures are the compatibility overloads for settings update and publication claim;
+- 49 function names, 51 signatures, return types, volatility, security mode and
+  configured search path; the two compatibility overloads for settings update
+  and publication claim remain present alongside the excluded-topic validator
+  and dedicated update function;
 - function-body checksums or normalized definitions;
 - RLS state, policies, grants and revoked public access;
 - migration idempotency: apply the ordered migrations twice, then require every local migration to report `applied` and no unexpected object drift.

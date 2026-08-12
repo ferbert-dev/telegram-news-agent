@@ -12,8 +12,8 @@ const contractPath = path.join(root, "db", "contracts", "postgres-17.json");
 const requiredCounts = {
   tables: 23,
   foreignKeys: 23,
-  functionNames: 47,
-  functionSignatures: 49,
+  functionNames: 49,
+  functionSignatures: 51,
 };
 const protectedRoles = new Set(["PUBLIC", "anon", "authenticated"]);
 

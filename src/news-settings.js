@@ -1,3 +1,10 @@
+import {
+  DEFAULT_EXCLUDED_TOPIC_CODES,
+  normalizeExcludedTopicCodes,
+} from "./excluded-topics.js";
+
+export { DEFAULT_EXCLUDED_TOPIC_CODES } from "./excluded-topics.js";
+
 export const LANGUAGE_OPTIONS = Object.freeze({
   en: Object.freeze({ code: "en", name: "English" }),
   uk: Object.freeze({ code: "uk", name: "Ukrainian" }),
@@ -147,6 +154,15 @@ export function normalizeNewsSettings(row = {}) {
     throw new Error("At most 5 custom topics can be selected");
   }
 
+  const excludedTopicCodes = normalizeExcludedTopicCodes(
+    firstDefined(
+      row,
+      "excludedTopicCodes",
+      "excluded_topic_codes",
+      DEFAULT_EXCLUDED_TOPIC_CODES,
+    ),
+  );
+
   const intervalValue = firstDefined(
     row,
     "scheduleIntervalMinutes",
@@ -221,6 +237,7 @@ export function normalizeNewsSettings(row = {}) {
     languageCode,
     topicCodes: Object.freeze(topicCodes),
     customTopics: Object.freeze(customTopics),
+    excludedTopicCodes: Object.freeze(excludedTopicCodes),
     approvalPolicy,
     quietHoursEnabled: quietHoursValue,
     nextRunAt,
@@ -241,6 +258,11 @@ export function newsSettingsSnapshot(settings) {
     languageCode: normalized.languageCode,
     topicCodes: [...normalized.topicCodes],
     customTopics: [...normalized.customTopics],
+    excludedTopicCodes: [...normalized.excludedTopicCodes],
+    excludedTopicsProvenance: {
+      source: "news_bot_settings",
+      settingsVersion: normalized.version,
+    },
     approvalPolicy: normalized.approvalPolicy,
     quietHoursEnabled: normalized.quietHoursEnabled,
     nextRunAt: normalized.nextRunAt,

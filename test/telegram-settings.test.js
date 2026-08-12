@@ -24,6 +24,7 @@ const BASE_ROW = Object.freeze({
   language_code: "en",
   topic_codes: ["world", "science", "nature", "animals"],
   custom_topics: [],
+  excluded_topic_codes: ["war_conflict"],
   approval_policy: "manual",
   quiet_hours_enabled: true,
   next_run_at: null,
@@ -38,6 +39,7 @@ function updatedRow(payload, version = payload.expectedVersion + 1) {
     language_code: payload.languageCode,
     topic_codes: payload.topicCodes,
     custom_topics: payload.customTopics,
+    excluded_topic_codes: payload.excludedTopicCodes ?? ["war_conflict"],
     approval_policy: payload.approvalPolicy,
     quiet_hours_enabled: payload.quietHoursEnabled,
     next_run_at: null,
@@ -58,6 +60,18 @@ function callbackFixture(overrides = {}) {
         return null;
       }
       row = updatedRow(payload);
+      return row;
+    },
+    async updateNewsExcludedTopics(payload) {
+      calls.push(["updateExcluded", payload]);
+      if (overrides.stale || payload.expectedVersion !== row.version) {
+        return null;
+      }
+      row = {
+        ...row,
+        excluded_topic_codes: payload.excludedTopicCodes,
+        version: row.version + 1,
+      };
       return row;
     },
     async beginTelegramSettingsInput(payload) {
@@ -118,6 +132,11 @@ test("/settings and compact callbacks are strictly parsed and bounded", () => {
     value: "applied",
     version: 3,
   });
+  assert.deepEqual(parseSettingsCallback("cfg:x:w:3"), {
+    action: "excluded_toggle",
+    value: "war_conflict",
+    version: 3,
+  });
 });
 
 test("home UI presents settings including the active night pause", () => {
@@ -131,6 +150,7 @@ test("home UI presents settings including the active night pause", () => {
       "4 · Publishing",
       "5 · Frequency",
       "6 · Night pause · Enabled",
+      "7 · Excluded topics · 1",
       "✅ Apply & close settings",
     ],
   );
@@ -140,6 +160,7 @@ test("home UI presents settings including the active night pause", () => {
   assert.match(text, /Publishing: Review required/);
   assert.match(text, /Frequency: Paused/);
   assert.match(text, /Night pause: Enabled \(22:00–08:00 Europe\/Madrid\)/);
+  assert.match(text, /Excluded-topic preference: War & armed conflict/);
   assert.match(text, /Settings saved and active/);
   assert.match(text, /Each change is applied immediately/);
 });
@@ -170,7 +191,78 @@ test("showSettings persists the review chat and sends the inline UI", async () =
     updatedBy: 5,
   });
   assert.equal(calls[1][0], "sendMessage");
-  assert.equal(calls[1][1].reply_markup.inline_keyboard.length, 7);
+  assert.equal(calls[1][1].reply_markup.inline_keyboard.length, 8);
+});
+
+test("excluded-topic toggle is localized in EN, UK, and DE and callbacks stay compact", () => {
+  const labels = {
+    en: "War & armed conflict",
+    uk: "Війна та збройні конфлікти",
+    de: "Krieg und bewaffnete Konflikte",
+  };
+  for (const [language, label] of Object.entries(labels)) {
+    const keyboard = renderSettingsKeyboard(
+      { ...BASE_ROW, language_code: language },
+      "excluded",
+    );
+    const toggle = keyboard[0][0];
+    assert.equal(toggle.text, `✅ ${label}`);
+    assert.ok(Buffer.byteLength(toggle.callback_data) <= 64);
+    assert.deepEqual(parseSettingsCallback(toggle.callback_data), {
+      action: "excluded_toggle",
+      value: "war_conflict",
+      version: 3,
+    });
+  }
+});
+
+test("excluded-topic mutation uses its dedicated CAS and stale callbacks refresh", async () => {
+  const flow = callbackFixture();
+  const result = await handleSettingsCallback(
+    flow.callback,
+    parseSettingsCallback(createSettingsCallback("excluded_toggle", "war_conflict", 3)),
+    {
+      token: "token",
+      channelId: "@channel",
+      userId: 5,
+      repository: flow.repository,
+      callTelegram: flow.callTelegram,
+    },
+  );
+
+  assert.match(result.auditResult, /excluded topic/i);
+  assert.deepEqual(
+    flow.calls.find(([name]) => name === "updateExcluded")[1],
+    {
+      channelId: "@channel",
+      excludedTopicCodes: [],
+      updatedBy: 5,
+      expectedVersion: 3,
+    },
+  );
+  assert.equal(flow.calls.some(([name]) => name === "update"), false);
+  assert.deepEqual(flow.row().excluded_topic_codes, []);
+  const edit = flow.calls.find(([name]) => name === "editMessageText")[1];
+  assert.match(edit.text, /Excluded-topic preference: None/);
+  assert.match(edit.text, /does not replace manual review/i);
+
+  const stale = callbackFixture({ stale: true });
+  const staleResult = await handleSettingsCallback(
+    stale.callback,
+    parseSettingsCallback(createSettingsCallback("excluded_toggle", "war_conflict", 2)),
+    {
+      token: "token",
+      channelId: "@channel",
+      userId: 5,
+      repository: stale.repository,
+      callTelegram: stale.callTelegram,
+    },
+  );
+  assert.match(staleResult.auditResult, /stale/i);
+  assert.equal(
+    stale.calls.find(([name]) => name === "answerCallbackQuery")[1].show_alert,
+    true,
+  );
 });
 
 test("night pause can be disabled explicitly and remains versioned", async () => {

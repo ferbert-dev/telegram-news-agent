@@ -10,6 +10,7 @@ export type NewsSettingsRow = {
   language_code: NewsLanguageCode;
   topic_codes: string[];
   custom_topics: string[];
+  excluded_topic_codes: string[];
   approval_policy: NewsApprovalPolicy;
   next_run_at: string | null;
   version: number;
@@ -70,6 +71,13 @@ export type UpdateNewsSettingsInput = {
   expectedVersion: number;
 };
 
+export type UpdateNewsExcludedTopicsInput = {
+  channelId: string;
+  excludedTopicCodes: string[];
+  updatedBy: number;
+  expectedVersion: number;
+};
+
 export type GetOrCreateNewsFeatureFlagsInput = {
   channelId: string;
   updatedBy: number;
@@ -103,6 +111,9 @@ export interface NewsSettingsPersistence {
   getNewsSettings(channelId: string): Promise<NewsSettingsRow | null>;
   updateNewsSettings(
     input: UpdateNewsSettingsInput,
+  ): Promise<NewsSettingsRow | null>;
+  updateNewsExcludedTopics(
+    input: UpdateNewsExcludedTopicsInput,
   ): Promise<NewsSettingsRow | null>;
 }
 

@@ -3,6 +3,7 @@ import {
   TOPIC_PRESETS,
   validateCustomTopic,
 } from "./news-settings.js";
+import { EXCLUDED_TOPIC_TAXONOMY } from "./excluded-topics.js";
 import { QUIET_HOURS_LABEL } from "./quiet-hours.js";
 
 const CALLBACK_PREFIX = "cfg";
@@ -18,6 +19,7 @@ const PAGES = new Set([
   "automatic",
   "frequency",
   "quiet",
+  "excluded",
 ]);
 const INTERVALS = new Set([0, 60, 180, 360, 720, 1440]);
 
@@ -92,6 +94,11 @@ export function createSettingsCallback(action, value, version) {
         throw new Error("Invalid night pause state");
       }
       return callbackData(["q", value === "enabled" ? "e" : "d", version]);
+    case "excluded_toggle":
+      if (value !== "war_conflict") {
+        throw new Error("Invalid excluded topic");
+      }
+      return callbackData(["x", "w", version]);
     case "status":
       if (value !== "applied") throw new Error("Invalid settings status");
       return callbackData(["s", "ok", version]);
@@ -154,6 +161,13 @@ export function parseSettingsCallback(data) {
       version,
     };
   }
+  if (code === "x" && rawValue === "w") {
+    return {
+      action: "excluded_toggle",
+      value: "war_conflict",
+      version,
+    };
+  }
   if (code === "s" && rawValue === "ok") {
     return { action: "status", value: "applied", version };
   }
@@ -183,6 +197,9 @@ function normalizeSettings(row) {
     languageCode: row.language_code ?? row.languageCode ?? "en",
     topicCodes: [...(row.topic_codes ?? row.topicCodes ?? [])],
     customTopics: [...(row.custom_topics ?? row.customTopics ?? [])],
+    excludedTopicCodes: [
+      ...(row.excluded_topic_codes ?? row.excludedTopicCodes ?? ["war_conflict"]),
+    ],
     approvalPolicy: row.approval_policy ?? row.approvalPolicy ?? "manual",
     quietHoursEnabled:
       row.quiet_hours_enabled ?? row.quietHoursEnabled ?? true,
@@ -210,6 +227,10 @@ function topicLabel(code) {
   return TOPIC_PRESETS[code]?.label ?? code;
 }
 
+function excludedTopicLabel(code, languageCode) {
+  return EXCLUDED_TOPIC_TAXONOMY[code]?.labels?.[languageCode] ?? code;
+}
+
 function formatNextRun(value, timeZone) {
   if (!value) return "Not scheduled";
   const date = new Date(value);
@@ -233,6 +254,10 @@ export function renderSettingsText(
   const settings = normalizeSettings(row);
   const topics = settings.topicCodes.map(topicLabel).join(", ") || "None";
   const custom = settings.customTopics.join(", ") || "None";
+  const excluded =
+    settings.excludedTopicCodes
+      .map((code) => excludedTopicLabel(code, settings.languageCode))
+      .join(", ") || "None";
   const nextRun = formatNextRun(settings.nextRunAt, timeZone);
   return [
     "News settings",
@@ -241,6 +266,7 @@ export function renderSettingsText(
     `Language: ${languageLabel(settings.languageCode)}`,
     `Topics: ${topics}`,
     `Custom topics: ${custom}`,
+    `Excluded-topic preference: ${excluded}`,
     `Publishing: ${settings.approvalPolicy === "automatic" ? "Auto-publish enabled ⚠️" : "Review required"}`,
     `Frequency: ${intervalLabel(settings.scheduleIntervalMinutes)}`,
     `Night pause: ${settings.quietHoursEnabled ? `Enabled (${QUIET_HOURS_LABEL})` : "Disabled"}`,
@@ -438,6 +464,21 @@ export function renderSettingsKeyboard(row, page = "home") {
       [button("‹ Back", "view", "home", version)],
     ];
   }
+  if (page === "excluded") {
+    const selected = new Set(settings.excludedTopicCodes);
+    return [
+      [
+        button(
+          `${selected.has("war_conflict") ? "✅ " : ""}${excludedTopicLabel("war_conflict", settings.languageCode)}`,
+          "excluded_toggle",
+          "war_conflict",
+          version,
+          selected.has("war_conflict") ? "primary" : null,
+        ),
+      ],
+      [button("‹ Back", "view", "home", version)],
+    ];
+  }
   return [
     [button("1 · Language", "view", "language", version)],
     [button("2 · Topics", "view", "topics", version)],
@@ -449,6 +490,14 @@ export function renderSettingsKeyboard(row, page = "home") {
         `6 · Night pause · ${settings.quietHoursEnabled ? "Enabled" : "Disabled"}`,
         "view",
         "quiet",
+        version,
+      ),
+    ],
+    [
+      button(
+        `7 · Excluded topics · ${settings.excludedTopicCodes.length}`,
+        "view",
+        "excluded",
         version,
       ),
     ],
@@ -486,6 +535,8 @@ async function editSettingsMessage({
         ? "\n\nCost note: every-hour search can consume provider and web-search credits quickly."
         : page === "quiet"
           ? `\n\nWhen enabled, scheduled work waits until 08:00 and never publishes between 22:00 and 08:00 (${QUIET_HOURS_LABEL.split(" ").at(-1)}). Explicit manual Publish remains available.`
+          : page === "excluded"
+            ? "\n\nThis is an excluded-topic preference. It does not replace manual review or guarantee that every related article is removed."
         : "";
   try {
     await callTelegram(token, "editMessageText", {
@@ -630,6 +681,44 @@ export async function handleSettingsCallback(
       });
       await answer("Send the topic as a reply.");
       return { auditResult: "Started a bound custom-topic input." };
+    }
+
+    if (parsed.action === "excluded_toggle") {
+      const excludedTopicCodes = current.excludedTopicCodes.includes(parsed.value)
+        ? current.excludedTopicCodes.filter((code) => code !== parsed.value)
+        : [...current.excludedTopicCodes, parsed.value];
+      const updated = await repository.updateNewsExcludedTopics({
+        channelId,
+        excludedTopicCodes,
+        updatedBy: userId,
+        expectedVersion: parsed.version,
+      });
+      if (!updated) {
+        const latest = await repository.getNewsSettings(channelId);
+        await editSettingsMessage({
+          token,
+          callTelegram,
+          chatId,
+          messageId,
+          settings: latest,
+          page: "excluded",
+        });
+        await answer("Settings changed elsewhere; refreshed.", true);
+        return {
+          auditResult:
+            "Rejected a stale excluded topic mutation and refreshed the UI.",
+        };
+      }
+      await editSettingsMessage({
+        token,
+        callTelegram,
+        chatId,
+        messageId,
+        settings: updated,
+        page: "excluded",
+      });
+      await answer("Saved and applied.");
+      return { auditResult: "Updated excluded topic settings." };
     }
 
     let changes;
