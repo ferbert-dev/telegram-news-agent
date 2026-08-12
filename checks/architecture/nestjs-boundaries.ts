@@ -82,6 +82,7 @@ function assertApplicationDependencies(file: string, source: string): void {
     assert.doesNotMatch(specifier, /telegram-(?:bot|polling)/, file);
     assert.doesNotMatch(specifier, /(?:^|\/)telegram(?:\.js)?$/, file);
     assert.doesNotMatch(specifier, /(?:^|\/)send-message(?:\.js)?$/, file);
+    assert.doesNotMatch(specifier, /(?:\/transport\/|-transport\.)/, file);
     assert.doesNotMatch(specifier, /^(?:node:)?https?(?:\/|$)/, file);
     assert.doesNotMatch(specifier, /^(?:axios|undici)(?:\/|$)/, file);
   }
@@ -243,6 +244,10 @@ test("application boundary scanner covers root contracts and tokens and rejects 
       "src/editorial/application/publish-approved-draft.use-case.ts",
       `export { publishApprovedDraft } from "../../publish.js";`,
     ],
+    [
+      "src/telegram/telegram-control-application.module.ts",
+      `export { TelegramBotApiGateway } from "./transport/telegram-bot-api.gateway.js";`,
+    ],
   ]);
   for (const [file, source] of forbidden) {
     assert.equal(isApplicationLayerFile(file), true, file);
@@ -278,6 +283,17 @@ test("Nest TypeScript composition remains standalone without an HTTP platform or
     }
     assert.doesNotMatch(source, /NestFactory\.create\s*\(/, name);
     assert.doesNotMatch(source, /\.listen\s*\(/, name);
+  }
+});
+
+test("additive Telegram application slice is not wired into the legacy poller or production entrypoint", async () => {
+  for (const file of [
+    path.join(sourceRoot, "telegram-bot.js"),
+    path.join(sourceRoot, "telegram-polling.js"),
+  ]) {
+    const source = await readFile(file, "utf8");
+    assert.doesNotMatch(source, /telegram-control-application/, relative(file));
+    assert.doesNotMatch(source, /TelegramControlTransportHandler/, relative(file));
   }
 });
 
