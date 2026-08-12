@@ -109,16 +109,35 @@ export function editorialReviewComparison(draft) {
   const selectedVersion = editorial.selected_version;
   const selected = selectedVersion === "enriched" ? enriched : baseline;
   if (draft?.body !== selected) return null;
+  const quality = editorial.quality;
+  const qualitySummary =
+    typeof quality?.reader_angle === "string" && quality.reader_angle.trim()
+      ? [
+          `Reader angle: ${quality.reader_angle.trim()}`,
+          ...(Number.isFinite(quality.final_similarity)
+            ? [
+                `Lexical similarity to baseline: ${Math.round(quality.final_similarity * 100)}%${quality.retry_attempted ? `; rewrite ${quality.retry_status}` : ""}`,
+              ]
+            : []),
+          ...(Number.isFinite(quality.word_count)
+            ? [
+                `Editorial length: ${quality.word_count} words (target ${quality.target_min_words}–${quality.target_max_words})`,
+              ]
+            : []),
+        ].join("\n")
+      : null;
   return selectedVersion === "enriched"
     ? {
         alternateLabel: "Grounded baseline (for comparison)",
         alternateBody: baseline,
         selectedLabel: "Enriched version (selected for approval)",
+        ...(qualitySummary ? { qualitySummary } : {}),
       }
     : {
         alternateLabel: "Enriched candidate (collect-only comparison)",
         alternateBody: enriched,
         selectedLabel: "Grounded baseline (selected for approval)",
+        ...(qualitySummary ? { qualitySummary } : {}),
       };
 }
 
@@ -137,7 +156,7 @@ async function sendEditorialComparison({
     return;
   }
   if (!comparison) return;
-  const heading = `${comparison.alternateLabel}\n\n`;
+  const heading = `${comparison.alternateLabel}${comparison.qualitySummary ? `\n${comparison.qualitySummary}` : ""}\n\n`;
   const footer = `\n\nNext: ${comparison.selectedLabel}, with Publish/Reject controls.`;
   const combined = `${heading}${comparison.alternateBody}${footer}`;
   try {
@@ -151,7 +170,7 @@ async function sendEditorialComparison({
     }
     await callTelegram(token, "sendMessage", {
       chat_id: chatId,
-      text: `${comparison.alternateLabel}. The following message is the alternative; the version after it has approval controls.`,
+      text: `${comparison.alternateLabel}${comparison.qualitySummary ? `\n${comparison.qualitySummary}` : ""}. The following message is the alternative; the version after it has approval controls.`,
     });
     await callTelegram(token, "sendMessage", {
       chat_id: chatId,

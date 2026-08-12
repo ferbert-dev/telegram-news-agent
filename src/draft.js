@@ -131,7 +131,12 @@ function completeDraft({
 export function validateGroundedDraft(
   draft,
   evidence,
-  { languageCode = "en" } = {},
+  {
+    languageCode = "en",
+    minWords = 0,
+    maxSentences = 5,
+    maxWords = 120,
+  } = {},
 ) {
   if (!LANGUAGE_OPTIONS[languageCode]) {
     throw new Error("languageCode must be en, uk, or de");
@@ -169,11 +174,14 @@ export function validateGroundedDraft(
     sourceUrls,
   });
   const metrics = proseMetrics(normalized.telegramText);
-  if (metrics.sentences > 5) {
-    throw new Error("Draft exceeds the five-sentence limit");
+  if (metrics.words < minWords) {
+    throw new Error(`Draft is below the ${minWords}-word editorial minimum`);
   }
-  if (metrics.words > 120) {
-    throw new Error("Draft exceeds the 120-word safety limit");
+  if (metrics.sentences > maxSentences) {
+    throw new Error(`Draft exceeds the ${maxSentences}-sentence limit`);
+  }
+  if (metrics.words > maxWords) {
+    throw new Error(`Draft exceeds the ${maxWords}-word safety limit`);
   }
 
   validateMessage(normalized.telegramText);
@@ -393,7 +401,7 @@ export async function generateDraft({
     model: selectedModel,
     prompt_version:
       selectedVersion === "enriched"
-        ? `${promptVersion}+editorial-enrichment-v1`
+        ? `${promptVersion}+editorial-enrichment-v2`
         : promptVersion,
     reviewer_notes: JSON.stringify({
       headline: completedDraft.headline,
@@ -423,6 +431,25 @@ export async function generateDraft({
         provider: enrichment?.provider ?? null,
         model: enrichment?.model ?? null,
         search: enrichment?.search ?? null,
+        quality: enrichment?.quality
+          ? {
+              reader_angle: enrichment.quality.readerAngle,
+              hook: enrichment.quality.hook,
+              hook_evidence: enrichment.quality.hookEvidence,
+              causal_arc: enrichment.quality.causalArc,
+              similarity_metric: enrichment.quality.similarityMetric,
+              similarity_threshold: enrichment.quality.similarityThreshold,
+              initial_similarity: enrichment.quality.initialSimilarity,
+              final_similarity: enrichment.quality.finalSimilarity,
+              too_similar: enrichment.quality.tooSimilar,
+              retry_attempted: enrichment.quality.retryAttempted,
+              retry_status: enrichment.quality.retryStatus,
+              selected_attempt: enrichment.quality.selectedAttempt,
+              word_count: enrichment.quality.wordCount,
+              target_min_words: enrichment.quality.targetMinWords,
+              target_max_words: enrichment.quality.targetMaxWords,
+            }
+          : null,
         diagnostic: enrichmentDiagnostic,
       },
     }),
@@ -451,6 +478,7 @@ export async function generateDraft({
             ? "completed"
             : "fallback_to_baseline",
       search: enrichment?.search ?? null,
+      quality: enrichment?.quality ?? null,
       diagnostic: enrichmentDiagnostic,
     },
     saved,

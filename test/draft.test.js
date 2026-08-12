@@ -120,7 +120,34 @@ test("validateGroundedDraft rejects more than five prose sentences", () => {
         }),
         [{ url: SOURCE_URL, primary: true }],
       ),
-    /five-sentence limit/,
+    /5-sentence limit/,
+  );
+});
+
+test("validateGroundedDraft supports the explicit six-sentence editorial limit", () => {
+  assert.doesNotThrow(() =>
+    validateGroundedDraft(
+      structuredDraft({
+        telegramText:
+          "One. Two. Three. Four. Five. Six.\n\nSources:\n" + SOURCE_URL,
+      }),
+      [{ url: SOURCE_URL, primary: true }],
+      { maxSentences: 6, maxWords: 160 },
+    ),
+  );
+});
+
+test("validateGroundedDraft enforces an explicit editorial word minimum", () => {
+  assert.throws(
+    () =>
+      validateGroundedDraft(
+        structuredDraft({
+          telegramText: "A short grounded result.\n\nSources:\n" + SOURCE_URL,
+        }),
+        [{ url: SOURCE_URL, primary: true }],
+        { minWords: 90, maxSentences: 6, maxWords: 140 },
+      ),
+    /90-word editorial minimum/,
   );
 });
 
@@ -190,7 +217,7 @@ for (const [state, selectedVersion] of [
     let stored;
     const enrichedText = `A result that changes the clock
 
-A primary source announced a new AI agent. The practical question is whether the reported result survives wider testing.
+One release puts a familiar research routine under immediate pressure. A primary source announced a new AI agent, moving the idea from a general promise to a tool that researchers can now examine. If the release works as described, it could change how people organize repetitive research tasks and where they spend their attention. The practical stake is less time handling routine steps and more time judging the evidence those steps produce. Performance claims still come from the developer, so independent results are needed before readers can rely on the promised gains.
 
 Sources:
 ${SOURCE_URL}`;
@@ -200,6 +227,22 @@ ${SOURCE_URL}`;
         if (request.usageOperation === "editorial_enrichment") {
           return {
             value: {
+              readerAngle: "The practical result matters more than the announcement.",
+              hook:
+                "One release puts a familiar research routine under immediate pressure.",
+              hookEvidence: {
+                sourceUrl: SOURCE_URL,
+                evidenceExcerpt:
+                  "A primary source announced a new AI agent.",
+              },
+              causalArc: {
+                change: "A primary source announced a new AI agent",
+                causeOrEnabler: null,
+                consequence:
+                  "it could change how people organize repetitive research tasks",
+                readerSignificance:
+                  "less time handling routine steps and more time judging the evidence those steps produce",
+              },
               draft: structuredDraft({
                 headline: "A result that changes the clock",
                 telegramText: enrichedText,
@@ -259,13 +302,17 @@ ${SOURCE_URL}`;
     if (state === "enabled") {
       assert.match(stored.body, /changes the clock/);
       assert.equal(stored.model, "configured-editor-model");
-      assert.match(stored.prompt_version, /editorial-enrichment-v1$/);
+      assert.match(stored.prompt_version, /editorial-enrichment-v2$/);
     } else {
       assert.match(stored.body, /AI agents move forward/);
       assert.equal(stored.model, "configured-baseline-model");
       assert.doesNotMatch(stored.prompt_version, /editorial-enrichment/);
     }
     assert.equal(result.editorialEnrichment.selectedVersion, selectedVersion);
+    assert.equal(notes.quality.reader_angle.length > 0, true);
+    assert.equal(notes.quality.retry_attempted, false);
+    assert.equal(notes.quality.word_count >= 90, true);
+    assert.equal(notes.quality.word_count <= 140, true);
   });
 }
 
@@ -279,6 +326,20 @@ test("invalid editorial output falls back to the baseline without blocking revie
         if (request.usageOperation === "editorial_enrichment") {
           return {
             value: {
+              readerAngle: "An unsupported angle must be rejected.",
+              hook: "A primary source announced a new AI agent.",
+              hookEvidence: {
+                sourceUrl: SOURCE_URL,
+                evidenceExcerpt:
+                  "A primary source announced a new AI agent.",
+              },
+              causalArc: {
+                change: "A primary source announced a new AI agent.",
+                causeOrEnabler: null,
+                consequence: "Why it matters: the release may change research workflows.",
+                readerSignificance:
+                  "the release may change research workflows",
+              },
               draft: structuredDraft({
                 claims: [
                   {
