@@ -1,7 +1,8 @@
 # NestJS and Drizzle migration blueprint
 
-Status: Drizzle persistence and legacy-facade parity are complete; the first
-reversible NestJS application-service slice is in progress.
+Status: Drizzle persistence and legacy-facade parity are complete. Reversible
+NestJS application services now cover Usage, Settings, Catalog/Research and
+Operations; production composition and entrypoints remain legacy.
 
 Notion Epic: [Engineer Telegram News Agent into a modular NestJS platform](https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb)
 
@@ -17,9 +18,12 @@ The baseline audit found:
 
 - 23 PostgreSQL tables: 22 application tables plus `schema_migrations`.
 - 23 foreign keys in the Drizzle schema snapshot.
-- 46 current PostgreSQL function names and 47 live signatures. `update_news_settings` intentionally has two overloads for compatibility. A clean PostgreSQL 17 inventory corrected the earlier static 45/46 count: the old two-argument `claim_telegram_update` is dropped and replaced by its current three-argument signature, so the function name remains live.
-- 67 domain persistence methods and six infrastructure helpers in `NewsRepository`.
-- 31 domain paths suitable for typed Drizzle queries and 36 paths that should retain a PostgreSQL function as their atomic boundary.
+- 47 current PostgreSQL function names and 49 live signatures.
+  `update_news_settings` and the publication-claim function each intentionally
+  retain one compatibility overload. A clean PostgreSQL 17 inventory corrected
+  the earlier static count and remains authoritative for both overloads.
+- 68 domain persistence methods and six infrastructure helpers in `NewsRepository`.
+- 31 domain paths suitable for typed Drizzle queries and 37 paths that should retain a PostgreSQL function as their atomic boundary.
 - Five public methods with no production call sites: `createDraft`,
   `recordPublication`, `transitionArticle`, `transitionDraft`, and
   `replaceArticleTopics`. They remain facade compatibility methods, not new
@@ -105,6 +109,11 @@ facade imports persistence modules only.
 - `EditorialWorkflowService` coordinates drafting, review and publication.
 - `SettingsService` owns validated channel configuration and Labs flags.
 - `SchedulerService` owns due-work orchestration and quiet-hours recovery.
+- `PipelineLeaseService` exposes acquire, renew and release without moving
+  owner fencing or server-time semantics out of PostgreSQL.
+- `NotionAuditDeliveryService` enqueues and sequentially replays the durable
+  audit outbox through a Symbol-bound outbound gateway. Claim ordering,
+  `SKIP LOCKED`, completion and retry/backoff remain PostgreSQL-owned.
 - Telegram is a transport adapter. Research and editorial core code do not import Telegram.
 - OpenAI and Gemini remain behind the existing AI-provider interface.
 - The first Nest runtime uses `createApplicationContext`; no HTTP listener is added.
@@ -151,7 +160,7 @@ Before repository migration resumes, CI must create a clean PostgreSQL 17 databa
 - columns, PostgreSQL types, nullability and defaults;
 - primary, unique and check constraints;
 - expected and unexpected indexes, including partial indexes;
-- 46 function names, 48 signatures, return types, volatility, security mode and configured search path; the extra signature is the N-1-compatible one-argument publication claim overload;
+- 47 function names, 49 signatures, return types, volatility, security mode and configured search path; the two extra signatures are the compatibility overloads for settings update and publication claim;
 - function-body checksums or normalized definitions;
 - RLS state, policies, grants and revoked public access;
 - migration idempotency: apply the ordered migrations twice, then require every local migration to report `applied` and no unexpected object drift.
