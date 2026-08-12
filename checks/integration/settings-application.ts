@@ -48,6 +48,7 @@ test(
       assert.equal(created.schedule_interval_minutes, null);
       assert.equal(created.approval_policy, "manual");
       assert.equal(created.quiet_hours_enabled, true);
+      assert.deepEqual(created.excluded_topic_codes, ["war_conflict"]);
 
       let current = created;
       const supportedUpdates = [
@@ -81,6 +82,25 @@ test(
       }
       assert.equal(current.approval_policy, "automatic");
       assert.equal(current.quiet_hours_enabled, false);
+
+      const exclusionsUpdated = await service.updateNewsExcludedTopics({
+        channelId,
+        excludedTopicCodes: [],
+        updatedBy,
+        expectedVersion: current.version,
+      });
+      assert.ok(exclusionsUpdated);
+      assert.deepEqual(exclusionsUpdated.excluded_topic_codes, []);
+      assert.equal(
+        await service.updateNewsExcludedTopics({
+          channelId,
+          excludedTopicCodes: ["war_conflict"],
+          updatedBy,
+          expectedVersion: current.version,
+        }),
+        null,
+      );
+      current = exclusionsUpdated;
 
       assert.equal(
         await service.updateNewsSettings({

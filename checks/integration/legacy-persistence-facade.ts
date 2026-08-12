@@ -290,6 +290,28 @@ test(
       ]);
       assert.equal(settingsUpdates.filter((row) => row !== null).length, 1);
 
+      const currentSettings = await legacy.getNewsSettings(channelId);
+      assert.ok(currentSettings);
+      const excludedUpdates = await Promise.all([
+        legacy.updateNewsExcludedTopics({
+          channelId,
+          excludedTopicCodes: [],
+          updatedBy: actorId,
+          expectedVersion: currentSettings.version,
+        }),
+        facade.updateNewsExcludedTopics({
+          channelId,
+          excludedTopicCodes: [],
+          updatedBy: actorId,
+          expectedVersion: currentSettings.version,
+        }),
+      ]);
+      assert.equal(excludedUpdates.filter((row) => row !== null).length, 1);
+      assert.deepEqual(
+        (await facade.getNewsSettings(channelId))?.excluded_topic_codes,
+        [],
+      );
+
       const input = await legacy.beginTelegramSettingsInput({
         controlChatId: reviewChatId,
         requestedBy: actorId,

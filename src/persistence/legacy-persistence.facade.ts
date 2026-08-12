@@ -216,6 +216,9 @@ export class LegacyPersistenceFacade implements LegacyPersistence {
   updateNewsSettings(...args: Parameters<NewsSettingsPersistence["updateNewsSettings"]>) {
     return this.settings.updateNewsSettings(...args);
   }
+  updateNewsExcludedTopics(...args: Parameters<NewsSettingsPersistence["updateNewsExcludedTopics"]>) {
+    return this.settings.updateNewsExcludedTopics(...args);
+  }
   getOrCreateNewsFeatureFlags(...args: Parameters<NewsFeatureFlagsPersistence["getOrCreateNewsFeatureFlags"]>) {
     return this.featureFlags.getOrCreateNewsFeatureFlags(...args);
   }

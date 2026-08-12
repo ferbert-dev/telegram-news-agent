@@ -109,6 +109,7 @@ const samples = {
   getOrCreateNewsSettings: [{ channelId: "@channel", reviewChatId: 1, updatedBy: 2 }],
   getNewsSettings: ["@channel"],
   updateNewsSettings: [{ channelId: "@channel", reviewChatId: 1, scheduleIntervalMinutes: 180, languageCode: "de", topicCodes: [], customTopics: [], approvalPolicy: "manual", quietHoursEnabled: true, updatedBy: 2, expectedVersion: 1 }],
+  updateNewsExcludedTopics: [{ channelId: "@channel", excludedTopicCodes: [], updatedBy: 2, expectedVersion: 1 }],
   getOrCreateNewsFeatureFlags: [{ channelId: "@channel", updatedBy: 2 }],
   getNewsFeatureFlags: ["@channel"],
   updateNewsFeatureFlag: [{ channelId: "@channel", featureKey: "article_tags", state: "enabled", updatedBy: 2, expectedVersion: 1 }],
@@ -187,7 +188,7 @@ function fixture(calls: Call[] = []) {
   return { facade, ports };
 }
 
-test("facade and owner manifest cover exactly all 68 live NewsRepository domain methods", () => {
+test("facade and owner manifest cover exactly all 69 live NewsRepository domain methods", () => {
   const legacyMethods = Object.getOwnPropertyNames(NewsRepository.prototype)
     .filter((method) => !infrastructureMethods.has(method))
     .sort();
@@ -196,13 +197,13 @@ test("facade and owner manifest cover exactly all 68 live NewsRepository domain 
     .sort();
   const manifestMethods = Object.keys(LEGACY_PERSISTENCE_METHOD_OWNERS).sort();
 
-  assert.equal(legacyMethods.length, 68);
+  assert.equal(legacyMethods.length, 69);
   assert.deepEqual(facadeMethods, legacyMethods);
   assert.deepEqual(manifestMethods, legacyMethods);
   assert.equal(Object.values(LEGACY_PERSISTENCE_METHOD_OWNERS).includes("fallback" as Owner), false);
 });
 
-test("all 68 methods delegate once to their declared owner and preserve legacy arguments", async () => {
+test("all 69 methods delegate once to their declared owner and preserve legacy arguments", async () => {
   const calls: Call[] = [];
   const { facade } = fixture(calls);
   const dynamicFacade = facade as unknown as DynamicPort;

@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildSearchPlan,
+  DEFAULT_EXCLUDED_TOPIC_CODES,
   DEFAULT_TOPIC_CODES,
   LANGUAGE_OPTIONS,
   normalizeNewsSettings,
+  newsSettingsSnapshot,
   SCHEDULE_INTERVAL_MINUTES,
   TOPIC_PRESETS,
   validateCustomTopic,
@@ -17,6 +19,7 @@ test("news settings normalize safe defaults and supported options", () => {
   assert.equal(settings.scheduleIntervalMinutes, null);
   assert.equal(settings.approvalPolicy, "manual");
   assert.equal(settings.quietHoursEnabled, true);
+  assert.deepEqual(settings.excludedTopicCodes, DEFAULT_EXCLUDED_TOPIC_CODES);
   assert.deepEqual(settings.topicCodes, DEFAULT_TOPIC_CODES);
   assert.deepEqual(Object.keys(LANGUAGE_OPTIONS), ["en", "uk", "de"]);
   assert.deepEqual(SCHEDULE_INTERVAL_MINUTES, [60, 180, 360, 720, 1440]);
@@ -39,6 +42,7 @@ test("news settings normalize a persisted database row", () => {
     language_code: "UK",
     topic_codes: ["nature", "animals", "nature"],
     custom_topics: ["  Космічні дослідження  "],
+    excluded_topic_codes: [],
     approval_policy: "AUTOMATIC",
     quiet_hours_enabled: false,
     next_run_at: "2026-08-08T06:00:00+02:00",
@@ -53,11 +57,45 @@ test("news settings normalize a persisted database row", () => {
     languageCode: "uk",
     topicCodes: ["nature", "animals"],
     customTopics: ["Космічні дослідження"],
+    excludedTopicCodes: [],
     approvalPolicy: "automatic",
     quietHoursEnabled: false,
     nextRunAt: "2026-08-08T04:00:00.000Z",
     version: 7,
     updatedBy: 99,
+  });
+});
+
+test("excluded topics use canonical bounded codes and preserve an explicit empty kill switch", () => {
+  assert.deepEqual(
+    normalizeNewsSettings({
+      excluded_topic_codes: [" WAR_CONFLICT ", "war_conflict"],
+    }).excludedTopicCodes,
+    ["war_conflict"],
+  );
+  assert.deepEqual(
+    normalizeNewsSettings({ excluded_topic_codes: [] }).excludedTopicCodes,
+    [],
+  );
+  assert.throws(
+    () => normalizeNewsSettings({ excluded_topic_codes: ["free form"] }),
+    /Unknown excluded topic code/,
+  );
+});
+
+test("settings snapshots freeze excluded topics with provenance", () => {
+  const snapshot = newsSettingsSnapshot({
+    telegram_channel_id: "@channel",
+    review_chat_id: 42,
+    excluded_topic_codes: ["war_conflict"],
+    version: 7,
+    updated_by: 99,
+  });
+
+  assert.deepEqual(snapshot.excludedTopicCodes, ["war_conflict"]);
+  assert.deepEqual(snapshot.excludedTopicsProvenance, {
+    source: "news_bot_settings",
+    settingsVersion: 7,
   });
 });
 

@@ -33,6 +33,77 @@ test(
     const promptMessageId = 9001;
 
     try {
+      const roleEvidence = await pool.query<{
+        current_user: string;
+        is_superuser: boolean;
+        inherits_service_role: boolean;
+      }>(`
+        select
+          current_user,
+          role.rolsuper as is_superuser,
+          pg_has_role(current_user, 'service_role', 'member') as inherits_service_role
+        from pg_catalog.pg_roles as role
+        where role.rolname = current_user
+      `);
+      assert.equal(roleEvidence.rows[0].is_superuser, false);
+      assert.equal(roleEvidence.rows[0].inherits_service_role, true);
+
+      const securityEvidence = await pool.query<{
+        rls_enabled: boolean;
+        service_execute: boolean;
+        anon_execute: boolean;
+        authenticated_execute: boolean;
+        public_execute: boolean;
+      }>(`
+        select
+          relation.relrowsecurity as rls_enabled,
+          has_function_privilege(
+            'service_role',
+            'public.update_news_excluded_topics(text,text[],bigint,integer)',
+            'execute'
+          ) as service_execute,
+          has_function_privilege(
+            'anon',
+            'public.update_news_excluded_topics(text,text[],bigint,integer)',
+            'execute'
+          ) as anon_execute,
+          has_function_privilege(
+            'authenticated',
+            'public.update_news_excluded_topics(text,text[],bigint,integer)',
+            'execute'
+          ) as authenticated_execute,
+          exists (
+            select 1
+            from pg_catalog.pg_proc as function_value
+            cross join lateral aclexplode(
+              coalesce(
+                function_value.proacl,
+                acldefault('f', function_value.proowner)
+              )
+            ) as grant_value
+            join pg_catalog.pg_namespace as namespace
+              on namespace.oid = function_value.pronamespace
+            where namespace.nspname = 'public'
+              and function_value.proname = 'update_news_excluded_topics'
+              and pg_get_function_identity_arguments(function_value.oid)
+                = 'p_telegram_channel_id text, p_excluded_topic_codes text[], p_updated_by bigint, p_expected_version integer'
+              and grant_value.grantee = 0
+              and grant_value.privilege_type = 'EXECUTE'
+          ) as public_execute
+        from pg_catalog.pg_class as relation
+        join pg_catalog.pg_namespace as namespace
+          on namespace.oid = relation.relnamespace
+        where namespace.nspname = 'public'
+          and relation.relname = 'news_bot_settings'
+      `);
+      assert.deepEqual(securityEvidence.rows[0], {
+        rls_enabled: true,
+        service_execute: true,
+        anon_execute: false,
+        authenticated_execute: false,
+        public_execute: false,
+      });
+
       const created = await settingsRepository.getOrCreateNewsSettings({
         channelId: ` ${channelId} `,
         reviewChatId,
@@ -46,6 +117,7 @@ test(
       assert.equal(created.language_code, "en");
       assert.equal(created.approval_policy, "manual");
       assert.equal(created.quiet_hours_enabled, true);
+      assert.deepEqual(created.excluded_topic_codes, ["war_conflict"]);
       assert.equal(new Date(created.created_at).toISOString(), created.created_at);
 
       const typedRead = await settingsRepository.getNewsSettings(
@@ -93,9 +165,113 @@ test(
         }),
         null,
       );
+      const normalizedExclusions =
+        await settingsRepository.updateNewsExcludedTopics({
+          channelId: ` ${channelId} `,
+          excludedTopicCodes: [" WAR_CONFLICT ", "war_conflict"],
+          updatedBy,
+          expectedVersion: updated.version,
+        });
+      assert.ok(normalizedExclusions);
+      assert.deepEqual(normalizedExclusions.excluded_topic_codes, [
+        "war_conflict",
+      ]);
+      assert.equal(normalizedExclusions.version, updated.version + 1);
+      const storedShape = await pool.query<{
+        dimensions: number;
+        lower_bound: number;
+        item_count: number;
+      }>(
+        `select
+           array_ndims(excluded_topic_codes) as dimensions,
+           array_lower(excluded_topic_codes, 1) as lower_bound,
+           cardinality(excluded_topic_codes) as item_count
+         from public.news_bot_settings
+         where telegram_channel_id = $1`,
+        [channelId],
+      );
+      assert.deepEqual(storedShape.rows[0], {
+        dimensions: 1,
+        lower_bound: 1,
+        item_count: 1,
+      });
+      const validatorEvidence = await pool.query<{
+        empty_valid: boolean;
+        canonical_valid: boolean;
+        two_dimensional_valid: boolean;
+        zero_lower_bound_valid: boolean;
+      }>(`
+        select
+          public.valid_news_excluded_topic_codes('{}'::text[])
+            as empty_valid,
+          public.valid_news_excluded_topic_codes(array['war_conflict']::text[])
+            as canonical_valid,
+          public.valid_news_excluded_topic_codes(array[['war_conflict']]::text[])
+            as two_dimensional_valid,
+          public.valid_news_excluded_topic_codes(
+            '[0:0]={war_conflict}'::text[]
+          ) as zero_lower_bound_valid
+      `);
+      assert.deepEqual(validatorEvidence.rows[0], {
+        empty_valid: true,
+        canonical_valid: true,
+        two_dimensional_valid: false,
+        zero_lower_bound_valid: false,
+      });
+      await assert.rejects(
+        settingsRepository.updateNewsExcludedTopics({
+          channelId,
+          excludedTopicCodes: ["unknown_topic"],
+          updatedBy,
+          expectedVersion: normalizedExclusions.version,
+        }),
+        /Invalid excluded topic codes/,
+      );
+      await assert.rejects(
+        pool.query(
+          `update public.news_bot_settings
+           set excluded_topic_codes = array['unknown_topic']::text[]
+           where telegram_channel_id = $1`,
+          [channelId],
+        ),
+        /news_bot_settings_excluded_topic_codes_check/,
+      );
+      for (const malformedArray of [
+        "array[['war_conflict']]::text[]",
+        "'[0:0]={war_conflict}'::text[]",
+      ]) {
+        await assert.rejects(
+          pool.query(
+            `update public.news_bot_settings
+             set excluded_topic_codes = ${malformedArray}
+             where telegram_channel_id = $1`,
+            [channelId],
+          ),
+          /news_bot_settings_excluded_topic_codes_check/,
+        );
+      }
+      const exclusionsUpdated =
+        await settingsRepository.updateNewsExcludedTopics({
+          channelId: ` ${channelId} `,
+          excludedTopicCodes: [],
+          updatedBy,
+          expectedVersion: normalizedExclusions.version,
+        });
+      assert.ok(exclusionsUpdated);
+      assert.deepEqual(exclusionsUpdated.excluded_topic_codes, []);
+      assert.equal(exclusionsUpdated.version, normalizedExclusions.version + 1);
+      assert.equal(
+        await settingsRepository.updateNewsExcludedTopics({
+          channelId,
+          excludedTopicCodes: ["war_conflict"],
+          updatedBy,
+          expectedVersion: updated.version,
+        }),
+        null,
+      );
       assert.deepEqual(
         await settingsRepository.getNewsSettings(channelId),
-        updated,
+        exclusionsUpdated,
       );
 
       const createdFlags =

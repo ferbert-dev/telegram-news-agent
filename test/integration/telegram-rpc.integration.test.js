@@ -478,6 +478,17 @@ test(
         assert.equal(recovered.schedule_claim_token, recoveryToken);
         assert.equal(recovered.schedule_run_id, won[0].schedule_run_id);
         assert.equal(recovered.schedule_settings_snapshot.languageCode, "de");
+        assert.deepEqual(
+          recovered.schedule_settings_snapshot.excludedTopicCodes,
+          ["war_conflict"],
+        );
+        assert.deepEqual(
+          recovered.schedule_settings_snapshot.excludedTopicsProvenance,
+          {
+            source: "news_bot_settings",
+            settingsVersion: won[0].version,
+          },
+        );
         assert.equal(
           await scalar(peer, "renew_news_schedule_claim", [
             channelId,
@@ -530,6 +541,16 @@ test(
         assert.equal(
           changedDuringRun.schedule_settings_snapshot.languageCode,
           "de",
+        );
+        const exclusionsChangedDuringRun = await one(
+          db,
+          "select * from public.update_news_excluded_topics($1, $2, $3, $4)",
+          [channelId, [], 303, changedDuringRun.version],
+        );
+        assert.deepEqual(exclusionsChangedDuringRun.excluded_topic_codes, []);
+        assert.deepEqual(
+          exclusionsChangedDuringRun.schedule_settings_snapshot.excludedTopicCodes,
+          ["war_conflict"],
         );
         assert.equal(
           await scalar(peer, "save_news_schedule_publication", [

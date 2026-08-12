@@ -10,6 +10,7 @@ import type {
   TelegramSettingsInputRow,
   UpdateNewsFeatureFlagInput,
   UpdateNewsSettingsInput,
+  UpdateNewsExcludedTopicsInput,
 } from "../settings.contracts.js";
 import { NewsFeatureFlagsUseCases } from "./news-feature-flags.use-cases.js";
 import { NewsSettingsUseCases } from "./news-settings.use-cases.js";
@@ -47,6 +48,12 @@ export class SettingsService {
     input: UpdateNewsSettingsInput,
   ): Promise<NewsSettingsRow | null> {
     return this.newsSettings.update(input);
+  }
+
+  updateNewsExcludedTopics(
+    input: UpdateNewsExcludedTopicsInput,
+  ): Promise<NewsSettingsRow | null> {
+    return this.newsSettings.updateExcludedTopics(input);
   }
 
   beginTelegramSettingsInput(

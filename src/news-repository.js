@@ -897,6 +897,20 @@ export class NewsRepository {
     return rows[0] ?? null;
   }
 
+  async updateNewsExcludedTopics({
+    channelId,
+    excludedTopicCodes,
+    updatedBy,
+    expectedVersion,
+  }) {
+    const rows = await this.functionRows(
+      "update_news_excluded_topics",
+      [channelId, excludedTopicCodes, updatedBy, expectedVersion],
+      "Update news excluded topics",
+    );
+    return rows[0] ?? null;
+  }
+
   async beginTelegramSettingsInput({
     controlChatId,
     requestedBy,

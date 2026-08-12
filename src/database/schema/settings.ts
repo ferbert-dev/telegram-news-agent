@@ -33,6 +33,10 @@ export const newsBotSettings = pgTable(
       .array()
       .default(sql`'{}'::text[]`)
       .notNull(),
+    excludedTopicCodes: text("excluded_topic_codes")
+      .array()
+      .default(sql`array['war_conflict']::text[]`)
+      .notNull(),
     approvalPolicy: text("approval_policy").default("manual").notNull(),
     nextRunAt: timestampWithTimezone("next_run_at"),
     version: integer("version").default(1).notNull(),
@@ -69,6 +73,10 @@ export const newsBotSettings = pgTable(
     check(
       "news_bot_settings_approval_policy_check",
       sql`${table.approvalPolicy} in ('manual', 'automatic')`,
+    ),
+    check(
+      "news_bot_settings_excluded_topic_codes_check",
+      sql`public.valid_news_excluded_topic_codes(${table.excludedTopicCodes})`,
     ),
     check("news_bot_settings_version_check", sql`${table.version} > 0`),
     index("news_bot_settings_due_idx")

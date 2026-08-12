@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-08-09
+Last updated: 2026-08-12
 
 ## Project
 
@@ -48,6 +48,13 @@ Last updated: 2026-08-09
   deferred to 08:00, and a draft completed after 22:00 is checkpointed for
   morning recovery without repeating research. Safe defaults remain broad,
   English, manual review, paused scheduling, and night pause enabled.
+- The excluded-topics foundation branch persists a versioned, per-channel
+  `war_conflict` preference and exposes a localized `/settings` toggle. Manual
+  `/news` and scheduled snapshots freeze the preference with its settings
+  version. The provider-neutral classifier contract exists but is deliberately
+  not connected to research or publication yet, so this branch does not claim
+  that matching articles are already blocked. This is checked-in development
+  state only; production settings and publication behavior are unchanged.
 - Private admin `/labs` controls experimental, per-channel feature flags. The
   first V1 flag classifies articles against a PostgreSQL tag catalogue in
   Off/Collect/Enabled modes; story connections remain disabled pending tag

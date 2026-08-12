@@ -189,6 +189,24 @@ test(
       assert.equal(updatedSettings.language_code, "de");
       assert.equal(updatedSettings.schedule_interval_minutes, 180);
       assert.equal(updatedSettings.quiet_hours_enabled, false);
+      assert.deepEqual(updatedSettings.excluded_topic_codes, ["war_conflict"]);
+      const excludedSettings = await repository.updateNewsExcludedTopics({
+        channelId: settingsChannel,
+        excludedTopicCodes: [],
+        updatedBy: settingsUserId,
+        expectedVersion: updatedSettings.version,
+      });
+      assert.deepEqual(excludedSettings.excluded_topic_codes, []);
+      assert.equal(excludedSettings.version, updatedSettings.version + 1);
+      assert.equal(
+        await repository.updateNewsExcludedTopics({
+          channelId: settingsChannel,
+          excludedTopicCodes: ["war_conflict"],
+          updatedBy: settingsUserId,
+          expectedVersion: updatedSettings.version,
+        }),
+        null,
+      );
       assert.equal(
         await repository.updateNewsSettings({
           channelId: settingsChannel,
@@ -206,7 +224,7 @@ test(
       );
       assert.equal(
         (await repository.getNewsSettings(settingsChannel)).version,
-        updatedSettings.version,
+        excludedSettings.version,
       );
 
       const settingsInput = await repository.beginTelegramSettingsInput({
