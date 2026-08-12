@@ -70,8 +70,18 @@ function assertApplicationDependencies(file: string, source: string): void {
     assert.doesNotMatch(specifier, /news-repository/, file);
     assert.doesNotMatch(specifier, /(?:^|\/)notion-audit(?:\.js)?$/, file);
     assert.doesNotMatch(specifier, /(?:^|\/)pipeline(?:\.js)?$/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)draft(?:\.js)?$/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)publish(?:\.js)?$/, file);
+    assert.doesNotMatch(
+      specifier,
+      /(?:^|\/)publication-recovery(?:\.js)?$/,
+      file,
+    );
     assert.doesNotMatch(specifier, /(?:openai|gemini)-provider/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)(?:openai|@google\/genai)(?:\/|$)/, file);
     assert.doesNotMatch(specifier, /telegram-(?:bot|polling)/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)telegram(?:\.js)?$/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)send-message(?:\.js)?$/, file);
     assert.doesNotMatch(specifier, /^(?:node:)?https?(?:\/|$)/, file);
     assert.doesNotMatch(specifier, /^(?:axios|undici)(?:\/|$)/, file);
   }
@@ -216,6 +226,22 @@ test("application boundary scanner covers root contracts and tokens and rejects 
     [
       "src/example/legacy-application.tokens.ts",
       `export { NewsRepository } from "../../news-repository.js";`,
+    ],
+    [
+      "src/editorial/editorial-application.contracts.ts",
+      `import OpenAI from "openai";`,
+    ],
+    [
+      "src/editorial/editorial-application.tokens.ts",
+      `import { GoogleGenAI } from "@google/genai";`,
+    ],
+    [
+      "src/editorial/editorial-application.module.ts",
+      `export { sendTelegramMessage } from "../telegram.js";`,
+    ],
+    [
+      "src/editorial/application/publish-approved-draft.use-case.ts",
+      `export { publishApprovedDraft } from "../../publish.js";`,
     ],
   ]);
   for (const [file, source] of forbidden) {

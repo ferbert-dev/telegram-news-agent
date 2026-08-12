@@ -61,6 +61,13 @@ Last updated: 2026-08-12
   switch. This is checked-in development state only: the independent final
   pre-publication veto is still a later slice, and production settings/
   publication are unchanged.
+- The additive `EditorialApplicationModule` now exposes grounded draft,
+  approved publication, and reconciliation use cases behind Symbol ports. Its
+  publication boundary claims atomically, reads current settings, evaluates the
+  exact outbound text through a transport-neutral excluded-topic policy, and
+  safely releases every non-allow result before any gateway call. No current
+  Telegram/provider adapter or production entrypoint imports this module yet;
+  the final-veto ticket still owns durable enforcement and all live send paths.
 - Private admin `/labs` controls experimental, per-channel feature flags. The
   first V1 flag classifies articles against a PostgreSQL tag catalogue in
   Off/Collect/Enabled modes; story connections remain disabled pending tag

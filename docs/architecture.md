@@ -75,6 +75,15 @@ private, message-bound review session and suppresses new scheduled drafts while
 one is pending. Automatic mode still uses the idempotent publication state
 machine and must be confirmed explicitly in Telegram settings.
 
+The additive NestJS editorial application boundary keeps grounded generation,
+publication delivery, current settings, and excluded-topic evaluation behind
+Symbol ports. After the atomic publication claim it evaluates the exact claimed
+draft body against current settings immediately before the outbound gateway;
+block, uncertain, policy-error, and cancellation paths atomically release the
+claim instead of leaving a draft wedged in `publishing`. This boundary is not
+wired into the legacy production send paths yet, so it does not itself claim
+runtime enforcement or durable policy audit.
+
 ### Configuration
 
 Administrators use native Telegram inline keyboards rather than a Mini App.
