@@ -297,6 +297,32 @@ test("additive Telegram application slice is not wired into the legacy poller or
   }
 });
 
+test("additive Scheduler application is one-shot and remains unwired from the legacy production loop", async () => {
+  const applicationModule = await readFile(
+    path.join(sourceRoot, "scheduler/scheduler-application.module.ts"),
+    "utf8",
+  );
+  const useCase = await readFile(
+    path.join(
+      sourceRoot,
+      "scheduler/application/run-scheduled-news-once.use-case.ts",
+    ),
+    "utf8",
+  );
+  assert.doesNotMatch(applicationModule, /@nestjs\/schedule/);
+  assert.doesNotMatch(applicationModule, /\b(?:Cron|Interval|Timeout)\s*\(/);
+  assert.doesNotMatch(useCase, /\bwhile\s*\(/);
+  assert.doesNotMatch(useCase, /runNewsScheduler|news-scheduler\.js/);
+  assert.doesNotMatch(useCase, /ResearchService|candidates\s*\[\s*0\s*\]/);
+  assert.match(useCase, /SCHEDULER_NEWS_WORKFLOW_APPLICATION/);
+
+  for (const entrypoint of ["telegram-bot.js", "news-scheduler.js"]) {
+    const source = await readFile(path.join(sourceRoot, entrypoint), "utf8");
+    assert.doesNotMatch(source, /scheduler-application/, entrypoint);
+    assert.doesNotMatch(source, /RunScheduledNewsOnceUseCase/, entrypoint);
+  }
+});
+
 test("Nest module imports are acyclic and avoid forwardRef", async () => {
   const files = (await sourceFiles(sourceRoot)).filter((file) =>
     file.endsWith(".module.ts"),

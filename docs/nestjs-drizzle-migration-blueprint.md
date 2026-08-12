@@ -2,8 +2,8 @@
 
 Status: Drizzle persistence and legacy-facade parity are complete. Reversible
 NestJS application services now cover Usage, Settings, Catalog/Research,
-Operations, Editorial and Telegram control; production composition and
-entrypoints remain legacy.
+Operations, Editorial, Telegram control and scheduled-news one-shot
+orchestration; production composition and entrypoints remain legacy.
 
 Notion Epic: [Engineer Telegram News Agent into a modular NestJS platform](https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb)
 
@@ -119,7 +119,24 @@ facade imports persistence modules only.
   audit/rejection and enforcement across every live send path remain the
   separate final-veto slice.
 - `SettingsService` owns validated channel configuration and Labs flags.
-- `SchedulerService` owns due-work orchestration and quiet-hours recovery.
+- `SchedulerApplicationModule` exports only a Symbol-backed one-shot
+  `SchedulerService`; it starts no scheduler loop and remains unwired from the
+  production entrypoint. `RunScheduledNewsOnceUseCase` owns due claims,
+  schedule and pipeline-lease heartbeats, frozen settings provenance,
+  manual-review and automatic-publication branching, durable draft/receipt
+  checkpoints, quiet-hours rechecks, policy-block completion and unresolved
+  publication pause. Claimed rows and their frozen settings snapshots are
+  shape- and provenance-validated before any workflow side effect; gateway
+  results are also checked against their exact runtime discriminants. A
+  completed workflow result crosses its durable boundary before cancellation:
+  `review_ready` is checkpointed and `no_candidates` is finished before an
+  abort can prevent presentation/publication, so retry does not rerun domain
+  work. PostgreSQL remains authoritative for due selection, token CAS,
+  recurrence and Europe/Madrid recovery. The bounded
+  `SchedulerNewsWorkflowApplicationPort` deliberately preserves the legacy
+  tier/window result without choosing `candidates[0]` or interpreting
+  uncontracted research output; concrete ResearchService plus editorial draft
+  composition remains a cross-slice parity/runtime-adapter task.
 - `PipelineLeaseService` exposes acquire, renew and release without moving
   owner fencing or server-time semantics out of PostgreSQL.
 - `NotionAuditDeliveryService` enqueues and sequentially replays the durable
