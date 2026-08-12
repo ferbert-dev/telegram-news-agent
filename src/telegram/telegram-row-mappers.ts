@@ -112,6 +112,7 @@ function checkpointStatus(value: string): TelegramNewsCheckpointStatus {
   if (
     value !== "review_ready" &&
     value !== "published" &&
+    value !== "blocked_by_policy" &&
     value !== "no_candidates"
   ) {
     throw new Error("Invalid Telegram news checkpoint status");

@@ -105,6 +105,87 @@ export type RecordPublicationInput = {
   metadata?: JsonObject;
 };
 
+export type PublicationPath =
+  | "automatic"
+  | "automatic_news"
+  | "manual_review"
+  | "scheduler"
+  | "drafts_cli"
+  | "reconciliation"
+  | "direct";
+
+export type PublicationPolicyClassification =
+  | "main_subject"
+  | "uncertain"
+  | "classifier_error";
+
+export type PublicationPolicyBlockRow = {
+  id: string;
+  idempotency_key: string;
+  telegram_channel_id: string;
+  draft_id: string | null;
+  article_id: string | null;
+  stage: "final_publication" | "direct_publication" | "reconciliation";
+  publication_path: PublicationPath;
+  topic_code: string;
+  classification: PublicationPolicyClassification;
+  settings_version: number;
+  outbound_text_sha256: string;
+  provider: string | null;
+  model: string | null;
+  prompt_version: string | null;
+  reason_code: string;
+  created_at: string;
+};
+
+export type PolicyPublicationOutcome =
+  | "claimed"
+  | "blocked"
+  | "already_published"
+  | "already_blocked"
+  | "stale_settings"
+  | "outbound_changed"
+  | "not_publishable";
+
+export type ClaimDraftForPublicationWithPolicyInput = {
+  draftId: string;
+  channelId: string;
+  settingsVersion: number;
+  outboundTextSha256: string;
+};
+
+export type ClaimDraftForPublicationWithPolicyResult = {
+  outcome: Exclude<PolicyPublicationOutcome, "blocked">;
+  draft: DraftRow | null;
+};
+
+export type BlockDraftPublicationInput = {
+  draftId: string;
+  channelId: string;
+  stage: "final_publication";
+  publicationPath: PublicationPath;
+  topicCode: string;
+  classification: PublicationPolicyClassification;
+  settingsVersion: number;
+  outboundText: string;
+  outboundTextSha256: string;
+  provider?: string | null;
+  model?: string | null;
+  promptVersion?: string | null;
+  reasonCode: string;
+};
+
+export type BlockDraftPublicationResult = {
+  outcome: Exclude<PolicyPublicationOutcome, "claimed">;
+  blockId: string | null;
+  draftId: string | null;
+  articleId: string | null;
+  draftStatus: DraftStatus | null;
+  reasonCode: string | null;
+  createdAt: string | null;
+};
+
+
 /**
  * Editorial persistence boundary. Ordinary reads and compatibility mutations
  * use typed Drizzle queries. Review, approval, rejection, publication and
@@ -132,6 +213,16 @@ export interface EditorialPersistence {
     id: string,
     channelId: string,
   ): Promise<DraftRow | undefined>;
+  claimDraftForPublicationWithPolicy(
+    input: ClaimDraftForPublicationWithPolicyInput,
+  ): Promise<ClaimDraftForPublicationWithPolicyResult>;
+  blockDraftPublication(
+    input: BlockDraftPublicationInput,
+  ): Promise<BlockDraftPublicationResult>;
+  findPublicationPolicyBlockByDraft(
+    draftId: string,
+    channelId: string,
+  ): Promise<PublicationPolicyBlockRow | null>;
   finalizeDraftPublication(
     input: FinalizeDraftPublicationInput,
   ): Promise<PublishedPostRow | undefined>;

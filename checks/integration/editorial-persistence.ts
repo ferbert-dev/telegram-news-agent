@@ -593,3 +593,334 @@ test(
     }
   },
 );
+
+test(
+  "final publication policy atomics preserve application-role grants, settings CAS, exact hashes, replay, and one claim winner",
+  { skip: !enabled || !connectionString },
+  async () => {
+    const pool = new Pool({ connectionString, max: 6 });
+    const suffix = randomUUID();
+    const channelId = `@policy_${suffix.replaceAll("-", "")}`;
+    const bodies = {
+      blocked: `Blocked exact outbound ${suffix}`,
+      claimed: `Concurrent exact outbound ${suffix}`,
+      direct: `Direct exact outbound ${suffix}`,
+      stale: `Stale exact outbound ${suffix}`,
+    };
+    const articleIds: string[] = [];
+
+    const createApprovedDraft = async (name: string, body: string) => {
+      const article = await pool.query<{ id: string }>(
+        `insert into public.articles (canonical_url, title, status)
+         values ($1, $2, 'approved') returning id`,
+        [`https://publication-policy.test/${suffix}/${name}`, `Policy ${name}`],
+      );
+      articleIds.push(article.rows[0].id);
+      const draft = await pool.query<{ id: string }>(
+        `insert into public.drafts
+           (article_id, body, status, approved_at)
+         values ($1, $2, 'approved', now()) returning id`,
+        [article.rows[0].id, body],
+      );
+      return draft.rows[0].id;
+    };
+
+    const asApplicationRole = async <T extends Record<string, unknown>>(
+      statement: string,
+      values: unknown[],
+    ) => {
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        await client.query("set local role telegram_news_app");
+        const result = await client.query<T>(statement, values);
+        await client.query("commit");
+        return result.rows;
+      } catch (error) {
+        await client.query("rollback").catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+
+    try {
+      await pool.query(
+        `insert into public.news_bot_settings
+           (telegram_channel_id, review_chat_id, updated_by,
+            excluded_topic_codes)
+         values ($1, 1, 1, array['war_conflict']::text[])`,
+        [channelId],
+      );
+      const blockedDraftId = await createApprovedDraft(
+        "blocked",
+        bodies.blocked,
+      );
+      const claimedDraftId = await createApprovedDraft(
+        "claimed",
+        bodies.claimed,
+      );
+      const staleDraftId = await createApprovedDraft("stale", bodies.stale);
+
+      const block = async () =>
+        asApplicationRole<{
+          outcome: string;
+          draft_status: string;
+          reason_code: string;
+        }>(
+          `select outcome, draft_status, reason_code
+           from public.block_draft_publication(
+             $1, $2, 'final_publication', 'manual_review',
+             'war_conflict', 'uncertain', 1, $3,
+             sha256(convert_to($3, 'UTF8')), 'openai', 'configured-model',
+             'excluded-topics-v1', 'excluded_topic_uncertain'
+           )`,
+          [blockedDraftId, channelId, bodies.blocked],
+        );
+      assert.equal((await block())[0].outcome, "blocked");
+      assert.equal((await block())[0].outcome, "already_blocked");
+      assert.equal(
+        (
+          await pool.query<{ count: string }>(
+            `select count(*)::text as count
+             from public.publication_policy_blocks where draft_id = $1`,
+            [blockedDraftId],
+          )
+        ).rows[0].count,
+        "1",
+      );
+
+      const stale = await asApplicationRole<{ outcome: string }>(
+        `select outcome
+         from public.claim_draft_for_publication_with_policy(
+           $1, $2, 2, sha256(convert_to($3, 'UTF8'))
+         )`,
+        [staleDraftId, channelId, bodies.stale],
+      );
+      assert.equal(stale[0].outcome, "stale_settings");
+      const changed = await asApplicationRole<{ outcome: string }>(
+        `select outcome
+         from public.claim_draft_for_publication_with_policy(
+           $1, $2, 1, sha256(convert_to('different', 'UTF8'))
+         )`,
+        [staleDraftId, channelId],
+      );
+      assert.equal(changed[0].outcome, "outbound_changed");
+
+      const directBlock = async (settingsVersion = 1) =>
+        asApplicationRole<{
+          id: string;
+          idempotency_key: string;
+          outbound_hash: string;
+        }>(
+          `select id, idempotency_key,
+                  encode(outbound_text_sha256, 'hex') as outbound_hash
+           from public.record_direct_publication_policy_block(
+             $1, $2, 'direct', 'war_conflict', 'main_subject', $3,
+             $4, sha256(convert_to($4, 'UTF8')), 'openai',
+             'configured-model', 'excluded-topics-v1',
+             'excluded_topic_main_subject'
+           )`,
+          [channelId, articleIds[2], settingsVersion, bodies.direct],
+        );
+      const firstDirectBlock = (await directBlock())[0];
+      const replayedDirectBlock = (await directBlock())[0];
+      assert.equal(replayedDirectBlock.id, firstDirectBlock.id);
+      assert.equal(
+        replayedDirectBlock.idempotency_key,
+        firstDirectBlock.idempotency_key,
+      );
+      assert.match(firstDirectBlock.idempotency_key, /^[a-f0-9]{64}$/);
+      assert.equal(firstDirectBlock.outbound_hash.length, 64);
+      assert.equal(
+        (
+          await pool.query<{ count: string }>(
+            `select count(*)::text as count
+             from public.publication_policy_blocks
+             where idempotency_key = $1`,
+            [firstDirectBlock.idempotency_key],
+          )
+        ).rows[0].count,
+        "1",
+      );
+      await assert.rejects(directBlock(2), /stale_publication_policy_settings/);
+
+      const claimSql = `select outcome, id, body
+        from public.claim_draft_for_publication_with_policy(
+          $1, $2, 1, sha256(convert_to($3, 'UTF8'))
+        )`;
+      const claims = await Promise.all([
+        asApplicationRole<{ outcome: string; id: string | null; body: string | null }>(claimSql, [
+          claimedDraftId,
+          channelId,
+          bodies.claimed,
+        ]),
+        asApplicationRole<{ outcome: string; id: string | null; body: string | null }>(claimSql, [
+          claimedDraftId,
+          channelId,
+          bodies.claimed,
+        ]),
+      ]);
+      assert.deepEqual(
+        claims.map((rows) => rows[0].outcome).sort(),
+        ["claimed", "not_publishable"],
+      );
+      const winningClaim = claims
+        .flat()
+        .find(({ outcome }) => outcome === "claimed");
+      assert.equal(winningClaim?.id, claimedDraftId);
+      assert.equal(winningClaim?.body, bodies.claimed);
+
+      const privileges = await pool.query<{
+        one_arg: boolean;
+        two_arg: boolean;
+        rls_enabled: boolean;
+        service_claim_execute: boolean;
+        service_block_execute: boolean;
+        service_direct_execute: boolean;
+        anon_execute: boolean;
+        authenticated_execute: boolean;
+        public_execute: boolean;
+        service_select: boolean;
+        service_insert: boolean;
+        service_update: boolean;
+        anon_select: boolean;
+        authenticated_select: boolean;
+        public_table_access: boolean;
+      }>(
+        `select
+           to_regprocedure('public.claim_draft_for_publication(uuid)')
+             is not null as one_arg,
+           to_regprocedure('public.claim_draft_for_publication(uuid,text)')
+             is not null as two_arg,
+           (select relrowsecurity from pg_catalog.pg_class
+            where oid = 'public.publication_policy_blocks'::regclass)
+             as rls_enabled,
+           has_function_privilege(
+             'service_role',
+             'public.claim_draft_for_publication_with_policy(uuid,text,integer,bytea)',
+             'EXECUTE'
+           ) as service_claim_execute,
+           has_function_privilege(
+             'service_role',
+             'public.block_draft_publication(uuid,text,text,text,text,text,integer,text,bytea,text,text,text,text)',
+             'EXECUTE'
+           ) as service_block_execute,
+           has_function_privilege(
+             'service_role',
+             'public.record_direct_publication_policy_block(text,uuid,text,text,text,integer,text,bytea,text,text,text,text)',
+             'EXECUTE'
+           ) as service_direct_execute,
+           has_function_privilege(
+             'anon',
+             'public.block_draft_publication(uuid,text,text,text,text,text,integer,text,bytea,text,text,text,text)',
+             'EXECUTE'
+           ) as anon_execute,
+           has_function_privilege(
+             'authenticated',
+             'public.block_draft_publication(uuid,text,text,text,text,text,integer,text,bytea,text,text,text,text)',
+             'EXECUTE'
+           ) as authenticated_execute,
+           exists (
+             select 1
+             from pg_catalog.pg_proc as function_value
+             cross join lateral aclexplode(
+               coalesce(function_value.proacl, acldefault('f', function_value.proowner))
+             ) as grant_value
+             where function_value.oid in (
+               'public.claim_draft_for_publication_with_policy(uuid,text,integer,bytea)'::regprocedure,
+               'public.block_draft_publication(uuid,text,text,text,text,text,integer,text,bytea,text,text,text,text)'::regprocedure,
+               'public.record_direct_publication_policy_block(text,uuid,text,text,text,integer,text,bytea,text,text,text,text)'::regprocedure
+             )
+               and grant_value.grantee = 0
+               and grant_value.privilege_type = 'EXECUTE'
+           ) as public_execute,
+           has_table_privilege(
+             'service_role', 'public.publication_policy_blocks', 'SELECT'
+           ) as service_select,
+           has_table_privilege(
+             'service_role', 'public.publication_policy_blocks', 'INSERT'
+           ) as service_insert,
+           has_table_privilege(
+             'service_role', 'public.publication_policy_blocks', 'UPDATE'
+           ) as service_update,
+           has_table_privilege(
+             'anon', 'public.publication_policy_blocks', 'SELECT'
+           ) as anon_select,
+           has_table_privilege(
+             'authenticated', 'public.publication_policy_blocks', 'SELECT'
+           ) as authenticated_select,
+           exists (
+             select 1
+             from pg_catalog.pg_class as relation
+             cross join lateral aclexplode(
+               coalesce(relation.relacl, acldefault('r', relation.relowner))
+             ) as grant_value
+             where relation.oid = 'public.publication_policy_blocks'::regclass
+               and grant_value.grantee = 0
+               and grant_value.privilege_type in ('SELECT', 'INSERT', 'UPDATE')
+           ) as public_table_access`,
+      );
+      assert.deepEqual(privileges.rows[0], {
+        one_arg: true,
+        two_arg: true,
+        rls_enabled: true,
+        service_claim_execute: true,
+        service_block_execute: true,
+        service_direct_execute: true,
+        anon_execute: false,
+        authenticated_execute: false,
+        public_execute: false,
+        service_select: true,
+        service_insert: true,
+        service_update: false,
+        anon_select: false,
+        authenticated_select: false,
+        public_table_access: false,
+      });
+
+      const columns = await pool.query<{ column_name: string }>(
+        `select column_name
+         from information_schema.columns
+         where table_schema = 'public'
+           and table_name = 'publication_policy_blocks'`,
+      );
+      const names = new Set(columns.rows.map(({ column_name }) => column_name));
+      for (const forbidden of [
+        "content",
+        "body",
+        "prompt",
+        "provider_output",
+        "error",
+        "url",
+      ]) {
+        assert.equal(names.has(forbidden), false, forbidden);
+      }
+    } finally {
+      await pool
+        .query(
+          "delete from public.publication_policy_blocks where telegram_channel_id = $1",
+          [channelId],
+        )
+        .catch(() => {});
+      await pool
+        .query(
+          "delete from public.story_publication_claims where article_id = any($1::uuid[])",
+          [articleIds],
+        )
+        .catch(() => {});
+      await pool
+        .query("delete from public.articles where id = any($1::uuid[])", [
+          articleIds,
+        ])
+        .catch(() => {});
+      await pool
+        .query(
+          "delete from public.news_bot_settings where telegram_channel_id = $1",
+          [channelId],
+        )
+        .catch(() => {});
+      await pool.end();
+    }
+  },
+);

@@ -19,7 +19,7 @@ const connectionString =
   process.env.DATABASE_TEST_URL ?? process.env.DATABASE_URL;
 
 test(
-  "Editorial application preserves atomic review creation, claim concurrency, late policy release, exactly-once receipt, and reconciliation on PostgreSQL 17",
+  "Editorial application preserves atomic review creation, policy rejection, claim concurrency, exactly-once receipt, and reconciliation on PostgreSQL 17",
   { skip: !enabled || !connectionString },
   async () => {
     const pool = new Pool({ connectionString, max: 8 });
@@ -222,7 +222,7 @@ test(
         channelId,
       });
       assert.equal(blockedResult.status, "blocked");
-      assert.equal(blockedResult.draft.status, "approved");
+      assert.equal(blockedResult.draft.status, "rejected");
       assert.equal(deliveryCalls.length, 1);
       assert.equal(
         (

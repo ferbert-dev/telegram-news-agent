@@ -104,6 +104,34 @@ function asEditorial(value: object): EditorialPersistence {
   return value as unknown as EditorialPersistence;
 }
 
+function asPolicyEditorial(value: Record<string, unknown>): EditorialPersistence {
+  const implementation = value as {
+    claimDraftForPublication?: (id: string, channelId: string) => Promise<DraftRow | undefined>;
+  };
+  return asEditorial({
+    async findPublicationPolicyBlockByDraft() { return null; },
+    async getDraft() { return { ...DRAFT, status: "approved", articles: ARTICLE }; },
+    async claimDraftForPublicationWithPolicy(input: { draftId: string; channelId: string }) {
+      const draft = implementation.claimDraftForPublication
+        ? await implementation.claimDraftForPublication(input.draftId, input.channelId)
+        : DRAFT;
+      return { outcome: draft ? "claimed" : "not_publishable", draft: draft ?? null };
+    },
+    async blockDraftPublication(input: { draftId: string; reasonCode: string }) {
+      return {
+        outcome: "blocked",
+        blockId: "block-1",
+        draftId: input.draftId,
+        articleId: DRAFT.article_id,
+        draftStatus: "rejected",
+        reasonCode: input.reasonCode,
+        createdAt: "2026-08-12T10:00:00.000Z",
+      };
+    },
+    ...value,
+  });
+}
+
 function asUsage(value: object): UsageReportingPersistence {
   return value as unknown as UsageReportingPersistence;
 }
@@ -251,7 +279,7 @@ test("GenerateReviewDraftUseCase honors cancellation after generation without cr
   assert.equal(persisted, false);
 });
 
-test("PublishApprovedDraftUseCase fail-closes a blocked final policy decision and safely releases the claim before returning", async () => {
+test("PublishApprovedDraftUseCase classifies before claim and atomically rejects a blocked final policy decision", async () => {
   const calls: unknown[] = [];
   const draft = DRAFT;
   const editorial = {
@@ -259,13 +287,25 @@ test("PublishApprovedDraftUseCase fail-closes a blocked final policy decision an
       calls.push(["find"]);
       return null;
     },
-    async claimDraftForPublication(id: string, channelId: string) {
-      calls.push(["claim", id, channelId]);
-      return draft;
+    async findPublicationPolicyBlockByDraft() {
+      calls.push(["find-block"]);
+      return null;
     },
-    async releaseRejectedDraftPublication(id: string) {
-      calls.push(["release", id]);
-      return { ...draft, status: "approved" as const };
+    async getDraft() {
+      calls.push(["draft"]);
+      return { ...draft, status: "approved", articles: ARTICLE };
+    },
+    async blockDraftPublication(input: { reasonCode: string }) {
+      calls.push(["block", input]);
+      return {
+        outcome: "blocked",
+        blockId: "block-1",
+        draftId: draft.id,
+        articleId: draft.article_id,
+        draftStatus: "rejected",
+        reasonCode: input.reasonCode,
+        createdAt: "2026-08-12T10:00:00.000Z",
+      };
     },
   };
   const settings = {
@@ -289,28 +329,29 @@ test("PublishApprovedDraftUseCase fail-closes a blocked final policy decision an
   const result = await new PublishApprovedDraftUseCase(
     editorial as never,
     settings as never,
+    asUsage({}),
     policy,
     delivery,
   ).execute({ draftId: draft.id, channelId: "@channel" });
 
-  assert.deepEqual(result, {
-    status: "blocked",
-    reasonCode: "excluded_topic",
-    publication: null,
-    draft: { ...draft, status: "approved" },
-  });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reasonCode, "excluded_topic_main_subject");
+  assert.equal(result.publication, null);
+  assert.equal(result.draft.id, draft.id);
+  assert.equal(result.draft.status, "rejected");
   assert.deepEqual(calls.map((call) => (call as unknown[])[0]), [
     "find",
-    "claim",
+    "find-block",
+    "draft",
     "settings",
     "policy",
-    "release",
+    "block",
   ]);
 });
 
 test("PublishApprovedDraftUseCase evaluates the current settings and exact claimed content immediately before delivery, then finalizes the receipt", async () => {
   const calls: unknown[] = [];
-  const editorial = asEditorial({
+  const editorial = asPolicyEditorial({
     async findPublicationByDraft() { calls.push(["find"]); return null; },
     async claimDraftForPublication() { calls.push(["claim"]); return DRAFT; },
     async finalizeDraftPublication(input: unknown) {
@@ -339,21 +380,22 @@ test("PublishApprovedDraftUseCase evaluates the current settings and exact claim
         return { version: 9, excluded_topic_codes: ["war_conflict"] } as never;
       },
     } as never,
+    asUsage({}),
     policy,
     gateway,
   ).execute({ draftId: DRAFT.id, channelId: "@channel", signal });
 
   assert.deepEqual(calls.map((call) => (call as unknown[])[0]), [
-    "find", "claim", "settings", "policy", "gateway", "finalize",
+    "find", "settings", "policy", "claim", "gateway", "finalize",
   ]);
-  assert.deepEqual((calls[3] as unknown[])[1], {
+  assert.deepEqual((calls[2] as unknown[])[1], {
     draftId: DRAFT.id,
     articleId: DRAFT.article_id,
     channelId: "@channel",
     content: { text: DRAFT.body },
     settings: { version: 9, excludedTopicCodes: ["war_conflict"] },
   });
-  assert.equal((calls[3] as unknown[])[2], signal);
+  assert.equal((calls[2] as unknown[])[2], signal);
   assert.deepEqual((calls[4] as unknown[])[1], {
     channelId: "@channel",
     text: DRAFT.body,
@@ -377,11 +419,77 @@ test("PublishApprovedDraftUseCase evaluates the current settings and exact claim
   });
 });
 
+test("PublishApprovedDraftUseCase records completed policy usage before honoring a post-response abort", async () => {
+  const controller = new AbortController();
+  const abortReason = new Error("shutdown after policy response");
+  const calls: unknown[] = [];
+  const usageEvent = {
+    provider: "openai",
+    providerResponseId: "policy-response-after-abort",
+    model: "configured-policy-model",
+    operation: "excluded_topic_classification",
+    inputTokens: 12,
+    outputTokens: 3,
+  };
+  const useCase = new PublishApprovedDraftUseCase(
+    asPolicyEditorial({
+      async findPublicationByDraft() { return null; },
+      async claimDraftForPublicationWithPolicy() {
+        calls.push("claim");
+        return { outcome: "claimed", draft: DRAFT };
+      },
+    }),
+    {
+      async getNewsSettings() {
+        return { version: 4, excluded_topic_codes: ["war_conflict"] } as never;
+      },
+    } as never,
+    asUsage({
+      async recordAiUsage(input: Record<string, unknown>) {
+        calls.push(["usage", input]);
+        return USAGE;
+      },
+    }),
+    {
+      async evaluate() {
+        controller.abort(abortReason);
+        return { decision: "allow", usageEvents: [usageEvent] };
+      },
+    },
+    {
+      async publish() {
+        calls.push("publish");
+        return { messageId: 42 };
+      },
+    },
+  );
+
+  await assert.rejects(
+    useCase.execute({
+      draftId: DRAFT.id,
+      channelId: "@channel",
+      signal: controller.signal,
+    }),
+    (error) => error === abortReason,
+  );
+  assert.deepEqual(calls, [
+    [
+      "usage",
+      {
+        ...usageEvent,
+        telegramChannelId: "@channel",
+        articleId: DRAFT.article_id,
+      },
+    ],
+  ]);
+});
+
 test("PublishApprovedDraftUseCase is idempotent before claim and gateway", async () => {
   let touched = false;
   const result = await new PublishApprovedDraftUseCase(
-    asEditorial({ async findPublicationByDraft() { return PUBLICATION; } }),
+    asPolicyEditorial({ async findPublicationByDraft() { return PUBLICATION; } }),
     { async getNewsSettings() { touched = true; } } as never,
+    asUsage({}),
     { async evaluate() { touched = true; return { decision: "allow" }; } },
     { async publish() { touched = true; return { messageId: 42 }; } },
   ).execute({ draftId: DRAFT.id, channelId: "@channel" });
@@ -393,12 +501,12 @@ test("PublishApprovedDraftUseCase is idempotent before claim and gateway", async
   });
 });
 
-test("PublishApprovedDraftUseCase releases uncertain, explicit-error, invalid, failed, and cancelled policy evaluations without wedging a claim", async (t) => {
+test("PublishApprovedDraftUseCase atomically blocks uncertain, explicit-error, invalid, and failed policy evaluations without claiming", async (t) => {
   for (const fixture of ["uncertain", "explicit-error", "invalid", "error", "missing-settings", "cancel"] as const) {
     await t.test(fixture, async () => {
       const controller = new AbortController();
       const abortReason = new Error("cancel policy");
-      let released = 0;
+      let blocked = 0;
       let delivered = 0;
       const policy: ExcludedTopicPublicationPolicy = {
         async evaluate() {
@@ -412,12 +520,19 @@ test("PublishApprovedDraftUseCase releases uncertain, explicit-error, invalid, f
         },
       };
       const useCase = new PublishApprovedDraftUseCase(
-        asEditorial({
+        asPolicyEditorial({
           async findPublicationByDraft() { return null; },
-          async claimDraftForPublication() { return DRAFT; },
-          async releaseRejectedDraftPublication() {
-            released += 1;
-            return { ...DRAFT, status: "approved" };
+          async blockDraftPublication(input: { reasonCode: string }) {
+            blocked += 1;
+            return {
+              outcome: "blocked",
+              blockId: "block-1",
+              draftId: DRAFT.id,
+              articleId: DRAFT.article_id,
+              draftStatus: "rejected",
+              reasonCode: input.reasonCode,
+              createdAt: DRAFT.updated_at,
+            };
           },
         }),
         {
@@ -427,6 +542,7 @@ test("PublishApprovedDraftUseCase releases uncertain, explicit-error, invalid, f
               : ({ version: 2, excluded_topic_codes: ["war_conflict"] } as never);
           },
         } as never,
+        asUsage({}),
         policy,
         { async publish() { delivered += 1; return { messageId: 42 }; } },
       );
@@ -441,19 +557,23 @@ test("PublishApprovedDraftUseCase releases uncertain, explicit-error, invalid, f
           (error) => error === abortReason,
         );
       } else {
-        const result = await useCase.execute({
-          draftId: DRAFT.id,
-          channelId: "@channel",
-        });
-        assert.equal(
-          result.status,
-          fixture === "uncertain" ? "uncertain" : "policy_error",
-        );
-        if (fixture === "explicit-error") {
-          assert.equal(result.reasonCode, "classifier_unavailable");
+        if (fixture === "missing-settings") {
+          await assert.rejects(
+            useCase.execute({ draftId: DRAFT.id, channelId: "@channel" }),
+            /settings are unavailable/,
+          );
+        } else {
+          const result = await useCase.execute({
+            draftId: DRAFT.id,
+            channelId: "@channel",
+          });
+          assert.equal(result.status, "blocked");
         }
       }
-      assert.equal(released, 1);
+      assert.equal(
+        blocked,
+        fixture === "missing-settings" || fixture === "cancel" ? 0 : 1,
+      );
       assert.equal(delivered, 0);
     });
   }
@@ -463,12 +583,13 @@ test("PublishApprovedDraftUseCase releases definitive delivery rejection but pre
   const run = async (error: Error) => {
     let releases = 0;
     const useCase = new PublishApprovedDraftUseCase(
-      asEditorial({
+      asPolicyEditorial({
         async findPublicationByDraft() { return null; },
         async claimDraftForPublication() { return DRAFT; },
         async releaseRejectedDraftPublication() { releases += 1; return DRAFT; },
       }),
       { async getNewsSettings() { return { version: 1, excluded_topic_codes: [] } as never; } } as never,
+      asUsage({}),
       { async evaluate() { return { decision: "allow" }; } },
       { async publish() { throw error; } },
     );
@@ -485,7 +606,7 @@ test("PublishApprovedDraftUseCase releases definitive delivery rejection but pre
 test("concurrent publication attempts preserve the PostgreSQL claim as the single-send authority", async () => {
   let claimed = false;
   let sends = 0;
-  const editorial = asEditorial({
+  const editorial = asPolicyEditorial({
     async findPublicationByDraft() { return null; },
     async claimDraftForPublication() {
       if (claimed) throw new Error("Draft is not approved or is already being published");
@@ -497,6 +618,7 @@ test("concurrent publication attempts preserve the PostgreSQL claim as the singl
   const useCase = new PublishApprovedDraftUseCase(
     editorial,
     { async getNewsSettings() { return { version: 1, excluded_topic_codes: [] } as never; } } as never,
+    asUsage({}),
     { async evaluate() { return { decision: "allow" }; } },
     { async publish() { sends += 1; return { messageId: 42 }; } },
   );
@@ -581,8 +703,9 @@ test("Editorial application providers use Symbol injection and export only the w
   assert.deepEqual(
     Reflect.getMetadata(SELF_DECLARED_DEPS_METADATA, PublishApprovedDraftUseCase),
     [
-      { index: 3, param: EDITORIAL_PUBLICATION_GATEWAY },
-      { index: 2, param: EXCLUDED_TOPIC_PUBLICATION_POLICY },
+      { index: 4, param: EDITORIAL_PUBLICATION_GATEWAY },
+      { index: 3, param: EXCLUDED_TOPIC_PUBLICATION_POLICY },
+      { index: 2, param: USAGE_REPORTING_PERSISTENCE },
       { index: 1, param: NEWS_SETTINGS_REPOSITORY },
       { index: 0, param: EDITORIAL_PERSISTENCE },
     ],

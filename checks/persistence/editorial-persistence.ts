@@ -403,8 +403,11 @@ const editorialMethods = [
   "approveDraft",
   "rejectDraft",
   "claimDraftForPublication",
+  "claimDraftForPublicationWithPolicy",
+  "blockDraftPublication",
   "finalizeDraftPublication",
   "findPublicationByDraft",
+  "findPublicationPolicyBlockByDraft",
   "resetDraftPublication",
   "releaseRejectedDraftPublication",
   "recordPublication",
@@ -424,7 +427,7 @@ class EditorialConsumer {
 })
 class EditorialConsumerModule {}
 
-test("EditorialPersistenceModule exports one Symbol alias with exactly thirteen methods", async () => {
+test("EditorialPersistenceModule exports one Symbol alias with exactly sixteen methods", async () => {
   const pool = new EditorialPool();
   const moduleRef = await Test.createTestingModule({
     imports: [EditorialConsumerModule],

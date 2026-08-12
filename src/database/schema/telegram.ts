@@ -111,7 +111,16 @@ export const telegramNewsRequestCheckpoints = pgTable(
   (table) => [
     check(
       "telegram_news_request_checkpoints_status_check",
-      sql`${table.status} in ('review_ready', 'published', 'no_candidates')`,
+      sql`${table.status} in ('review_ready', 'published', 'no_candidates', 'blocked_by_policy')`,
+    ),
+    check(
+      "telegram_news_request_checkpoints_result_check",
+      sql`(
+        (${table.status} = 'review_ready' and ${table.draftId} is not null and ${table.preview} is not null and ${table.publicationMessageId} is null)
+        or (${table.status} = 'published' and ${table.draftId} is not null and ${table.preview} is not null and ${table.publicationMessageId} is not null)
+        or (${table.status} = 'no_candidates' and ${table.draftId} is null and ${table.preview} is null and ${table.publicationMessageId} is null)
+        or (${table.status} = 'blocked_by_policy' and ${table.draftId} is not null and ${table.preview} is not null and ${table.publicationMessageId} is null)
+      )`,
     ),
     index("telegram_news_request_checkpoints_draft_id_idx")
       .on(table.draftId)

@@ -78,6 +78,7 @@ export async function runCheckpointedNewsSearch({
         telegram,
         sendMessage,
         publishDraft,
+        aiProvider,
         resumed: true,
       });
     }
@@ -127,6 +128,7 @@ export async function runCheckpointedNewsSearch({
         telegram,
         sendMessage,
         publishDraft,
+        aiProvider,
         resumed: false,
       });
     }
@@ -170,6 +172,7 @@ async function publishCheckpointedDraft({
   telegram,
   sendMessage,
   publishDraft,
+  aiProvider,
   resumed,
 }) {
   if (!telegram?.token || !telegram?.channelId) {
@@ -183,11 +186,38 @@ async function publishCheckpointedDraft({
   }
   const published = await publishDraft({
     repository,
+    aiProvider,
     token: telegram.token,
     channelId: telegram.channelId,
     draftId: checkpoint.draft_id,
+    publicationPath: "automatic_news",
     sendMessage,
   });
+  if (
+    published.status === "blocked" ||
+    published.status === "already_blocked"
+  ) {
+    const saved = await repository.saveTelegramNewsCheckpoint({
+      update_id: checkpoint.update_id,
+      status: "blocked_by_policy",
+      draft_id: checkpoint.draft_id,
+      preview: checkpoint.preview,
+      window_hours: checkpoint.window_hours,
+      publication_message_id: null,
+      settings_snapshot: newsSettingsSnapshot(settings),
+      updated_at: new Date().toISOString(),
+    });
+    return {
+      status: saved.status,
+      draftId: saved.draft_id,
+      preview: saved.preview,
+      windowHours: saved.window_hours,
+      publication: null,
+      publicationMessageId: null,
+      reasonCode: published.reasonCode,
+      resumed,
+    };
+  }
   const publicationMessageId = published.publication.telegram_message_id;
   const saved = await repository.saveTelegramNewsCheckpoint({
     update_id: checkpoint.update_id,

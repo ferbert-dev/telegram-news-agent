@@ -463,6 +463,37 @@ test("/news confirms automatic publication without creating a review session", a
   );
 });
 
+test("/news treats fresh and resumed policy blocks as terminal without creating review controls", async (t) => {
+  for (const resumed of [false, true]) {
+    await t.test(resumed ? "resumed" : "fresh", async () => {
+      const { calls, dependencies } = fixture({
+        dependencies: {
+          runNews: async () => ({
+            status: "blocked_by_policy",
+            draftId: "draft-blocked",
+            preview: "Must not become reviewable",
+            publication: null,
+            resumed,
+          }),
+        },
+      });
+
+      const result = await handleControlUpdate(commandUpdate(), dependencies);
+
+      assert.equal(result.draftId, "draft-blocked");
+      assert.equal(calls.some(([name]) => name === "session"), false);
+      assert.ok(
+        calls.some(
+          ([name, body]) =>
+            name === "sendMessage" &&
+            /blocked by the current excluded-topic policy/i.test(body.text),
+        ),
+      );
+      assert.match(result.auditResult, /no publication was sent/i);
+    });
+  }
+});
+
 test("manual review shows the alternate editorial version before approval controls", async () => {
   const calls = [];
   const baseline = "Baseline grounded draft.";
@@ -918,12 +949,34 @@ function publicationStateFixture({ ambiguous = false } = {}) {
       async findPublicationByDraft() {
         return publication;
       },
+      async findPublicationPolicyBlockByDraft() {
+        return null;
+      },
+      async getDraft() {
+        return {
+          id: "draft-1",
+          article_id: "article-1",
+          body: "Approved article",
+          status: draftStatus,
+          reviewer_notes: null,
+          articles: { id: "article-1", title: "Article" },
+        };
+      },
+      async getNewsSettings() {
+        return { version: 1, excluded_topic_codes: [] };
+      },
       async claimDraftForPublication() {
         if (draftStatus !== "approved") {
           throw new Error("Draft is not approved or is already being published");
         }
         draftStatus = "publishing";
         return { id: "draft-1", body: "Approved article" };
+      },
+      async claimDraftForPublicationWithPolicy() {
+        return {
+          outcome: "claimed",
+          draft: await this.claimDraftForPublication(),
+        };
       },
       async releaseRejectedDraftPublication() {
         assert.equal(draftStatus, "publishing");

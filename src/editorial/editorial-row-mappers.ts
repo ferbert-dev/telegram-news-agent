@@ -10,6 +10,9 @@ import type {
   DraftStatus,
   DraftWithArticleRow,
   PublishedPostRow,
+  PublicationPath,
+  PublicationPolicyBlockRow,
+  PublicationPolicyClassification,
 } from "./editorial-persistence.contracts.js";
 
 type DatabaseTimestamp = string | Date;
@@ -46,6 +49,19 @@ export type PublishedPostDatabaseRow = Omit<
   created_at: DatabaseTimestamp;
 };
 
+export type PublicationPolicyBlockDatabaseRow = Omit<
+  PublicationPolicyBlockRow,
+  | "publication_path"
+  | "classification"
+  | "outbound_text_sha256"
+  | "created_at"
+> & {
+  publication_path: string;
+  classification: string;
+  outbound_text_sha256: Buffer | string;
+  created_at: DatabaseTimestamp;
+};
+
 function draftStatus(value: string): DraftStatus {
   if (
     value !== "draft" &&
@@ -66,6 +82,32 @@ function safeBigint(value: DatabaseBigint, field: string): number {
     throw new Error(`Invalid PostgreSQL bigint for ${field}`);
   }
   return parsed;
+}
+
+function publicationPath(value: string): PublicationPath {
+  if (
+    value !== "automatic" &&
+    value !== "automatic_news" &&
+    value !== "manual_review" &&
+    value !== "scheduler" &&
+    value !== "drafts_cli" &&
+    value !== "reconciliation" &&
+    value !== "direct"
+  ) {
+    throw new Error("Invalid publication policy path");
+  }
+  return value;
+}
+
+function policyClassification(value: string): PublicationPolicyClassification {
+  if (
+    value !== "main_subject" &&
+    value !== "uncertain" &&
+    value !== "classifier_error"
+  ) {
+    throw new Error("Invalid publication policy classification");
+  }
+  return value;
 }
 
 export function mapDraftRow(row: DraftDatabaseRow): DraftRow {
@@ -110,6 +152,20 @@ export function mapPublishedPostRow(
       "telegram_message_id",
     ),
     published_at: toIsoTimestamp(row.published_at),
+    created_at: toIsoTimestamp(row.created_at),
+  };
+}
+
+export function mapPublicationPolicyBlockRow(
+  row: PublicationPolicyBlockDatabaseRow,
+): PublicationPolicyBlockRow {
+  return {
+    ...row,
+    publication_path: publicationPath(row.publication_path),
+    classification: policyClassification(row.classification),
+    outbound_text_sha256: Buffer.isBuffer(row.outbound_text_sha256)
+      ? row.outbound_text_sha256.toString("hex")
+      : row.outbound_text_sha256.replace(/^\\x/, ""),
     created_at: toIsoTimestamp(row.created_at),
   };
 }

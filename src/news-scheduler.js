@@ -282,6 +282,25 @@ async function executeClaim({
       return deferredDraftResult(renewedDeferral, scheduledDraft);
     }
     const published = await publishDraft({ draftId: scheduledDraft.id });
+    if (
+      published.status === "blocked" ||
+      published.status === "already_blocked"
+    ) {
+      await finish(
+        repository,
+        claim,
+        "blocked_by_policy",
+        published.reasonCode ?? "excluded_topic_policy",
+        heartbeat,
+      );
+      return {
+        status: "blocked_by_policy",
+        draftId: scheduledDraft.id,
+        publicationMessageId: null,
+        windowHours: scheduledDraft.windowHours,
+        settings,
+      };
+    }
     publicationMessageId = published.publication.telegram_message_id;
     await requireSaved(() =>
       repository.saveNewsSchedulePublication({

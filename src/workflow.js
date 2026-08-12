@@ -12,12 +12,14 @@ export function getApprovalPolicy(env = process.env) {
 export async function runWorkflow({
   approvalPolicy,
   repository,
+  aiProvider,
   sendMessage,
   telegram,
   ...pipelineOptions
 }) {
   const pipeline = await runPipeline({
     repository,
+    aiProvider,
     ...pipelineOptions,
   });
 
@@ -39,15 +41,22 @@ export async function runWorkflow({
   await repository.approveDraft(pipeline.draft.id);
   const published = await publishApprovedDraft({
     repository,
+    aiProvider,
     token: telegram.token,
     channelId: telegram.channelId,
     draftId: pipeline.draft.id,
+    publicationPath: "automatic",
     sendMessage,
   });
 
   return {
-    status: "published",
+    status:
+      published.status === "blocked" ||
+      published.status === "already_blocked"
+        ? "blocked_by_policy"
+        : "published",
     ...pipeline,
     publication: published.publication,
+    policyBlock: published.block ?? null,
   };
 }
