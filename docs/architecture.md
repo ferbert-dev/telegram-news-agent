@@ -77,12 +77,13 @@ machine and must be confirmed explicitly in Telegram settings.
 
 The additive NestJS editorial application boundary keeps grounded generation,
 publication delivery, current settings, and excluded-topic evaluation behind
-Symbol ports. After the atomic publication claim it evaluates the exact claimed
-draft body against current settings immediately before the outbound gateway;
-block, uncertain, policy-error, and cancellation paths atomically release the
-claim instead of leaving a draft wedged in `publishing`. This boundary is not
-wired into the legacy production send paths yet, so it does not itself claim
-runtime enforcement or durable policy audit.
+Symbol ports. It evaluates the exact outbound draft body before the policy-aware
+settings-version and body-hash CAS claim; stale settings trigger at most one
+settings refresh and reclassification, and only an allowed result may reach the
+outbound gateway. A pre-send block, uncertain result, or policy error atomically
+persists a sanitized policy block and rejects the draft/article, with zero
+gateway sends. This module remains additive and unwired into the legacy
+production send paths, so it does not itself claim runtime enforcement.
 
 ### Configuration
 
