@@ -157,6 +157,42 @@ test("repository rejects PostgreSQL writes that unexpectedly match no rows", asy
   );
 });
 
+test("Telegram update failure recording uses one atomic PostgreSQL function", async () => {
+  const calls = [];
+  const repository = new NewsRepository({
+    async query(text, parameters) {
+      calls.push([text, parameters]);
+      return {
+        rows: [
+          {
+            attempt_count: 1,
+            terminal: false,
+            failure_status: "failed",
+            recorded: true,
+          },
+        ],
+      };
+    },
+  });
+
+  assert.equal(
+    (
+      await repository.recordTelegramUpdateFailure(
+        101,
+        "public_feedback",
+        "handler_failed",
+      )
+    ).attempt_count,
+    1,
+  );
+  assert.deepEqual(calls, [
+    [
+      "select * from public.record_telegram_update_failure($1, $2, $3, $4, $5, $6)",
+      [101, "public_feedback", "handler_failed", 3, false, null],
+    ],
+  ]);
+});
+
 test("source registry excludes active quarantine and exposes topic mappings", async () => {
   let query;
   const repository = new NewsRepository({

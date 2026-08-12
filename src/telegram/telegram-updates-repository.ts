@@ -11,12 +11,16 @@ import {
 import type {
   ClaimTelegramUpdateInput,
   FinishTelegramUpdateInput,
+  RecordTelegramUpdateFailureInput,
   TelegramUpdateClaimRow,
+  TelegramUpdateFailureRow,
   TelegramUpdatesPersistence,
 } from "./telegram-persistence.contracts.js";
 import {
   mapTelegramUpdateClaimRow,
+  mapTelegramUpdateFailureRow,
   type TelegramUpdateClaimDatabaseRow,
+  type TelegramUpdateFailureDatabaseRow,
 } from "./telegram-row-mappers.js";
 
 const claimTelegramUpdateFunction =
@@ -28,6 +32,11 @@ const finishTelegramUpdateFunction = postgresScalar<boolean>(
   "public.finish_telegram_update",
   4,
 );
+const recordTelegramUpdateFailureFunction =
+  postgresRows<TelegramUpdateFailureDatabaseRow>(
+    "public.record_telegram_update_failure",
+    6,
+  );
 
 @Injectable()
 export class TelegramUpdatesRepository
@@ -66,6 +75,24 @@ export class TelegramUpdatesRepository
       "Finish Telegram update",
       finishTelegramUpdateFunction,
       [updateId, claimToken, status, errorCode],
+    );
+  }
+
+  async recordTelegramUpdateFailure({
+    updateId,
+    updateKind,
+    errorCode,
+    maxAttempts = 3,
+    terminal = false,
+    claimToken = null,
+  }: RecordTelegramUpdateFailureInput): Promise<TelegramUpdateFailureRow> {
+    const rows = await this.functionRows(
+      "Record Telegram update failure",
+      recordTelegramUpdateFailureFunction,
+      [updateId, updateKind, errorCode, maxAttempts, terminal, claimToken],
+    );
+    return mapTelegramUpdateFailureRow(
+      this.one(rows, "Record Telegram update failure"),
     );
   }
 }

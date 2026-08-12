@@ -278,6 +278,23 @@ export class LegacyPersistenceFacade implements LegacyPersistence {
       errorCode,
     });
   }
+  recordTelegramUpdateFailure(
+    updateId: number,
+    updateKind: string,
+    errorCode: string,
+    maxAttempts = 3,
+    terminal = false,
+    claimToken: string | null = null,
+  ) {
+    return this.telegramUpdates.recordTelegramUpdateFailure({
+      updateId,
+      updateKind,
+      errorCode,
+      maxAttempts,
+      terminal,
+      claimToken,
+    });
+  }
   getTelegramNewsCheckpoint(...args: Parameters<TelegramCheckpointsPersistence["getTelegramNewsCheckpoint"]>) {
     return this.telegramCheckpoints.getTelegramNewsCheckpoint(...args);
   }

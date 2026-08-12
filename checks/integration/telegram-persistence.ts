@@ -14,7 +14,7 @@ const connectionString =
   process.env.DATABASE_TEST_URL ?? process.env.DATABASE_URL;
 
 test(
-  "Telegram persistence preserves update/review CAS, last-write-wins checkpoints, pending fallback, expiry, rebind and manual decision concurrency",
+  "Telegram persistence preserves update quarantine, update/review CAS, checkpoints, expiry, rebind and manual decision concurrency",
   { skip: !enabled || !connectionString },
   async () => {
     const pool = new Pool({ connectionString, max: 12 });
@@ -32,6 +32,7 @@ test(
       Date.now() + 1,
       Date.now() + 2,
       Date.now() + 3,
+      Date.now() + 4,
     ];
     const articleIds: string[] = [];
     const draftIds: string[] = [];
@@ -124,7 +125,64 @@ test(
         updateKind: "message_retry",
       });
       assert.equal(retryClaim.claimed, true);
+      assert.ok(retryClaim.claim_token);
       assert.notEqual(retryClaim.claim_token, failedClaim.claim_token);
+      assert.deepEqual(
+        await updates.recordTelegramUpdateFailure({
+          updateId: updateIds[1],
+          updateKind: "message_retry",
+          errorCode: "claim_not_owned",
+        }),
+        {
+          attempt_count: 0,
+          terminal: false,
+          failure_status: "processing",
+          recorded: false,
+        },
+      );
+      assert.equal(
+        await updates.finishTelegramUpdate({
+          updateId: updateIds[1],
+          claimToken: retryClaim.claim_token,
+          status: "completed",
+        }),
+        true,
+      );
+
+      const firstRecordedFailure = await updates.recordTelegramUpdateFailure({
+        updateId: updateIds[4],
+        updateKind: "public_feedback",
+        errorCode: "handler_failed",
+        maxAttempts: 2,
+      });
+      assert.deepEqual(firstRecordedFailure, {
+        attempt_count: 1,
+        terminal: false,
+        failure_status: "failed",
+        recorded: true,
+      });
+      const terminalRecordedFailure =
+        await updates.recordTelegramUpdateFailure({
+          updateId: updateIds[4],
+          updateKind: "public_feedback",
+          errorCode: "handler_failed",
+          maxAttempts: 2,
+        });
+      assert.deepEqual(terminalRecordedFailure, {
+        attempt_count: 2,
+        terminal: true,
+        failure_status: "quarantined",
+        recorded: true,
+      });
+      assert.equal(
+        (
+          await updates.claimTelegramUpdate({
+            updateId: updateIds[4],
+            updateKind: "public_feedback",
+          })
+        ).claim_status,
+        "terminal",
+      );
 
       const staleClaim = await updates.claimTelegramUpdate({
         updateId: updateIds[2],

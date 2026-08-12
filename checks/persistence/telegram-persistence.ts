@@ -27,6 +27,7 @@ import {
   mapTelegramNewsCheckpointRow,
   mapTelegramReviewDecisionRow,
   mapTelegramReviewSessionRow,
+  mapTelegramUpdateFailureRow,
   type TelegramNewsCheckpointDatabaseRow,
   type TelegramReviewDecisionDatabaseRow,
   type TelegramReviewSessionDatabaseRow,
@@ -115,6 +116,21 @@ test("Telegram row mappers preserve snake_case, ISO UTC, nulls, decisions and sa
   assert.equal(decision.decision, "publish");
   assert.equal(decision.expires_at, canonicalTimestamp);
 
+  assert.deepEqual(
+    mapTelegramUpdateFailureRow({
+      attempt_count: "3",
+      terminal: true,
+      failure_status: "quarantined",
+      recorded: true,
+    }),
+    {
+      attempt_count: 3,
+      terminal: true,
+      failure_status: "quarantined",
+      recorded: true,
+    },
+  );
+
   assert.throws(
     () =>
       mapTelegramNewsCheckpointRow({
@@ -177,7 +193,16 @@ class TelegramPool extends EventEmitter {
                 claim_status: "claimed",
               },
             ]
-          : text.includes("finish_telegram_update")
+          : text.includes("record_telegram_update_failure")
+            ? [
+                {
+                  attempt_count: 1,
+                  terminal: false,
+                  failure_status: "failed",
+                  recorded: true,
+                },
+              ]
+            : text.includes("finish_telegram_update")
             ? [{ value: true }]
             : text.includes("decide_telegram_review_session")
               ? [decisionRow]
@@ -265,7 +290,7 @@ test("five ordinary Telegram paths use typed Drizzle and preserve pending fallba
   assert.ok(pool.calls.slice(0, 5).every((call) => !call.text.includes('"public".')));
 });
 
-test("five retained Telegram methods call exact parameterized PostgreSQL signatures and preserve defaults", async () => {
+test("six retained Telegram methods call exact parameterized PostgreSQL signatures and preserve defaults", async () => {
   const pool = new TelegramPool();
   const { updates, reviews } = repositories(pool);
   const claimToken = "00000000-0000-4000-8000-000000000002";
@@ -282,6 +307,19 @@ test("five retained Telegram methods call exact parameterized PostgreSQL signatu
       status: "completed",
     }),
     true,
+  );
+  assert.deepEqual(
+    await updates.recordTelegramUpdateFailure({
+      updateId,
+      updateKind: "callback_query",
+      errorCode: "handler_failed",
+    }),
+    {
+      attempt_count: 1,
+      terminal: false,
+      failure_status: "failed",
+      recorded: true,
+    },
   );
   assert.equal(
     (
@@ -325,6 +363,10 @@ test("five retained Telegram methods call exact parameterized PostgreSQL signatu
     {
       text: 'select "public"."finish_telegram_update"($1, $2, $3, $4) as value',
       values: [updateId, claimToken, "completed", null],
+    },
+    {
+      text: 'select * from "public"."record_telegram_update_failure"($1, $2, $3, $4, $5, $6)',
+      values: [updateId, "callback_query", "handler_failed", 3, false, null],
     },
     {
       text: 'select * from "public"."renew_telegram_review_session"($1, $2)',
@@ -388,6 +430,7 @@ test("Telegram repositories preserve operation errors, zero-row requirements and
 const updateMethods = [
   "claimTelegramUpdate",
   "finishTelegramUpdate",
+  "recordTelegramUpdateFailure",
 ] as const satisfies readonly (keyof TelegramUpdatesPersistence)[];
 const checkpointMethods = [
   "getTelegramNewsCheckpoint",
@@ -420,7 +463,7 @@ class TelegramPersistenceConsumer {
 })
 class TelegramPersistenceConsumerModule {}
 
-test("TelegramPersistenceModule exports three Symbol aliases backed by three single repository instances and exactly ten methods", async () => {
+test("TelegramPersistenceModule exports three Symbol aliases backed by three single repository instances and exactly eleven methods", async () => {
   const pool = new TelegramPool();
   const moduleRef = await Test.createTestingModule({
     imports: [TelegramPersistenceConsumerModule],
@@ -461,7 +504,7 @@ test("TelegramPersistenceModule exports three Symbol aliases backed by three sin
     );
     assert.equal(
       updateMethods.length + checkpointMethods.length + reviewMethods.length,
-      10,
+      11,
     );
     assert.deepEqual(
       Reflect.getMetadata("exports", TelegramPersistenceModule),

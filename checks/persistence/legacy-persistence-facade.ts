@@ -123,6 +123,7 @@ const samples = {
   finishNewsSchedule: [{ channelId: "@channel", claimToken: "claim", status: "completed" }],
   claimTelegramUpdate: [101, "callback_query"],
   finishTelegramUpdate: [101, "claim", "completed"],
+  recordTelegramUpdateFailure: [101, "callback_query", "handler_failed"],
   getTelegramNewsCheckpoint: [101],
   saveTelegramNewsCheckpoint: [{ update_id: 101, status: "no_candidates" }],
   hasPendingTelegramReview: ["@channel"],
@@ -186,7 +187,7 @@ function fixture(calls: Call[] = []) {
   return { facade, ports };
 }
 
-test("facade and owner manifest cover exactly all 67 live NewsRepository domain methods", () => {
+test("facade and owner manifest cover exactly all 68 live NewsRepository domain methods", () => {
   const legacyMethods = Object.getOwnPropertyNames(NewsRepository.prototype)
     .filter((method) => !infrastructureMethods.has(method))
     .sort();
@@ -195,13 +196,13 @@ test("facade and owner manifest cover exactly all 67 live NewsRepository domain 
     .sort();
   const manifestMethods = Object.keys(LEGACY_PERSISTENCE_METHOD_OWNERS).sort();
 
-  assert.equal(legacyMethods.length, 67);
+  assert.equal(legacyMethods.length, 68);
   assert.deepEqual(facadeMethods, legacyMethods);
   assert.deepEqual(manifestMethods, legacyMethods);
   assert.equal(Object.values(LEGACY_PERSISTENCE_METHOD_OWNERS).includes("fallback" as Owner), false);
 });
 
-test("all 67 methods delegate once to their declared owner and preserve legacy arguments", async () => {
+test("all 68 methods delegate once to their declared owner and preserve legacy arguments", async () => {
   const calls: Call[] = [];
   const { facade } = fixture(calls);
   const dynamicFacade = facade as unknown as DynamicPort;
@@ -217,6 +218,8 @@ test("all 67 methods delegate once to their declared owner and preserve legacy a
       assert.deepEqual(calls[0]?.args, [{ updateId: 101, updateKind: "callback_query", staleAfterSeconds: 120 }]);
     } else if (method === "finishTelegramUpdate") {
       assert.deepEqual(calls[0]?.args, [{ updateId: 101, claimToken: "claim", status: "completed", errorCode: null }]);
+    } else if (method === "recordTelegramUpdateFailure") {
+      assert.deepEqual(calls[0]?.args, [{ updateId: 101, updateKind: "callback_query", errorCode: "handler_failed", maxAttempts: 3, terminal: false, claimToken: null }]);
     } else {
       assert.deepEqual(calls[0]?.args, args, method);
     }

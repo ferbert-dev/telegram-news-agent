@@ -133,7 +133,7 @@ async function withScheduledAudit({ claim, settings }, operation) {
   );
 }
 
-async function handleUpdate(update) {
+async function handleUpdate(update, { classification } = {}) {
   try {
     const result = await handleControlUpdate(update, {
       botUsername: bot.username,
@@ -148,7 +148,7 @@ async function handleUpdate(update) {
     if (!result.handled) {
       const claimed = await repository.claimTelegramUpdate(
         update.update_id,
-        "ignored",
+        classification?.kind ?? "ignored",
       );
       if (claimed.claimed) {
         const finished = await repository.finishTelegramUpdate(

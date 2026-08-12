@@ -16,6 +16,7 @@ import type {
   TelegramCheckpointsPersistence,
   TelegramReviewSessionsPersistence,
   TelegramUpdateClaimRow,
+  TelegramUpdateFailureRow,
   TelegramUpdateTerminalStatus,
 } from "../telegram/telegram-persistence.contracts.js";
 import type { UsageReportingPersistence } from "../usage/usage-persistence.contracts.js";
@@ -52,6 +53,14 @@ export interface LegacyPersistence
     status: TelegramUpdateTerminalStatus,
     errorCode?: string | null,
   ): Promise<boolean>;
+  recordTelegramUpdateFailure(
+    updateId: number,
+    updateKind: string,
+    errorCode: string,
+    maxAttempts?: number,
+    terminal?: boolean,
+    claimToken?: string | null,
+  ): Promise<TelegramUpdateFailureRow>;
 }
 
 export const LEGACY_PERSISTENCE_METHOD_OWNERS = {
@@ -121,6 +130,7 @@ export const LEGACY_PERSISTENCE_METHOD_OWNERS = {
 
   claimTelegramUpdate: "telegramUpdates",
   finishTelegramUpdate: "telegramUpdates",
+  recordTelegramUpdateFailure: "telegramUpdates",
   getTelegramNewsCheckpoint: "telegramCheckpoints",
   saveTelegramNewsCheckpoint: "telegramCheckpoints",
   hasPendingTelegramReview: "telegramReviewSessions",
