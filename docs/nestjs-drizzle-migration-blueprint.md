@@ -1,8 +1,8 @@
 # NestJS and Drizzle migration blueprint
 
 Status: Drizzle persistence and legacy-facade parity are complete. Reversible
-NestJS application services now cover Usage, Settings, Catalog/Research and
-Operations; production composition and entrypoints remain legacy.
+NestJS application services now cover Usage, Settings, Catalog/Research,
+Operations and Editorial; production composition and entrypoints remain legacy.
 
 Notion Epic: [Engineer Telegram News Agent into a modular NestJS platform](https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb)
 
@@ -108,7 +108,15 @@ facade imports persistence modules only.
 ### Application services and adapters
 
 - `ResearchService` coordinates source collection, ranking, extraction and AI providers.
-- `EditorialWorkflowService` coordinates drafting, review and publication.
+- `EditorialWorkflowService` exposes grounded review-draft generation,
+  approved publication and operator reconciliation through one Symbol-backed
+  application port. Its publication use case keeps PostgreSQL claim/finalize/
+  release/reset functions authoritative and evaluates a Symbol-bound excluded-
+  topic policy against current settings and the exact outbound text immediately
+  before the transport-neutral publication gateway. Provider, policy and send
+  adapters are deliberately not wired into the current runtime; durable policy
+  audit/rejection and enforcement across every live send path remain the
+  separate final-veto slice.
 - `SettingsService` owns validated channel configuration and Labs flags.
 - `SchedulerService` owns due-work orchestration and quiet-hours recovery.
 - `PipelineLeaseService` exposes acquire, renew and release without moving
