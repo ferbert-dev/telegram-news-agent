@@ -1023,6 +1023,30 @@ export class NewsRepository {
     );
   }
 
+  async recordTelegramUpdateFailure(
+    updateId,
+    updateKind,
+    errorCode,
+    maxAttempts = 3,
+    terminal = false,
+    claimToken = null,
+  ) {
+    return (
+      await this.functionRows(
+        "record_telegram_update_failure",
+        [
+          updateId,
+          updateKind,
+          errorCode,
+          maxAttempts,
+          terminal,
+          claimToken,
+        ],
+        "Record Telegram update failure",
+      )
+    )[0];
+  }
+
   async getTelegramNewsCheckpoint(updateId) {
     const result = await this.query(
       "Get Telegram news checkpoint",

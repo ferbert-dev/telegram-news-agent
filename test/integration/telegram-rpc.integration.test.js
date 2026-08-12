@@ -206,6 +206,124 @@ test(
         assert.notEqual(retry.claim_token, first.claim_token);
       });
 
+      await t.test("failure counts preserve active claim ownership before quarantine", async () => {
+        const updateId = Date.now() + 2;
+        cleanup.push(["update", updateId]);
+
+        const firstFailure = await one(
+          db,
+          "select * from public.record_telegram_update_failure($1, $2, $3, $4, $5, $6)",
+          [updateId, "public_feedback", "handler_failed", 3, false, null],
+        );
+        assert.deepEqual(firstFailure, {
+          attempt_count: 1,
+          terminal: false,
+          failure_status: "failed",
+          recorded: true,
+        });
+
+        const retryClaim = await one(
+          db,
+          "select * from public.claim_telegram_update($1, $2, $3)",
+          [updateId, "public_feedback", 30],
+        );
+        assert.equal(retryClaim.claimed, true);
+
+        const busyObservation = await one(
+          peer,
+          "select * from public.record_telegram_update_failure($1, $2, $3, $4, $5, $6)",
+          [updateId, "public_feedback", "handler_failed", 3, false, null],
+        );
+        assert.deepEqual(busyObservation, {
+          attempt_count: 1,
+          terminal: false,
+          failure_status: "processing",
+          recorded: false,
+        });
+        assert.equal(
+          await scalar(db, "finish_telegram_update", [
+            updateId,
+            retryClaim.claim_token,
+            "failed",
+            "handler_failed",
+          ]),
+          true,
+        );
+
+        const secondFailure = await one(
+          db,
+          "select * from public.record_telegram_update_failure($1, $2, $3, $4, $5, $6)",
+          [updateId, "public_feedback", "handler_failed", 3, false, null],
+        );
+        assert.deepEqual(secondFailure, {
+          attempt_count: 2,
+          terminal: false,
+          failure_status: "failed",
+          recorded: true,
+        });
+
+        const finalClaim = await one(
+          peer,
+          "select * from public.claim_telegram_update($1, $2, $3)",
+          [updateId, "public_feedback", 30],
+        );
+        assert.equal(finalClaim.claimed, true);
+        const wrongOwner = await one(
+          db,
+          "select * from public.record_telegram_update_failure($1, $2, $3, $4, $5, $6)",
+          [
+            updateId,
+            "public_feedback",
+            "handler_failed",
+            3,
+            false,
+            randomUUID(),
+          ],
+        );
+        assert.deepEqual(wrongOwner, {
+          attempt_count: 2,
+          terminal: false,
+          failure_status: "processing",
+          recorded: false,
+        });
+        assert.equal(
+          await scalar(peer, "finish_telegram_update", [
+            updateId,
+            finalClaim.claim_token,
+            "failed",
+            "handler_failed",
+          ]),
+          true,
+        );
+
+        const quarantined = await one(
+          db,
+          "select * from public.record_telegram_update_failure($1, $2, $3, $4, $5, $6)",
+          [updateId, "public_feedback", "handler_failed", 3, false, null],
+        );
+        assert.deepEqual(quarantined, {
+          attempt_count: 3,
+          terminal: true,
+          failure_status: "quarantined",
+          recorded: true,
+        });
+        assert.deepEqual(
+          await one(
+            peer,
+            "select * from public.claim_telegram_update($1, $2, $3)",
+            [updateId, "public_feedback", 30],
+          ),
+          { claimed: false, claim_token: null, claim_status: "terminal" },
+        );
+
+        const replay = await one(
+          peer,
+          "select * from public.record_telegram_update_failure($1, $2, $3, $4, $5, $6)",
+          [updateId, "public_feedback", "different_error", 3, false, null],
+        );
+        assert.deepEqual(replay, { ...quarantined, recorded: false });
+      });
+
       await t.test("double Publish has one winner and a resumable decision", async () => {
         const fixture = await createReviewFixture(db, randomUUID());
         cleanup.push(["review", fixture.session.id, fixture.article.id]);

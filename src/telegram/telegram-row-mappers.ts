@@ -10,6 +10,8 @@ import type {
   TelegramReviewSessionRow,
   TelegramUpdateClaimRow,
   TelegramUpdateClaimStatus,
+  TelegramUpdateFailureRow,
+  TelegramUpdateFailureStatus,
 } from "./telegram-persistence.contracts.js";
 
 type DatabaseBigint = string | number;
@@ -19,6 +21,14 @@ export type TelegramUpdateClaimDatabaseRow = Omit<
   TelegramUpdateClaimRow,
   "claim_status"
 > & { claim_status: string };
+
+export type TelegramUpdateFailureDatabaseRow = Omit<
+  TelegramUpdateFailureRow,
+  "attempt_count" | "failure_status"
+> & {
+  attempt_count: string | number;
+  failure_status: string;
+};
 
 export type TelegramNewsCheckpointDatabaseRow = Omit<
   TelegramNewsCheckpointRow,
@@ -86,6 +96,18 @@ function claimStatus(value: string): TelegramUpdateClaimStatus {
   return value;
 }
 
+function failureStatus(value: string): TelegramUpdateFailureStatus {
+  if (
+    value !== "completed" &&
+    value !== "failed" &&
+    value !== "processing" &&
+    value !== "quarantined"
+  ) {
+    throw new Error("Invalid Telegram update failure status");
+  }
+  return value;
+}
+
 function checkpointStatus(value: string): TelegramNewsCheckpointStatus {
   if (
     value !== "review_ready" &&
@@ -108,6 +130,16 @@ export function mapTelegramUpdateClaimRow(
   row: TelegramUpdateClaimDatabaseRow,
 ): TelegramUpdateClaimRow {
   return { ...row, claim_status: claimStatus(row.claim_status) };
+}
+
+export function mapTelegramUpdateFailureRow(
+  row: TelegramUpdateFailureDatabaseRow,
+): TelegramUpdateFailureRow {
+  return {
+    ...row,
+    attempt_count: safeBigint(row.attempt_count, "attempt_count"),
+    failure_status: failureStatus(row.failure_status),
+  };
 }
 
 export function mapTelegramNewsCheckpointRow(

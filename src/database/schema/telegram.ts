@@ -62,15 +62,29 @@ export const telegramUpdates = pgTable(
     errorCode: text("error_code"),
     claimToken: uuid("claim_token").defaultRandom().notNull(),
     claimedAt: timestampWithTimezone("claimed_at").defaultNow().notNull(),
+    failureCount: integer("failure_count").default(0).notNull(),
+    lastErrorAt: timestampWithTimezone("last_error_at"),
+    quarantinedAt: timestampWithTimezone("quarantined_at"),
   },
   (table) => [
     check(
       "telegram_updates_status_check",
-      sql`${table.status} in ('processing', 'completed', 'failed')`,
+      sql`${table.status} in ('processing', 'completed', 'failed', 'quarantined')`,
+    ),
+    check(
+      "telegram_updates_failure_count_check",
+      sql`${table.failureCount} >= 0`,
+    ),
+    check(
+      "telegram_updates_quarantine_metadata_check",
+      sql`(${table.status} = 'quarantined') = (${table.quarantinedAt} is not null)`,
     ),
     index("telegram_updates_stale_processing_idx")
       .on(table.claimedAt)
       .where(sql`${table.status} = 'processing'`),
+    index("telegram_updates_quarantined_at_idx")
+      .on(table.quarantinedAt)
+      .where(sql`${table.status} = 'quarantined'`),
   ],
 ).enableRLS();
 

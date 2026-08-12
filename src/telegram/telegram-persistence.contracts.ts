@@ -2,6 +2,11 @@ import type { JsonObject } from "../database/schema/common.js";
 
 export type TelegramUpdateClaimStatus = "claimed" | "busy" | "terminal";
 export type TelegramUpdateTerminalStatus = "completed" | "failed";
+export type TelegramUpdateFailureStatus =
+  | "completed"
+  | "failed"
+  | "processing"
+  | "quarantined";
 export type TelegramReviewDecision = "publish" | "reject";
 export type TelegramNewsCheckpointStatus =
   | "review_ready"
@@ -12,6 +17,13 @@ export type TelegramUpdateClaimRow = {
   claimed: boolean;
   claim_token: string | null;
   claim_status: TelegramUpdateClaimStatus;
+};
+
+export type TelegramUpdateFailureRow = {
+  attempt_count: number;
+  terminal: boolean;
+  failure_status: TelegramUpdateFailureStatus;
+  recorded: boolean;
 };
 
 export type TelegramNewsCheckpointRow = {
@@ -59,6 +71,15 @@ export type FinishTelegramUpdateInput = {
   claimToken: string;
   status: TelegramUpdateTerminalStatus;
   errorCode?: string | null;
+};
+
+export type RecordTelegramUpdateFailureInput = {
+  updateId: number;
+  updateKind: string;
+  errorCode: string;
+  maxAttempts?: number;
+  terminal?: boolean;
+  claimToken?: string | null;
 };
 
 export type SaveTelegramNewsCheckpointInput = {
@@ -111,6 +132,9 @@ export interface TelegramUpdatesPersistence {
     input: ClaimTelegramUpdateInput,
   ): Promise<TelegramUpdateClaimRow>;
   finishTelegramUpdate(input: FinishTelegramUpdateInput): Promise<boolean>;
+  recordTelegramUpdateFailure(
+    input: RecordTelegramUpdateFailureInput,
+  ): Promise<TelegramUpdateFailureRow>;
 }
 
 export interface TelegramCheckpointsPersistence {
