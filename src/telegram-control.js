@@ -305,6 +305,7 @@ export async function handleControlUpdate(
     now = () => new Date(),
     newSessionId = () => randomBytes(24).toString("hex"),
     publishDraft = publishApprovedDraft,
+    aiProvider,
   },
 ) {
   const classification = classifyControlUpdate(update, botUsername, botId);
@@ -361,6 +362,7 @@ export async function handleControlUpdate(
               repository,
               callTelegram,
               publishDraft,
+              aiProvider,
             },
           );
         } else if (classification.kind === "settings_command") {
@@ -652,6 +654,16 @@ async function handleNewsCommand(
       auditResult: `Automatically published draft ${result.draftId ?? result.draft?.id ?? "unknown"}.`,
     };
   }
+  if (result.status === "blocked_by_policy") {
+    await callTelegram(token, "sendMessage", {
+      chat_id: chatId,
+      text: "Publication was blocked by the current excluded-topic policy. Nothing was sent to the news channel.",
+    });
+    return {
+      draftId: result.draftId ?? result.draft?.id,
+      auditResult: `Draft ${result.draftId ?? result.draft?.id ?? "unknown"} was blocked by excluded-topic policy; no publication was sent.`,
+    };
+  }
   const delivered = await deliverReviewDraft({
     token,
     channelId,
@@ -851,7 +863,7 @@ function reviewMarkup(sessionId) {
 async function handleReviewCallback(
   callback,
   parsed,
-  { token, channelId, repository, callTelegram, publishDraft },
+  { token, channelId, repository, callTelegram, publishDraft, aiProvider },
 ) {
   const chatId = callback?.message?.chat?.id;
   const messageId = callback?.message?.message_id;
@@ -928,9 +940,11 @@ async function handleReviewCallback(
   try {
     published = await publishDraft({
       repository,
+      aiProvider,
       token,
       channelId,
       draftId: decision.draft_id,
+      publicationPath: "manual_review",
     });
   } catch (error) {
     if (/unresolved/i.test(error?.message ?? "")) {
@@ -940,6 +954,18 @@ async function handleReviewCallback(
       );
     }
     throw error;
+  }
+  if (
+    published.status === "blocked" ||
+    published.status === "already_blocked"
+  ) {
+    await callTelegram(token, "sendMessage", {
+      chat_id: chatId,
+      text: "Publication was blocked by the current excluded-topic policy. Nothing was sent to the news channel.",
+    }).catch(() => {});
+    return {
+      auditResult: `Blocked draft ${decision.draft_id} by excluded-topic policy; no publication was sent.`,
+    };
   }
   await callTelegram(token, "sendMessage", {
     chat_id: chatId,

@@ -5,6 +5,7 @@ import {
   runScheduledNewsOnce,
 } from "../src/news-scheduler.js";
 import { NoResearchCandidatesError } from "../src/research.js";
+import { publishScheduledDraft } from "../src/scheduled-publication.js";
 
 const CLAIM = {
   telegram_channel_id: "@channel",
@@ -434,6 +435,44 @@ test("receipt failure does not rewrite a completed publication as failed", async
   const result = await runScheduledNewsOnce(dependencies);
   assert.equal(result.status, "published");
   assert.equal(calls.find(([name]) => name === "finish")[1].status, "published");
+});
+
+test("scheduler recovery routes a durably rejected policy block through the common publisher and finishes terminally", async () => {
+  const claim = {
+    ...CLAIM,
+    approval_policy: "automatic",
+    schedule_draft_id: "draft-blocked",
+    schedule_preview: "Blocked preview",
+    schedule_window_hours: 48,
+  };
+  const { calls, dependencies } = fixture({
+    repository: {
+      async claimDueNewsSchedule() { return claim; },
+      async getDraft() { return { id: "draft-blocked", status: "rejected" }; },
+      async findPublicationByDraft() { return null; },
+      async findPublicationPolicyBlockByDraft() {
+        return { id: "block-1", reason_code: "excluded_topic_main_subject" };
+      },
+    },
+  });
+  const repository = dependencies.repository;
+  dependencies.publishDraft = ({ draftId }) =>
+    publishScheduledDraft({
+      repository,
+      aiProvider: null,
+      token: "token",
+      channelId: "@channel",
+      draftId,
+    });
+
+  const result = await runScheduledNewsOnce(dependencies);
+
+  assert.equal(result.status, "blocked_by_policy");
+  assert.equal(
+    calls.find(([name]) => name === "finish")[1].status,
+    "blocked_by_policy",
+  );
+  assert.equal(calls.some(([name]) => name === "savePublication"), false);
 });
 
 test("scheduler contains a transient claim failure and continues to its backoff", async () => {

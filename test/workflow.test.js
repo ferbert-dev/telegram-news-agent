@@ -44,9 +44,31 @@ function fixture() {
     async findPublicationByDraft() {
       return null;
     },
+    async findPublicationPolicyBlockByDraft() {
+      return null;
+    },
+    async getDraft(id) {
+      return {
+        id,
+        article_id: "article-1",
+        body: "Article\n\nhttps://example.com/news",
+        status: "approved",
+        reviewer_notes: null,
+        articles: { id: "article-1", title: "Article" },
+      };
+    },
+    async getNewsSettings() {
+      return { version: 1, excluded_topic_codes: [] };
+    },
     async claimDraftForPublication(id) {
       calls.push(["claim", id]);
       return { id, body: "Article\n\nhttps://example.com/news" };
+    },
+    async claimDraftForPublicationWithPolicy({ draftId, channelId }) {
+      return {
+        outcome: "claimed",
+        draft: await this.claimDraftForPublication(draftId, channelId),
+      };
     },
     async finalizeDraftPublication(publication) {
       calls.push(["finalize", publication.draftId]);

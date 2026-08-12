@@ -106,10 +106,16 @@ export type ExcludedTopicPolicyInput = {
 };
 
 export type ExcludedTopicPolicyDecision =
-  | { decision: "allow" }
-  | { decision: "block"; reasonCode: string }
-  | { decision: "uncertain"; reasonCode: string }
-  | { decision: "error"; reasonCode: string };
+  | { decision: "allow"; usageEvents?: RecordAiUsageInput[] }
+  | {
+      decision: "block" | "uncertain" | "error";
+      reasonCode: string;
+      topicCode?: string;
+      provider?: string | null;
+      model?: string | null;
+      promptVersion?: string | null;
+      usageEvents?: RecordAiUsageInput[];
+    };
 
 export interface ExcludedTopicPublicationPolicy {
   evaluate(
@@ -121,6 +127,7 @@ export interface ExcludedTopicPublicationPolicy {
 export type PublishApprovedDraftInput = {
   draftId: string;
   channelId: string;
+  publicationPath?: import("./editorial-persistence.contracts.js").PublicationPath;
   signal?: AbortSignal;
 };
 
@@ -136,7 +143,7 @@ export type PublishApprovedDraftResult =
       alreadyPublished: true;
     }
   | {
-      status: "blocked" | "uncertain" | "policy_error";
+      status: "blocked" | "already_blocked";
       reasonCode: string;
       publication: null;
       draft: DraftRow;

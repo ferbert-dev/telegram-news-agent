@@ -1,4 +1,5 @@
 import { createDatabaseClient } from "./database.js";
+import { createAiProvider } from "./ai-provider.js";
 import { NewsRepository } from "./news-repository.js";
 import {
   getNotionAuditConfig,
@@ -89,10 +90,21 @@ async function execute(command, args) {
     const { token, channelId } = getTelegramConfig();
     const result = await publishApprovedDraft({
       repository,
+      createAiProvider,
       token,
       channelId,
       draftId: id,
+      publicationPath: "drafts_cli",
     });
+    if (
+      result.status === "blocked" ||
+      result.status === "already_blocked"
+    ) {
+      console.log(`Draft ${id} was blocked by the excluded-topic policy.`);
+      return {
+        auditResult: `Blocked draft ${id} by excluded-topic policy; no Telegram publication was sent.`,
+      };
+    }
     console.log(
       result.alreadyPublished
         ? `Draft was already published as message ${result.publication.telegram_message_id}.`

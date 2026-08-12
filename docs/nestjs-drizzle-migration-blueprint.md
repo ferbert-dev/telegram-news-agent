@@ -16,16 +16,16 @@ This is a query-layer and composition-root migration. It does **not** copy produ
 
 The baseline audit found:
 
-- 23 PostgreSQL tables: 22 application tables plus `schema_migrations`.
-- 23 foreign keys in the Drizzle schema snapshot.
-- 49 current PostgreSQL function names and 51 live signatures.
+- 24 PostgreSQL tables: 23 application tables plus `schema_migrations`.
+- 26 foreign keys in the Drizzle schema snapshot.
+- 52 current PostgreSQL function names and 54 live signatures.
   `update_news_settings` and the publication-claim function each intentionally
   retain one compatibility overload. A clean PostgreSQL 17 inventory corrected
   the earlier static count and remains authoritative for both overloads. The
   excluded-topic foundation adds one validator and one dedicated optimistic-CAS
   update without changing either `update_news_settings` signature.
-- 69 domain persistence methods and six infrastructure helpers in `NewsRepository`.
-- 31 domain paths suitable for typed Drizzle queries and 38 paths that should retain a PostgreSQL function as their atomic boundary.
+- 72 domain persistence methods and six infrastructure helpers in `NewsRepository`.
+- 32 domain paths suitable for typed Drizzle queries and 40 paths that should retain a PostgreSQL function as their atomic boundary.
 - Five public methods with no production call sites: `createDraft`,
   `recordPublication`, `transitionArticle`, `transitionDraft`, and
   `replaceArticleTopics`. They remain facade compatibility methods, not new
@@ -167,11 +167,11 @@ Do not compare writes by dual-writing production. Mutation parity runs only on i
 
 Before repository migration resumes, CI must create a clean PostgreSQL 17 database and produce a machine-readable inventory that verifies:
 
-- all 23 tables and 23 foreign keys;
+- all 24 tables and 26 foreign keys;
 - columns, PostgreSQL types, nullability and defaults;
 - primary, unique and check constraints;
 - expected and unexpected indexes, including partial indexes;
-- 49 function names, 51 signatures, return types, volatility, security mode and
+- 52 function names, 54 signatures, return types, volatility, security mode and
   configured search path; the two compatibility overloads for settings update
   and publication claim remain present alongside the excluded-topic validator
   and dedicated update function;

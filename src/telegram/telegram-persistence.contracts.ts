@@ -11,6 +11,7 @@ export type TelegramReviewDecision = "publish" | "reject";
 export type TelegramNewsCheckpointStatus =
   | "review_ready"
   | "published"
+  | "blocked_by_policy"
   | "no_candidates";
 
 export type TelegramUpdateClaimRow = {

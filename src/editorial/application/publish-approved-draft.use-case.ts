@@ -1,12 +1,18 @@
+import { createHash } from "node:crypto";
+
 import { Inject, Injectable } from "@nestjs/common";
 
 import type {
   DraftRow,
   EditorialPersistence,
+  PublicationPath,
+  PublicationPolicyClassification,
 } from "../editorial-persistence.contracts.js";
 import { EDITORIAL_PERSISTENCE } from "../editorial-persistence.tokens.js";
 import type { NewsSettingsPersistence } from "../../settings/settings.contracts.js";
 import { NEWS_SETTINGS_REPOSITORY } from "../../settings/settings.tokens.js";
+import type { UsageReportingPersistence } from "../../usage/usage-persistence.contracts.js";
+import { USAGE_REPORTING_PERSISTENCE } from "../../usage/usage-persistence.tokens.js";
 import type {
   EditorialPublicationGateway,
   ExcludedTopicPolicyDecision,
@@ -20,6 +26,8 @@ import {
   EXCLUDED_TOPIC_PUBLICATION_POLICY,
 } from "../editorial-application.tokens.js";
 
+const SAFE_IDENTIFIER = /^[A-Za-z0-9._:/-]{1,100}$/;
+
 function editorFromDraft(draft: DraftRow): unknown {
   try {
     const notes = JSON.parse(draft.reviewer_notes ?? "{}") as {
@@ -31,14 +39,9 @@ function editorFromDraft(draft: DraftRow): unknown {
   }
 }
 
-function deniedDecision(
-  decision: ExcludedTopicPolicyDecision,
-): decision is Exclude<ExcludedTopicPolicyDecision, { decision: "allow" }> {
-  return (
-    decision.decision === "block" ||
-    decision.decision === "uncertain" ||
-    decision.decision === "error"
-  );
+function safeIdentifier(value: string | null | undefined): string | null {
+  const normalized = value?.trim() ?? "";
+  return SAFE_IDENTIFIER.test(normalized) ? normalized : null;
 }
 
 function validatePolicyDecision(
@@ -64,27 +67,41 @@ export class PublishApprovedDraftUseCase {
     private readonly editorial: EditorialPersistence,
     @Inject(NEWS_SETTINGS_REPOSITORY)
     private readonly settings: NewsSettingsPersistence,
+    @Inject(USAGE_REPORTING_PERSISTENCE)
+    private readonly usage: UsageReportingPersistence,
     @Inject(EXCLUDED_TOPIC_PUBLICATION_POLICY)
     private readonly policy: ExcludedTopicPublicationPolicy,
     @Inject(EDITORIAL_PUBLICATION_GATEWAY)
     private readonly gateway: EditorialPublicationGateway,
   ) {}
 
-  private async releaseClaim(draftId: string): Promise<DraftRow> {
-    const released =
-      await this.editorial.releaseRejectedDraftPublication(draftId);
-    if (released === undefined) {
-      throw new Error(
-        "Publication claim release returned no draft; publication remains unresolved",
-      );
+  private async recordUsage(
+    decision: ExcludedTopicPolicyDecision,
+    draft: DraftRow,
+    channelId: string,
+  ): Promise<void> {
+    for (const event of decision.usageEvents ?? []) {
+      try {
+        await this.usage.recordAiUsage({
+          ...event,
+          telegramChannelId: channelId,
+          articleId: draft.article_id,
+        });
+      } catch {
+        // Usage accounting is best effort and must not change delivery state.
+      }
     }
-    return released;
   }
 
   async execute(
     input: PublishApprovedDraftInput,
   ): Promise<PublishApprovedDraftResult> {
-    const { draftId, channelId, signal } = input;
+    const {
+      draftId,
+      channelId,
+      signal,
+      publicationPath = "automatic",
+    } = input;
     signal?.throwIfAborted();
     const existing = await this.editorial.findPublicationByDraft(draftId);
     if (existing) {
@@ -95,63 +112,174 @@ export class PublishApprovedDraftUseCase {
       };
     }
 
-    const draft = await this.editorial.claimDraftForPublication(
-      draftId,
-      channelId,
-    );
-    if (draft === undefined) {
-      throw new Error(
-        "Draft is not publishable or was blocked as a duplicate story",
+    const existingBlock =
+      await this.editorial.findPublicationPolicyBlockByDraft(
+        draftId,
+        channelId,
       );
+    if (existingBlock) {
+      const draft = await this.editorial.getDraft(draftId);
+      return {
+        status: "already_blocked",
+        reasonCode: existingBlock.reason_code,
+        publication: null,
+        draft,
+      };
     }
 
-    let decision: ExcludedTopicPolicyDecision;
-    try {
+    let draft = await this.editorial.getDraft(draftId);
+    let claimed: DraftRow | null = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       signal?.throwIfAborted();
       const currentSettings = await this.settings.getNewsSettings(channelId);
       if (currentSettings === null) {
         throw new Error("Current publication settings are unavailable");
       }
-      decision = validatePolicyDecision(
-        await this.policy.evaluate(
-          {
-            draftId,
-            articleId: draft.article_id,
-            channelId,
-            content: { text: draft.body },
-            settings: {
-              version: currentSettings.version,
-              excludedTopicCodes: [...currentSettings.excluded_topic_codes],
-            },
-          },
-          signal,
-        ),
-      );
-      signal?.throwIfAborted();
-    } catch (error) {
-      const released = await this.releaseClaim(draftId);
-      if (signal?.aborted) signal.throwIfAborted();
-      return {
-        status: "policy_error",
-        reasonCode: "policy_error",
-        publication: null,
-        draft: released,
-      };
-    }
+      const outboundTextSha256 = createHash("sha256")
+        .update(draft.body, "utf8")
+        .digest("hex");
 
-    if (deniedDecision(decision)) {
-      const released = await this.releaseClaim(draftId);
-      return {
-        status:
+      let decision: ExcludedTopicPolicyDecision = { decision: "allow" };
+      if (currentSettings.excluded_topic_codes.length > 0) {
+        try {
+          decision = validatePolicyDecision(
+            await this.policy.evaluate(
+              {
+                draftId,
+                articleId: draft.article_id,
+                channelId,
+                content: { text: draft.body },
+                settings: {
+                  version: currentSettings.version,
+                  excludedTopicCodes: [
+                    ...currentSettings.excluded_topic_codes,
+                  ],
+                },
+              },
+              signal,
+            ),
+          );
+        } catch {
+          if (signal?.aborted) signal.throwIfAborted();
+          decision = {
+            decision: "error",
+            reasonCode: "excluded_topic_classifier_error",
+          };
+        }
+        await this.recordUsage(decision, draft, channelId);
+        signal?.throwIfAborted();
+      }
+
+      if (decision.decision !== "allow") {
+        const classification: PublicationPolicyClassification =
           decision.decision === "block"
-            ? "blocked"
+            ? "main_subject"
             : decision.decision === "uncertain"
               ? "uncertain"
-              : "policy_error",
-        reasonCode: decision.reasonCode,
-        publication: null,
-        draft: released,
-      };
+              : "classifier_error";
+        const reasonCode =
+          classification === "main_subject"
+            ? "excluded_topic_main_subject"
+            : classification === "uncertain"
+              ? "excluded_topic_uncertain"
+              : "excluded_topic_classifier_error";
+        const blocked = await this.editorial.blockDraftPublication({
+          draftId,
+          channelId,
+          stage: "final_publication",
+          publicationPath: publicationPath as PublicationPath,
+          topicCode:
+            decision.topicCode ?? currentSettings.excluded_topic_codes[0],
+          classification,
+          settingsVersion: currentSettings.version,
+          outboundText: draft.body,
+          outboundTextSha256,
+          provider: safeIdentifier(decision.provider),
+          model: safeIdentifier(decision.model),
+          promptVersion: safeIdentifier(decision.promptVersion),
+          reasonCode,
+        });
+        if (blocked.outcome === "stale_settings" && attempt === 0) {
+          draft = await this.editorial.getDraft(draftId);
+          continue;
+        }
+        if (
+          blocked.outcome === "blocked" ||
+          blocked.outcome === "already_blocked"
+        ) {
+          return {
+            status:
+              blocked.outcome === "blocked" ? "blocked" : "already_blocked",
+            reasonCode: blocked.reasonCode ?? reasonCode,
+            publication: null,
+            draft: { ...draft, status: "rejected" },
+          };
+        }
+        if (blocked.outcome === "already_published") {
+          const publication =
+            await this.editorial.findPublicationByDraft(draftId);
+          if (publication) {
+            return {
+              status: "already_published",
+              publication,
+              alreadyPublished: true,
+            };
+          }
+        }
+        throw new Error(`Publication policy block failed: ${blocked.outcome}`);
+      }
+
+      const claim =
+        await this.editorial.claimDraftForPublicationWithPolicy({
+          draftId,
+          channelId,
+          settingsVersion: currentSettings.version,
+          outboundTextSha256,
+        });
+      if (claim.outcome === "stale_settings" && attempt === 0) {
+        draft = await this.editorial.getDraft(draftId);
+        continue;
+      }
+      if (claim.outcome === "already_blocked") {
+        const block = await this.editorial.findPublicationPolicyBlockByDraft(
+          draftId,
+          channelId,
+        );
+        return {
+          status: "already_blocked",
+          reasonCode: block?.reason_code ?? "excluded_topic_uncertain",
+          publication: null,
+          draft: { ...draft, status: "rejected" },
+        };
+      }
+      if (claim.outcome === "already_published") {
+        const publication =
+          await this.editorial.findPublicationByDraft(draftId);
+        if (publication) {
+          return {
+            status: "already_published",
+            publication,
+            alreadyPublished: true,
+          };
+        }
+      }
+      if (claim.outcome !== "claimed" || claim.draft === null) {
+        throw new Error(`Draft is not publishable: ${claim.outcome}`);
+      }
+      const claimedHash = createHash("sha256")
+        .update(claim.draft.body, "utf8")
+        .digest("hex");
+      if (claimedHash !== outboundTextSha256) {
+        throw new Error(
+          "Publication claim returned content different from the classified outbound text",
+        );
+      }
+      claimed = claim.draft;
+      break;
+    }
+
+    if (claimed === null) {
+      throw new Error("Publication settings changed during the bounded retry");
     }
 
     let receipt;
@@ -159,7 +287,7 @@ export class PublishApprovedDraftUseCase {
       receipt = await this.gateway.publish(
         {
           channelId,
-          text: draft.body,
+          text: claimed.body,
           disableNotification: false,
         },
         signal,
@@ -169,7 +297,7 @@ export class PublishApprovedDraftUseCase {
         error instanceof PublicationDeliveryError &&
         error.outcome === "rejected"
       ) {
-        await this.releaseClaim(draftId);
+        await this.editorial.releaseRejectedDraftPublication(draftId);
         throw new Error(
           "Publication was rejected; draft was released for retry",
           { cause: error },
@@ -192,11 +320,11 @@ export class PublishApprovedDraftUseCase {
         draftId,
         channelId,
         messageId: receipt.messageId,
-        messageText: draft.body,
+        messageText: claimed.body,
         metadata: {
           bot_message_date: receipt.messageDate ?? null,
           approval: "database_approved",
-          editor: editorFromDraft(draft),
+          editor: editorFromDraft(claimed),
         },
       });
       if (publication === undefined) {

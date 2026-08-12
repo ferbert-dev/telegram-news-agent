@@ -29,6 +29,7 @@ import {
 } from "./news-search.js";
 import { runNewsScheduler } from "./news-scheduler.js";
 import { publishApprovedDraft } from "./publish.js";
+import { publishScheduledDraft as publishScheduledDraftWithPolicy } from "./scheduled-publication.js";
 import { runWorkflow } from "./workflow.js";
 
 const { token, channelId } = getTelegramConfig();
@@ -97,17 +98,13 @@ async function runScheduledNews(settings) {
 }
 
 async function publishScheduledDraft({ draftId }) {
-  const draft = await repository.getDraft(draftId);
-  if (draft.status === "review") {
-    await repository.approveDraft(draftId);
-  } else if (!["approved", "publishing", "published"].includes(draft.status)) {
-    throw new Error(`Scheduled draft ${draftId} is not publishable`);
-  }
-  return publishApprovedDraft({
+  return publishScheduledDraftWithPolicy({
     repository,
+    aiProvider,
     token,
     channelId,
     draftId,
+    publishDraft: publishApprovedDraft,
   });
 }
 
@@ -141,6 +138,7 @@ async function handleUpdate(update, { classification } = {}) {
       token,
       channelId,
       repository,
+      aiProvider,
       auditLogger,
       callTelegram,
       runNews,

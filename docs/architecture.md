@@ -113,15 +113,32 @@ identifiers, never article/provider payload text or URLs. When every acquired
 candidate or every selected evidence item is blocked, the existing search run
 is durably completed with zero results and sanitized `no_candidates` policy
 metadata before the domain outcome is returned to the scheduler/manual search.
-The final pre-publication veto remains a separate slice, so the UI does not
-claim complete publication protection.
+The checked-in final publication slice reclassifies the exact UTF-8 outbound
+body at the common approved-draft boundary before acquiring a publication
+claim. A version-CAS ties the allow decision to current settings; one bounded
+settings refresh and reclassification is permitted. `main_subject`,
+`uncertain`, malformed output, and provider failure atomically reject the
+draft/article and append a sanitized, idempotent policy block containing only
+the exact body SHA-256 and bounded policy metadata. Automatic, scheduled,
+manual-review, and drafts-CLI news sends converge through this boundary;
+admin/status/preview messages are intentionally not news publications. The
+former `telegram:send --send` escape hatch is disabled because it had no
+durable claim, receipt, or ambiguous-send reconciliation; the command remains
+an offline preview tool. Scheduled recovery permits a policy-rejected draft to
+re-enter the common publisher only so its durable block can be replayed as the
+terminal `already_blocked` outcome without a Telegram send. An
+empty exclusion array bypasses the classifier and block audit exactly. This is
+repository/integration state, not evidence of production deployment.
 
-Operational rollback is application-image-first. If immediate behavior parity
-is needed before an image rollback, setting the exclusion-code array to `[]`
-skips deterministic checks, classifier calls, policy usage events, and policy
-logs. Provider-only search also retains its byte-equivalent legacy system
-instruction and JSON payload, with no `excludedTopics` field. The existing
-manual review and publication state machine are unchanged.
+Operational rollback is application-image-first because the migration is
+additive and retains the old one- and two-argument publication-claim overloads
+for the N-1 image. If immediate behavior parity is needed before an image
+rollback, setting the exclusion-code array to `[]` skips discovery and final
+classifier calls, policy usage events, and block audits. Provider-only search
+also retains its byte-equivalent legacy system instruction and JSON payload,
+with no `excludedTopics` field. Manual approval remains required where already
+configured; the new final veto only adds a terminal safety outcome before a
+news send.
 
 ### Database access
 
