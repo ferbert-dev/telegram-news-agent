@@ -176,6 +176,14 @@ test("Labs home and article detail render all unambiguous states", () => {
       renderLabsText(rows, "editorial_enrichment"),
       new RegExp(`Current status: ${label}`),
     );
+    assert.match(
+      renderLabsText(rows, "editorial_enrichment"),
+      /compares the result with the baseline/,
+    );
+    assert.match(
+      renderLabsText(rows, "editorial_enrichment"),
+      /90–140 word target/,
+    );
   }
   const allButtons = renderLabsKeyboard(featureRows())
     .flat()

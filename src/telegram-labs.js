@@ -179,6 +179,7 @@ export function renderLabsText(rows, page = "home") {
       "Collect only — generate and store both versions, but keep the baseline as the review body.",
       "Enabled — generate both versions and use the enriched article as the review body.",
       "",
+      "The editor enforces a grounded hook, causal arc, reader significance, and a 90–140 word target. It compares the result with the baseline and may make one additional grounded rewrite when they are too similar.",
       "The step uses full extracted evidence. It may make one narrow fact search only when necessary; searched facts must keep a source link and evidence mapping.",
       "Changes take effect immediately.",
     ].join("\n");

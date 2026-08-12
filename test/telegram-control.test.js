@@ -476,6 +476,15 @@ test("manual review shows the alternate editorial version before approval contro
         selected_version: "enriched",
         baseline_draft: { telegramText: baseline },
         enriched_draft: { telegramText: enriched },
+        quality: {
+          reader_angle: "Show why the practical result matters now.",
+          final_similarity: 0.31,
+          retry_attempted: true,
+          retry_status: "selected",
+          word_count: 112,
+          target_min_words: 90,
+          target_max_words: 140,
+        },
       },
     }),
   };
@@ -483,6 +492,8 @@ test("manual review shows the alternate editorial version before approval contro
     alternateLabel: "Grounded baseline (for comparison)",
     alternateBody: baseline,
     selectedLabel: "Enriched version (selected for approval)",
+    qualitySummary:
+      "Reader angle: Show why the practical result matters now.\nLexical similarity to baseline: 31%; rewrite selected\nEditorial length: 112 words (target 90–140)",
   });
 
   const result = await deliverReviewDraft({
@@ -516,6 +527,8 @@ test("manual review shows the alternate editorial version before approval contro
   assert.equal(messages.length, 2);
   assert.match(messages[0][1].text, /Grounded baseline/);
   assert.match(messages[0][1].text, /Baseline grounded draft/);
+  assert.match(messages[0][1].text, /Lexical similarity to baseline: 31%/);
+  assert.match(messages[0][1].text, /Editorial length: 112 words/);
   assert.equal(messages[0][1].reply_markup, undefined);
   assert.equal(messages[1][1].text, enriched);
   assert.ok(messages[1][1].reply_markup.inline_keyboard.length);
