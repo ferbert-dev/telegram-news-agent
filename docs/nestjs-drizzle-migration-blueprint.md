@@ -2,7 +2,8 @@
 
 Status: Drizzle persistence and legacy-facade parity are complete. Reversible
 NestJS application services now cover Usage, Settings, Catalog/Research,
-Operations and Editorial; production composition and entrypoints remain legacy.
+Operations, Editorial and Telegram control; production composition and
+entrypoints remain legacy.
 
 Notion Epic: [Engineer Telegram News Agent into a modular NestJS platform](https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb)
 
@@ -124,6 +125,17 @@ facade imports persistence modules only.
 - `NotionAuditDeliveryService` enqueues and sequentially replays the durable
   audit outbox through a Symbol-bound outbound gateway. Claim ordering,
   `SKIP LOCKED`, completion and retry/backoff remain PostgreSQL-owned.
+- `TelegramControlApplicationModule` exposes a Symbol-backed transport-neutral
+  update router for checkpointed `/news`, settings, Labs, usage stats, manual
+  review decisions and review-session recovery. Required semantic presentation
+  runs before a claimed update is completed. Legacy callback acknowledgements
+  and manual-review policy-block notices remain best effort; an automatic
+  `/news` policy-block notice is required and retryable. Update claims, checkpoints,
+  expiry/rebind and double-tap decisions stay behind the existing typed
+  PostgreSQL persistence ports. The Telegram Bot API gateway owns admin checks,
+  raw API payloads, outcome rendering and review controls. Settings, Labs and
+  stats have additive adapters over their verified legacy transport flows; the
+  new slice remains deliberately unwired from the authoritative legacy poller.
 - Telegram is a transport adapter. Research and editorial core code do not import Telegram.
 - OpenAI and Gemini remain behind the existing AI-provider interface.
 - The first Nest runtime uses `createApplicationContext`; no HTTP listener is added.
