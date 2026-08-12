@@ -80,6 +80,13 @@ function fixture() {
     },
     model: "test",
     ownerId: "00000000-0000-4000-8000-000000000001",
+    newsSettings: {
+      languageCode: "en",
+      topicCodes: ["ai"],
+      customTopics: [],
+      excludedTopicCodes: [],
+      version: 1,
+    },
     now: new Date("2026-06-27T12:00:00Z"),
     fetchFeedImpl: async () => [
       {

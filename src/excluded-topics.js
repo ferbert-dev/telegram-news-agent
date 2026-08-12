@@ -76,8 +76,8 @@ function normalizeAssessments(value, topicCodes) {
 
 /**
  * Provider-neutral evaluator contract. The caller supplies a classifier; this
- * module only bounds its request and fails closed to `uncertain`. It is not
- * connected to research, curation, drafting, approval, or publication here.
+ * module only bounds its request and fails closed to `uncertain`. Provider
+ * selection, policy decisions, and pipeline wiring remain caller-owned.
  */
 export async function evaluateExcludedTopics({
   article,

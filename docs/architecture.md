@@ -23,9 +23,11 @@ Collects, normalizes, summarizes, and formats candidate news items.
 ```text
 PostgreSQL topic/source registry
   -> active RSS/Atom feeds + GDELT
-  -> normalize, deduplicate, and rank
+  -> normalize and apply the excluded-topic discovery policy
+  -> deduplicate and rank only eligible candidates
   -> tool-free AI editorial curation
   -> direct article extraction
+  -> recheck selected full evidence against excluded topics
   -> grounded draft
 
 No fresh candidates
@@ -83,8 +85,34 @@ publication policy, interval, night-pause state, and schedule state.
 Excluded-topic codes are a bounded taxonomy rather than free-form instructions.
 Their dedicated optimistic-CAS mutation keeps all existing settings function
 signatures compatible; an empty array is an explicit incident kill switch.
-The settings UI describes this as a preference because the foundation does not
-yet connect classification to research or publication.
+The settings UI describes this as a preference. When codes are configured,
+every acquisition path reaches one policy before ranking: only unmistakable
+current conflict-event title patterns may be blocked deterministically, while
+all other candidates use the configured provider/model and the provider-neutral
+structured classifier. `main_subject`, `uncertain`, malformed output, and
+provider exhaustion are ineligible; `incidental` and `unrelated` remain
+eligible. Tool-free curation receives only eligible IDs and cannot introduce a
+new one. The selected full extracted evidence, or the persisted source summary
+fallback, is rechecked before drafting; a blocked article is rejected with
+sanitized policy metadata and the next ranked candidate is attempted. Provider
+usage returned by a completed structured response is recorded in the existing
+ledger, including responses rejected for invalid curation IDs. A provider
+attempt that throws before exposing usage cannot be reconstructed or recorded,
+so a failed first fallback attempt may be absent from the ledger. Policy audit
+data contains counts, codes, stages, prompt version, and bounded provider/model
+identifiers, never article/provider payload text or URLs. When every acquired
+candidate or every selected evidence item is blocked, the existing search run
+is durably completed with zero results and sanitized `no_candidates` policy
+metadata before the domain outcome is returned to the scheduler/manual search.
+The final pre-publication veto remains a separate slice, so the UI does not
+claim complete publication protection.
+
+Operational rollback is application-image-first. If immediate behavior parity
+is needed before an image rollback, setting the exclusion-code array to `[]`
+skips deterministic checks, classifier calls, policy usage events, and policy
+logs. Provider-only search also retains its byte-equivalent legacy system
+instruction and JSON payload, with no `excludedTopics` field. The existing
+manual review and publication state machine are unchanged.
 
 ### Database access
 
