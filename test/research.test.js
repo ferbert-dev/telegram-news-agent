@@ -577,6 +577,27 @@ test("runResearch saves a validated discovered RSS feed before article-search fa
         articleSearchCalls += 1;
         return { provider: "openai", model: "test", items: [] };
       },
+      async generateStructured(request) {
+        if (request.schemaName === "news_candidate_curation") {
+          return {
+            provider: "openai",
+            model: "gpt-5.4-2026-03-05",
+            usageEvents: [],
+            value: { rankedCandidateIds: ["candidate-1"] },
+          };
+        }
+        assert.equal(request.schemaName, "excluded_topic_classification");
+        return {
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+          usageEvents: [],
+          value: {
+            assessments: [
+              { topicCode: "war_conflict", relation: "unrelated" },
+            ],
+          },
+        };
+      },
     },
     fetchFeedImpl: async () => [
       candidate({
@@ -599,6 +620,10 @@ test("runResearch saves a validated discovered RSS feed before article-search fa
   assert.equal(result.selected.source.id, "source-discovered");
   assert.equal(result.selected.verificationStatus, "web_source");
   assert.equal(finished.metadata.source_discovery.count, 1);
+  assert.deepEqual(
+    finished.metadata.excluded_topic_policy.stages.map(({ stage }) => stage),
+    ["discovery", "discovered_feed", "selected_evidence"],
+  );
 });
 
 test("runResearch uses tool-free AI curation to choose among feed candidates", async () => {
@@ -658,9 +683,77 @@ test("runResearch uses tool-free AI curation to choose among feed candidates", a
   assert.equal(finished.metadata.free_discovery.feed_candidate_count, 2);
 });
 
+test("invalid curation IDs still persist returned usage once before safe ranking fallback", async () => {
+  const usageWrites = [];
+  let finished;
+  const repository = {
+    async startSearchRun() { return { id: "run-invalid-curation-usage" }; },
+    async listEnabledSources() { return [PRIMARY_SOURCE]; },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(value) {
+      return { id: "invalid-curation-article", ...value };
+    },
+    async saveRawContent() {},
+    async recordAiUsage(value) {
+      usageWrites.push(value);
+      return value;
+    },
+    async finishSearchRun(_id, details) { finished = details; },
+    async failSearchRun() {},
+  };
+  const result = await runResearch({
+    repository,
+    query: "AI news",
+    now: NOW,
+    newsSettings: {
+      languageCode: "en",
+      topicCodes: ["ai"],
+      customTopics: [],
+      excludedTopicCodes: [],
+      version: 4,
+    },
+    fetchFeedImpl: async () => [candidate()],
+    discoveryProvider: {
+      async generateStructured() {
+        return {
+          value: {
+            rankedCandidateIds: ["candidate-1", "candidate-1"],
+          },
+          provider: "configured-provider",
+          model: "configured-model",
+          usageEvents: [
+            {
+              provider: "configured-provider",
+              providerResponseId: "curation-invalid-response",
+              model: "configured-model",
+              operation: "feed_candidate_curation",
+              inputTokens: 10,
+              outputTokens: 2,
+            },
+          ],
+        };
+      },
+    },
+    fetchArticleImpl: async (url) => ({
+      text: "Full verified evidence.",
+      contentHash: "invalid-curation-evidence",
+      finalUrl: url,
+    }),
+  });
+
+  assert.equal(result.selected.article.id, "invalid-curation-article");
+  assert.equal(usageWrites.length, 1);
+  assert.equal(usageWrites[0].providerResponseId, "curation-invalid-response");
+  assert.equal(
+    finished.metadata.candidate_curation.error,
+    "invalid_candidate_ids",
+  );
+});
+
 test("non-AI settings skip static AI feeds and allow provider-only research", async () => {
   let feedCalled = false;
   let providerRequest;
+  let finished;
   const rawWrites = [];
   const repository = {
     async startSearchRun(input) {
@@ -677,7 +770,9 @@ test("non-AI settings skip static AI feeds and allow provider-only research", as
     async saveRawContent(content) {
       rawWrites.push(content);
     },
-    async finishSearchRun() {},
+    async finishSearchRun(_id, details) {
+      finished = details;
+    },
     async failSearchRun() {},
   };
 
@@ -712,6 +807,19 @@ test("non-AI settings skip static AI feeds and allow provider-only research", as
           ],
         };
       },
+      async generateStructured(request) {
+        assert.equal(request.schemaName, "excluded_topic_classification");
+        return {
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+          usageEvents: [],
+          value: {
+            assessments: [
+              { topicCode: "war_conflict", relation: "unrelated" },
+            ],
+          },
+        };
+      },
     },
     fetchArticleImpl: async (url) => ({
       text: "Direct evidence from the nature article.",
@@ -725,9 +833,85 @@ test("non-AI settings skip static AI feeds and allow provider-only research", as
   assert.equal(providerRequest.languageCode, "uk");
   assert.deepEqual(providerRequest.topicCodes, ["nature", "animals"]);
   assert.deepEqual(providerRequest.customTopics, ["Морська біологія"]);
+  assert.deepEqual(providerRequest.excludedTopics, [
+    {
+      code: "war_conflict",
+      description:
+        "War, armed conflict, combat operations, military attacks, and their direct consequences.",
+    },
+  ]);
   assert.equal(result.selected.title, "Нове дослідження тварин");
   assert.equal(rawWrites[0].language_code, "uk");
   assert.equal(rawWrites[1].language_code, null);
+  assert.deepEqual(
+    finished.metadata.excluded_topic_policy.stages.map(({ stage }) => stage),
+    ["discovery", "provider_search", "selected_evidence"],
+  );
+});
+
+test("provider-only research with empty exclusions omits excludedTopics exactly", async () => {
+  let providerRequest;
+  const repository = {
+    async startSearchRun() { return { id: "run-provider-empty-exclusions" }; },
+    async listEnabledSources() { return [PRIMARY_SOURCE]; },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(value) {
+      return { id: "provider-empty-exclusions-article", ...value };
+    },
+    async saveRawContent() {},
+    async finishSearchRun() {},
+    async failSearchRun() {},
+  };
+  const result = await runResearch({
+    repository,
+    query: "Nature news",
+    now: NOW,
+    newsSettings: {
+      languageCode: "en",
+      topicCodes: ["nature"],
+      customTopics: [],
+      excludedTopicCodes: [],
+      version: 3,
+    },
+    fetchFeedImpl: async () => {
+      throw new Error("non-AI settings must skip the static AI feed");
+    },
+    discoveryProvider: {
+      async searchNews(request) {
+        providerRequest = request;
+        return {
+          provider: "openai",
+          model: "configured-model",
+          usageEvents: [],
+          items: [
+            {
+              title: "A verified nature result",
+              url: "https://nature.example.org/result",
+              summary: "Researchers published a verified result.",
+              publishedAt: "2026-06-26T20:00:00Z",
+            },
+          ],
+        };
+      },
+    },
+    fetchArticleImpl: async (url) => ({
+      text: "Full verified nature evidence.",
+      contentHash: "nature-empty-exclusions",
+      finalUrl: url,
+    }),
+    retryImpl: (operation) => operation(),
+  });
+
+  assert.equal(result.selected.article.id, "provider-empty-exclusions-article");
+  assert.equal(Object.hasOwn(providerRequest, "excludedTopics"), false);
+  assert.deepEqual(providerRequest, {
+    query: "Nature news",
+    windowHours: 48,
+    limit: 8,
+    languageCode: "en",
+    topicCodes: ["nature"],
+    customTopics: [],
+  });
 });
 
 test("custom-only settings use free GDELT discovery before paid providers", async () => {
@@ -767,6 +951,7 @@ test("custom-only settings use free GDELT discovery before paid providers", asyn
       languageCode: "en",
       topicCodes: [],
       customTopics: ["Ocean exploration"],
+      excludedTopicCodes: [],
       version: 1,
     },
     fetchGdeltImpl: async (_url, options) => {
@@ -906,4 +1091,770 @@ test("runResearch does not reset or redraft an existing canonical URL", async ()
   );
   assert.equal(extractionCalled, false);
   assert.equal(failedMessage, "No new news articles were found");
+});
+
+test("excluded-topic policy filters aggregated feed candidates before ranking and curation", async () => {
+  const persisted = [];
+  let curationRequest;
+  let finished;
+  const repository = {
+    async startSearchRun() { return { id: "run-policy-before-ranking" }; },
+    async listEnabledSources() { return [PRIMARY_SOURCE]; },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(value) {
+      persisted.push(value);
+      return { id: `article-${persisted.length}`, ...value };
+    },
+    async saveRawContent() {},
+    async finishSearchRun(_id, details) { finished = details; },
+    async failSearchRun() {},
+  };
+  const result = await runResearch({
+    repository,
+    query: "world news",
+    now: NOW,
+    newsSettings: {
+      languageCode: "en",
+      topicCodes: ["ai"],
+      customTopics: [],
+      excludedTopicCodes: ["war_conflict"],
+      version: 7,
+    },
+    fetchFeedImpl: async () => [
+      candidate({
+        title: "Missile strike kills three civilians in overnight attack",
+        canonicalUrl: "https://example.com/blocked-conflict",
+        contentHash: "blocked-conflict",
+      }),
+      candidate({
+        title: "Quantum sensor detects a new material phase",
+        canonicalUrl: "https://example.com/quantum-sensor",
+        summary: "Researchers verified the measurement independently.",
+        contentHash: "quantum-sensor",
+      }),
+    ],
+    discoveryProvider: {
+      async generateStructured(request) {
+        if (request.schemaName === "excluded_topic_classification") {
+          return {
+            value: {
+              assessments: [
+                { topicCode: "war_conflict", relation: "unrelated" },
+              ],
+            },
+            provider: "configured-provider",
+            model: "configured-model",
+            usageEvents: [],
+          };
+        }
+        curationRequest = request;
+        return {
+          value: { rankedCandidateIds: ["candidate-1"] },
+          provider: "configured-provider",
+          model: "configured-model",
+          usageEvents: [],
+        };
+      },
+    },
+    fetchArticleImpl: async (url) => ({
+      text: "Verified scientific evidence without conflict content.",
+      contentHash: "scientific-evidence",
+      finalUrl: url,
+    }),
+    retryImpl: (operation) => operation(),
+  });
+
+  assert.equal(result.selected.canonicalUrl, "https://example.com/quantum-sensor");
+  assert.equal(persisted.length, 1);
+  assert.equal(curationRequest.input.candidates.length, 1);
+  assert.equal(
+    curationRequest.input.candidates[0].title,
+    "Quantum sensor detects a new material phase",
+  );
+  assert.equal(finished.metadata.excluded_topic_policy.blocked_count, 1);
+  assert.equal(
+    JSON.stringify(finished.metadata.excluded_topic_policy).includes(
+      "Missile strike",
+    ),
+    false,
+  );
+});
+
+for (const acquisitionKind of ["reddit", "gdelt"]) {
+  test(`${acquisitionKind} candidates are policy-filtered before persistence and extraction`, async () => {
+    const logs = [];
+    let persisted = 0;
+    let extracted = 0;
+    let finished;
+    const apiSource =
+      acquisitionKind === "reddit"
+        ? {
+            id: "source-reddit",
+            name: "Reddit discovery",
+            homepage_url: "https://www.reddit.com/",
+            feed_url: "https://www.reddit.com/r/worldnews/new.json",
+            source_type: "api",
+            reliability_score: 40,
+            is_primary: false,
+            topic_codes: ["ai"],
+          }
+        : {
+            id: "source-gdelt-policy",
+            name: "GDELT DOC 2.0",
+            homepage_url: "https://www.gdeltproject.org/",
+            feed_url: "https://api.gdeltproject.org/api/v2/doc/doc",
+            source_type: "api",
+            reliability_score: 75,
+            is_primary: false,
+            topic_codes: ["ai"],
+          };
+    const repository = {
+      async startSearchRun() {
+        return { id: `run-${acquisitionKind}-policy` };
+      },
+      async listEnabledSources() {
+        return acquisitionKind === "reddit"
+          ? [PRIMARY_SOURCE, apiSource]
+          : [apiSource];
+      },
+      async markSourceChecked() {},
+      async createOrResumeArticleCandidate() {
+        persisted += 1;
+      },
+      async finishSearchRun(_id, details) { finished = details; },
+      async failSearchRun() {
+        throw new Error("must not fail a policy-filtered terminal run");
+      },
+    };
+    const blockedCandidate = candidate({
+      title: "Missile strike kills three civilians in overnight attack",
+      canonicalUrl: "https://example.com/current-conflict-event",
+      contentHash: `${acquisitionKind}-conflict-event`,
+      discoveryKind: acquisitionKind,
+    });
+    const discoveryProvider =
+      acquisitionKind === "reddit"
+        ? {
+            async searchNews() {
+              return {
+                provider: "openai",
+                model: "configured-model",
+                items: [],
+                usageEvents: [],
+              };
+            },
+          }
+        : undefined;
+
+    await assert.rejects(
+      runResearch({
+        repository,
+        query: "world news",
+        now: NOW,
+        newsSettings: {
+          languageCode: "en",
+          topicCodes: ["ai"],
+          customTopics: [],
+          excludedTopicCodes: ["war_conflict"],
+          version: 7,
+        },
+        fetchFeedImpl: async () => [],
+        fetchRedditImpl: async () => [blockedCandidate],
+        fetchGdeltImpl: async () => [blockedCandidate],
+        fetchArticleImpl: async () => {
+          extracted += 1;
+          throw new Error("blocked candidate must not be extracted");
+        },
+        discoveryProvider,
+        retryImpl: (operation) => operation(),
+        log: { info(value) { logs.push(JSON.parse(value)); } },
+      }),
+      /excluded-topic policy/,
+    );
+
+    assert.equal(persisted, 0);
+    assert.equal(extracted, 0);
+    assert.equal(logs[0].stage, "discovery");
+    assert.equal(logs[0].deterministicBlockedCount, 1);
+    assert.equal(finished.resultCount, 0);
+    assert.equal(finished.metadata.status, "no_candidates");
+    assert.equal(finished.metadata.reason, "excluded_topic_policy");
+    assert.equal(finished.metadata.terminal_stage, "acquisition");
+    assert.equal(finished.metadata.excluded_topic_policy.blocked_count, 1);
+    assert.equal(
+      JSON.stringify(finished.metadata).includes("current-conflict-event"),
+      false,
+    );
+  });
+}
+
+test("selected full evidence is reclassified, safely rejected, and research continues deterministically", async () => {
+  const transitions = [];
+  const usageWrites = [];
+  let articleSequence = 0;
+  let finished;
+  const repository = {
+    async startSearchRun() { return { id: "run-policy-evidence-recheck" }; },
+    async listEnabledSources() { return [PRIMARY_SOURCE]; },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(value) {
+      articleSequence += 1;
+      return { id: `policy-article-${articleSequence}`, ...value };
+    },
+    async saveRawContent() {},
+    async transitionArticle(...args) { transitions.push(args); },
+    async recordAiUsage(value) { usageWrites.push(value); return value; },
+    async finishSearchRun(_id, details) { finished = details; },
+    async failSearchRun() {},
+  };
+  const first = candidate({
+    title: "City publishes an overnight situation report",
+    canonicalUrl: "https://example.com/a-situation-report",
+    summary: "Officials released a short update.",
+    contentHash: "situation-report",
+  });
+  const second = candidate({
+    title: "Scientists map a deep-sea coral nursery",
+    canonicalUrl: "https://example.com/b-coral-nursery",
+    summary: "The habitat contains hundreds of new coral colonies.",
+    contentHash: "coral-nursery",
+  });
+  const result = await runResearch({
+    repository,
+    query: "world news",
+    now: NOW,
+    newsSettings: {
+      languageCode: "en",
+      topicCodes: ["ai"],
+      customTopics: [],
+      excludedTopicCodes: ["war_conflict"],
+      version: 8,
+    },
+    fetchFeedImpl: async () => [first, second],
+    discoveryProvider: {
+      async generateStructured(request) {
+        if (request.schemaName === "news_candidate_curation") {
+          return {
+            value: {
+              rankedCandidateIds: ["candidate-1", "candidate-2"],
+            },
+            provider: "configured-provider",
+            model: "configured-model",
+            usageEvents: [],
+          };
+        }
+        assert.equal(request.schemaName, "excluded_topic_classification");
+        const isConflictEvidence = /combat operations/i.test(
+          request.input.article.text,
+        );
+        return {
+          value: {
+            assessments: [
+              {
+                topicCode: "war_conflict",
+                relation: isConflictEvidence ? "main_subject" : "unrelated",
+              },
+            ],
+          },
+          provider: "configured-provider",
+          model: "configured-model",
+          usageEvents: [
+            {
+              provider: "configured-provider",
+              model: "configured-model",
+              operation: "excluded_topic_classification",
+            },
+          ],
+        };
+      },
+    },
+    fetchArticleImpl: async (url) => ({
+      text: url.includes("situation-report")
+        ? "The full report is substantially about military combat operations."
+        : "Scientists documented coral colonies using verified survey data.",
+      contentHash: `evidence-${url}`,
+      finalUrl: url,
+    }),
+    retryImpl: (operation) => operation(),
+  });
+
+  assert.equal(result.selected.canonicalUrl, second.canonicalUrl);
+  assert.deepEqual(transitions[0].slice(0, 3), [
+    "policy-article-1",
+    "discovered",
+    "rejected",
+  ]);
+  assert.deepEqual(
+    transitions[0][3].metadata.excluded_topic_policy,
+    {
+      stage: "selected_evidence",
+      policy_codes: ["war_conflict"],
+      prompt_version: "excluded-topics-v1",
+      reason: "semantic_main_subject",
+      policy_code: "war_conflict",
+    },
+  );
+  assert.equal(usageWrites.length, 4);
+  assert.ok(
+    usageWrites.every(
+      (entry) => entry.operation === "excluded_topic_classification",
+    ),
+  );
+  assert.equal(usageWrites[0].articleId, null);
+  assert.equal(usageWrites[1].articleId, null);
+  assert.equal(usageWrites[2].articleId, "policy-article-1");
+  assert.equal(usageWrites[3].articleId, "policy-article-2");
+  assert.equal(
+    finished.metadata.excluded_topic_policy.evidence_blocked_count,
+    1,
+  );
+});
+
+for (const evidencePath of [
+  "full_extraction",
+  "community_summary",
+  "web_summary_fallback",
+  "feed_summary_fallback",
+]) {
+  test(`${evidencePath} policy transition failure propagates without a false durable rejection`, async () => {
+    const transitionFailure = new Error(
+      `transition persistence failed for ${evidencePath}`,
+    );
+    let failedWith;
+    let finishCalls = 0;
+    let transitionCalls = 0;
+    let policyCalls = 0;
+    let fetchCalls = 0;
+    const repository = {
+      async startSearchRun() { return { id: `run-${evidencePath}-transition` }; },
+      async listEnabledSources() { return [PRIMARY_SOURCE]; },
+      async markSourceChecked() {},
+      async createOrResumeArticleCandidate(value) {
+        return { id: `${evidencePath}-article`, ...value };
+      },
+      async saveRawContent() {},
+      async transitionArticle() {
+        transitionCalls += 1;
+        throw transitionFailure;
+      },
+      async finishSearchRun() { finishCalls += 1; },
+      async failSearchRun(_id, error) { failedWith = error; },
+    };
+    const input = candidate({
+      title: "City publishes a situation report",
+      summary: "The evidence is substantially about combat operations.",
+      contentHash: `${evidencePath}-hash`,
+      ...(evidencePath === "community_summary" ? { unverified: true } : {}),
+      ...(evidencePath === "web_summary_fallback"
+        ? { verificationStatus: "web_source" }
+        : {}),
+    });
+
+    await assert.rejects(
+      runResearch({
+        repository,
+        query: "world news",
+        now: NOW,
+        newsSettings: {
+          languageCode: "en",
+          topicCodes: ["ai"],
+          customTopics: [],
+          excludedTopicCodes: ["war_conflict"],
+          version: 14,
+        },
+        fetchFeedImpl: async () => [input],
+        discoveryProvider: {
+          async generateStructured(request) {
+            if (request.schemaName === "news_candidate_curation") {
+              return {
+                value: { rankedCandidateIds: ["candidate-1"] },
+                usageEvents: [],
+              };
+            }
+            policyCalls += 1;
+            return {
+              value: {
+                assessments: [
+                  {
+                    topicCode: "war_conflict",
+                    relation: policyCalls === 1 ? "unrelated" : "main_subject",
+                  },
+                ],
+              },
+              provider: "configured-provider",
+              model: "configured-model",
+              usageEvents: [],
+            };
+          },
+        },
+        fetchArticleImpl: async (url) => {
+          fetchCalls += 1;
+          if (evidencePath.endsWith("fallback")) {
+            throw new Error("publisher extraction failed");
+          }
+          return {
+            text: "Full evidence substantially about combat operations.",
+            contentHash: `${evidencePath}-evidence`,
+            finalUrl: url,
+          };
+        },
+        retryImpl: (operation) => operation(),
+        log: { info() {} },
+      }),
+      (error) => error === transitionFailure,
+    );
+
+    assert.equal(failedWith, transitionFailure);
+    assert.equal(finishCalls, 0);
+    assert.equal(transitionCalls, 1);
+    assert.equal(policyCalls, 2);
+    assert.equal(fetchCalls, evidencePath === "community_summary" ? 0 : 1);
+  });
+}
+
+test("policy transition failure preserves failSearchRun replacement semantics", async () => {
+  const transitionFailure = new Error("transition persistence failed");
+  const failReplacement = new Error("failSearchRun replacement");
+  let failedWith;
+  await assert.rejects(
+    runResearch({
+      repository: {
+        async startSearchRun() { return { id: "run-transition-replacement" }; },
+        async listEnabledSources() { return [PRIMARY_SOURCE]; },
+        async markSourceChecked() {},
+        async createOrResumeArticleCandidate(value) {
+          return { id: "transition-replacement-article", ...value };
+        },
+        async saveRawContent() {},
+        async transitionArticle() { throw transitionFailure; },
+        async finishSearchRun() { throw new Error("must not finish"); },
+        async failSearchRun(_id, error) {
+          failedWith = error;
+          throw failReplacement;
+        },
+      },
+      query: "world news",
+      now: NOW,
+      newsSettings: {
+        languageCode: "en",
+        topicCodes: ["ai"],
+        customTopics: [],
+        excludedTopicCodes: ["war_conflict"],
+        version: 15,
+      },
+      fetchFeedImpl: async () => [
+        candidate({
+          title: "City publishes a situation report",
+          summary: "Officials published a report.",
+        }),
+      ],
+      discoveryProvider: {
+        async generateStructured(request) {
+          if (request.schemaName === "news_candidate_curation") {
+            return {
+              value: { rankedCandidateIds: ["candidate-1"] },
+              usageEvents: [],
+            };
+          }
+          const fullEvidence = /combat operations/i.test(
+            request.input.article.text,
+          );
+          return {
+            value: {
+              assessments: [
+                {
+                  topicCode: "war_conflict",
+                  relation: fullEvidence ? "main_subject" : "unrelated",
+                },
+              ],
+            },
+            usageEvents: [],
+          };
+        },
+      },
+      fetchArticleImpl: async (url) => ({
+        text: "Full evidence is about combat operations.",
+        contentHash: "transition-replacement-evidence",
+        finalUrl: url,
+      }),
+      retryImpl: (operation) => operation(),
+      log: { info() {} },
+    }),
+    (error) => error === failReplacement,
+  );
+  assert.equal(failedWith, transitionFailure);
+});
+
+test("all evidence blocked by policy is terminal no-candidates and no blocked fallback is selected", async () => {
+  const transitions = [];
+  let finished;
+  let articleSequence = 0;
+  const repository = {
+    async startSearchRun() { return { id: "run-policy-all-blocked" }; },
+    async listEnabledSources() { return [PRIMARY_SOURCE]; },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(value) {
+      articleSequence += 1;
+      return { id: `blocked-article-${articleSequence}`, ...value };
+    },
+    async saveRawContent() {},
+    async transitionArticle(...args) { transitions.push(args); },
+    async finishSearchRun(_id, details) { finished = details; },
+    async failSearchRun() {
+      throw new Error("must not fail a policy-filtered terminal run");
+    },
+  };
+  await assert.rejects(
+    runResearch({
+      repository,
+      query: "world news",
+      now: NOW,
+      newsSettings: {
+        languageCode: "en",
+        topicCodes: ["ai"],
+        customTopics: [],
+        excludedTopicCodes: ["war_conflict"],
+        version: 9,
+      },
+      fetchFeedImpl: async () => [
+        candidate({
+          title: "City releases report one",
+          canonicalUrl: "https://example.com/a-report",
+          summary: "Officials published a short report.",
+          contentHash: "a-report",
+        }),
+        candidate({
+          title: "City releases report two",
+          canonicalUrl: "https://example.com/b-report",
+          summary: "Officials published another short report.",
+          contentHash: "b-report",
+        }),
+      ],
+      discoveryProvider: {
+        async generateStructured(request) {
+          if (request.schemaName === "news_candidate_curation") {
+            return {
+              value: {
+                rankedCandidateIds: ["candidate-1", "candidate-2"],
+              },
+              usageEvents: [],
+            };
+          }
+          const isConflictEvidence = /Military combat operations/i.test(
+            request.input.article.text,
+          );
+          return {
+            value: {
+              assessments: [
+                {
+                  topicCode: "war_conflict",
+                  relation: isConflictEvidence ? "main_subject" : "unrelated",
+                },
+              ],
+            },
+            provider: "configured-provider",
+            model: "configured-model",
+            usageEvents: [],
+          };
+        },
+      },
+      fetchArticleImpl: async (url) => ({
+        text: `Military combat operations are the main subject of ${url}.`,
+        contentHash: `blocked-${url}`,
+        finalUrl: url,
+      }),
+      retryImpl: (operation) => operation(),
+    }),
+    /excluded-topic policy/,
+  );
+
+  assert.equal(finished.resultCount, 0);
+  assert.equal(finished.metadata.status, "no_candidates");
+  assert.equal(finished.metadata.reason, "excluded_topic_policy");
+  assert.equal(finished.metadata.terminal_stage, "selected_evidence");
+  assert.equal(
+    finished.metadata.excluded_topic_policy.evidence_blocked_count,
+    2,
+  );
+  assert.equal(JSON.stringify(finished.metadata).includes("a-report"), false);
+  assert.deepEqual(
+    transitions.map((entry) => entry.slice(0, 3)),
+    [
+      ["blocked-article-1", "discovered", "rejected"],
+      ["blocked-article-2", "discovered", "rejected"],
+    ],
+  );
+  assert.ok(
+    transitions.every(
+      (entry) =>
+        entry[3].metadata.excluded_topic_policy.reason ===
+          "semantic_main_subject" &&
+        entry[3].metadata.excluded_topic_policy.policy_code ===
+          "war_conflict",
+    ),
+  );
+});
+
+test("explicit empty exclusions preserve legacy research parity and emit no policy log", async () => {
+  const logs = [];
+  let finished;
+  const repository = {
+    async startSearchRun() { return { id: "run-policy-disabled" }; },
+    async listEnabledSources() { return [PRIMARY_SOURCE]; },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(value) {
+      return { id: "policy-disabled-article", ...value };
+    },
+    async saveRawContent() {},
+    async finishSearchRun(_id, details) { finished = details; },
+    async failSearchRun() {},
+  };
+  const result = await runResearch({
+    repository,
+    query: "world news",
+    now: NOW,
+    newsSettings: {
+      languageCode: "en",
+      topicCodes: ["ai"],
+      customTopics: [],
+      excludedTopicCodes: [],
+      version: 11,
+    },
+    fetchFeedImpl: async () => [
+      candidate({
+        title: "Missile strike kills three civilians in overnight attack",
+        canonicalUrl: "https://example.com/legacy-parity",
+        contentHash: "legacy-parity",
+      }),
+    ],
+    fetchArticleImpl: async (url) => ({
+      text: "Full article evidence.",
+      contentHash: "legacy-evidence",
+      finalUrl: url,
+    }),
+    retryImpl: (operation) => operation(),
+    log: { info(value) { logs.push(value); } },
+  });
+
+  assert.equal(result.selected.canonicalUrl, "https://example.com/legacy-parity");
+  assert.deepEqual(logs, []);
+  assert.equal(
+    Object.hasOwn(finished.metadata, "excluded_topic_policy"),
+    false,
+  );
+});
+
+test("policy logs contain only sanitized audit fields on classifier failure", async () => {
+  const sensitive = "raw-title-url-provider-secret";
+  const logs = [];
+  let finished;
+  const repository = {
+    async startSearchRun() { return { id: "run-policy-safe-log" }; },
+    async listEnabledSources() { return [PRIMARY_SOURCE]; },
+    async markSourceChecked() {},
+    async finishSearchRun(_id, details) { finished = details; },
+    async failSearchRun() {
+      throw new Error("must not fail a policy-filtered terminal run");
+    },
+  };
+  await assert.rejects(
+    runResearch({
+      repository,
+      query: "world news",
+      now: NOW,
+      newsSettings: {
+        languageCode: "en",
+        topicCodes: ["ai"],
+        customTopics: [],
+        excludedTopicCodes: ["war_conflict"],
+        version: 12,
+      },
+      fetchFeedImpl: async () => [
+        candidate({
+          title: `Military developments ${sensitive}`,
+          canonicalUrl: `https://${sensitive}.example/article`,
+          summary: `Combat reporting ${sensitive}`,
+          contentHash: sensitive,
+        }),
+      ],
+      discoveryProvider: {
+        async generateStructured() {
+          throw new Error(`provider payload ${sensitive}`);
+        },
+      },
+      retryImpl: (operation) => operation(),
+      log: { info(value) { logs.push(value); } },
+    }),
+    /excluded-topic policy/,
+  );
+
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].includes(sensitive), false);
+  const audit = JSON.parse(logs[0]);
+  assert.equal(audit.stage, "discovery");
+  assert.deepEqual(audit.policyCodes, ["war_conflict"]);
+  assert.equal(audit.semanticBlockedCount, 1);
+  assert.equal(audit.promptVersion, "excluded-topics-v1");
+  assert.equal(JSON.stringify(finished.metadata).includes(sensitive), false);
+});
+
+test("a failing policy logger cannot alter an eligible research decision", async () => {
+  const repository = {
+    async startSearchRun() { return { id: "run-policy-hostile-log" }; },
+    async listEnabledSources() { return [PRIMARY_SOURCE]; },
+    async markSourceChecked() {},
+    async createOrResumeArticleCandidate(value) {
+      return { id: "policy-hostile-log-article", ...value };
+    },
+    async saveRawContent() {},
+    async finishSearchRun() {},
+    async failSearchRun() {},
+  };
+  const result = await runResearch({
+    repository,
+    query: "science news",
+    now: NOW,
+    newsSettings: {
+      languageCode: "en",
+      topicCodes: ["ai"],
+      customTopics: [],
+      excludedTopicCodes: ["war_conflict"],
+      version: 13,
+    },
+    fetchFeedImpl: async () => [
+      candidate({
+        title: "Researchers validate a new sensor",
+        summary: "The independent result is unrelated to armed conflict.",
+      }),
+    ],
+    discoveryProvider: {
+      async generateStructured(request) {
+        if (request.schemaName === "news_candidate_curation") {
+          return {
+            value: { rankedCandidateIds: ["candidate-1"] },
+            usageEvents: [],
+          };
+        }
+        return {
+          value: {
+            assessments: [
+              { topicCode: "war_conflict", relation: "unrelated" },
+            ],
+          },
+          provider: "configured-provider",
+          model: "configured-model",
+          usageEvents: [],
+        };
+      },
+    },
+    fetchArticleImpl: async (url) => ({
+      text: "Verified sensor evidence unrelated to armed conflict.",
+      contentHash: "hostile-log-evidence",
+      finalUrl: url,
+    }),
+    retryImpl: (operation) => operation(),
+    log: { info() { throw new Error("logger unavailable"); } },
+  });
+
+  assert.equal(result.selected.article.id, "policy-hostile-log-article");
 });

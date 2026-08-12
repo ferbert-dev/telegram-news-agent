@@ -48,13 +48,19 @@ Last updated: 2026-08-12
   deferred to 08:00, and a draft completed after 22:00 is checkpointed for
   morning recovery without repeating research. Safe defaults remain broad,
   English, manual review, paused scheduling, and night pause enabled.
-- The excluded-topics foundation branch persists a versioned, per-channel
-  `war_conflict` preference and exposes a localized `/settings` toggle. Manual
+- The excluded-topics development slices persist a versioned, per-channel
+  `war_conflict` preference and expose a localized `/settings` toggle. Manual
   `/news` and scheduled snapshots freeze the preference with its settings
-  version. The provider-neutral classifier contract exists but is deliberately
-  not connected to research or publication yet, so this branch does not claim
-  that matching articles are already blocked. This is checked-in development
-  state only; production settings and publication behavior are unchanged.
+  version. Discovery now applies one fail-closed policy before each ranking
+  step, prevents AI curation from returning ineligible IDs, and rechecks the
+  selected full evidence before drafting; blocked evidence is safely rejected
+  while research continues to the next ranked candidate. All-policy-blocked
+  runs durably complete with zero results and sanitized policy metadata before
+  returning the existing `no_candidates` outcome. An empty exclusion list
+  preserves exact provider-search request parity as an explicit incident kill
+  switch. This is checked-in development state only: the independent final
+  pre-publication veto is still a later slice, and production settings/
+  publication are unchanged.
 - The additive `EditorialApplicationModule` now exposes grounded draft,
   approved publication, and reconciliation use cases behind Symbol ports. Its
   publication boundary claims atomically, reads current settings, evaluates the
