@@ -51,6 +51,7 @@ const settingsRow: NewsSettingsDatabaseRow = {
   language_code: "de",
   topic_codes: ["world", "nature"],
   custom_topics: ["Ocean exploration"],
+  excluded_topic_codes: ["war_conflict"],
   approval_policy: "manual",
   next_run_at: postgresTimestamp,
   version: 2,
@@ -145,6 +146,8 @@ class FunctionPool extends EventEmitter {
       rows = [settingsRow];
     } else if (text.includes("update_news_settings")) {
       rows = [];
+    } else if (text.includes("update_news_excluded_topics")) {
+      rows = [];
     } else if (text.includes("get_or_create_news_feature_flags")) {
       rows = [featureFlagRow];
     } else if (text.includes("update_news_feature_flag")) {
@@ -208,6 +211,15 @@ test("settings mutations retain parameterized PostgreSQL function boundaries", a
     null,
   );
   assert.equal(
+    await settings.updateNewsExcludedTopics({
+      channelId: "@channel",
+      excludedTopicCodes: [],
+      updatedBy: 7,
+      expectedVersion: 2,
+    }),
+    null,
+  );
+  assert.equal(
     (
       await features.getOrCreateNewsFeatureFlags({
         channelId: "@channel",
@@ -265,6 +277,10 @@ test("settings mutations retain parameterized PostgreSQL function boundaries", a
         7,
         2,
       ],
+    },
+    {
+      text: 'select * from "public"."update_news_excluded_topics"($1, $2, $3, $4)',
+      values: ["@channel", [], 7, 2],
     },
     {
       text: 'select * from "public"."get_or_create_news_feature_flags"($1, $2)',

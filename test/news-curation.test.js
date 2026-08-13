@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   curateNewsCandidates,
+  InvalidNewsCandidateCurationError,
   selectCurationSample,
 } from "../src/news-curation.js";
 
@@ -73,4 +74,53 @@ test("curateNewsCandidates ranks supplied IDs without using web search", async (
   );
   assert.equal(result.consideredCount, 2);
   assert.equal(result.rankedCount, 2);
+});
+
+test("curation rejects unknown or duplicate IDs instead of resurrecting an ineligible candidate", async () => {
+  const candidates = [candidate(1, "one")];
+  for (const rankedCandidateIds of [
+    ["candidate-1", "candidate-2"],
+    ["candidate-1", "candidate-1"],
+  ]) {
+    let error;
+    await assert.rejects(
+      curateNewsCandidates({
+        candidates,
+        newsSettings: {
+          languageCode: "en",
+          topicCodes: ["world"],
+          customTopics: [],
+        },
+        aiProvider: {
+          async generateStructured() {
+            return {
+              value: { rankedCandidateIds },
+              provider: "configured-provider",
+              model: "configured-model",
+              usageEvents: [
+                {
+                  provider: "configured-provider",
+                  providerResponseId: "curation-response",
+                  operation: "feed_candidate_curation",
+                  rawProviderOutput: "must-not-escape",
+                },
+              ],
+            };
+          },
+        },
+      }),
+      (value) => {
+        error = value;
+        return /invalid candidate IDs/.test(value.message);
+      },
+    );
+    assert.equal(error instanceof InvalidNewsCandidateCurationError, true);
+    assert.equal(error.code, "invalid_candidate_ids");
+    assert.equal(error.usageEvents.length, 1);
+    assert.equal(error.usageEvents[0].providerResponseId, "curation-response");
+    assert.equal(
+      Object.hasOwn(error.usageEvents[0], "rawProviderOutput"),
+      false,
+    );
+  }
 });

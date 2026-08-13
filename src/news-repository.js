@@ -612,6 +612,102 @@ export class NewsRepository {
     )[0];
   }
 
+  async claimDraftForPublicationWithPolicy({
+    draftId,
+    channelId,
+    settingsVersion,
+    outboundTextSha256,
+  }) {
+    const row = (
+      await this.functionRows(
+        "claim_draft_for_publication_with_policy",
+        [
+          draftId,
+          channelId,
+          settingsVersion,
+          Buffer.from(outboundTextSha256, "hex"),
+        ],
+        "Claim draft for publication with policy",
+      )
+    )[0];
+    if (!row) {
+      throw new Error("Policy-aware publication claim returned no outcome");
+    }
+    const { outcome, ...draft } = row;
+    return { outcome, draft: draft.id ? draft : null };
+  }
+
+  async blockDraftPublication({
+    draftId,
+    channelId,
+    stage,
+    publicationPath,
+    topicCode,
+    classification,
+    settingsVersion,
+    outboundText,
+    outboundTextSha256,
+    provider = null,
+    model = null,
+    promptVersion = null,
+    reasonCode,
+  }) {
+    const row = (
+      await this.functionRows(
+        "block_draft_publication",
+        [
+          draftId,
+          channelId,
+          stage,
+          publicationPath,
+          topicCode,
+          classification,
+          settingsVersion,
+          outboundText,
+          Buffer.from(outboundTextSha256, "hex"),
+          provider,
+          model,
+          promptVersion,
+          reasonCode,
+        ],
+        "Block draft publication",
+      )
+    )[0];
+    if (!row) {
+      throw new Error("Draft publication block returned no outcome");
+    }
+    return {
+      outcome: row.outcome,
+      blockId: row.block_id,
+      draftId: row.draft_id,
+      articleId: row.article_id,
+      draftStatus: row.draft_status,
+      reasonCode: row.reason_code,
+      createdAt:
+        row.created_at == null ? null : new Date(row.created_at).toISOString(),
+    };
+  }
+
+
+  async findPublicationPolicyBlockByDraft(draftId, channelId) {
+    const result = await this.query(
+      "Find publication policy block by draft",
+      `select id, idempotency_key, telegram_channel_id, draft_id, article_id,
+              stage, publication_path, topic_code, classification,
+              settings_version, encode(outbound_text_sha256, 'hex') as outbound_text_sha256,
+              provider, model, prompt_version, reason_code, created_at
+       from public.publication_policy_blocks
+       where draft_id = $1 and telegram_channel_id = $2`,
+      [draftId, channelId],
+    );
+    if (result.rows.length > 1) {
+      throw new Error(
+        "Find publication policy block by draft failed: expected at most one row",
+      );
+    }
+    return result.rows[0] ?? null;
+  }
+
   async finalizeDraftPublication({
     draftId,
     channelId,
@@ -893,6 +989,20 @@ export class NewsRepository {
         expectedVersion,
       ],
       "Update news settings",
+    );
+    return rows[0] ?? null;
+  }
+
+  async updateNewsExcludedTopics({
+    channelId,
+    excludedTopicCodes,
+    updatedBy,
+    expectedVersion,
+  }) {
+    const rows = await this.functionRows(
+      "update_news_excluded_topics",
+      [channelId, excludedTopicCodes, updatedBy, expectedVersion],
+      "Update news excluded topics",
     );
     return rows[0] ?? null;
   }

@@ -24,6 +24,7 @@ import type {
   TelegramSettingsInputPersistence,
   TelegramSettingsInputRow,
   UpdateNewsFeatureFlagInput,
+  UpdateNewsExcludedTopicsInput,
   UpdateNewsSettingsInput,
 } from "../../src/settings/settings.contracts.js";
 import { SettingsApplicationModule } from "../../src/settings/settings-application.module.js";
@@ -46,6 +47,7 @@ const SETTINGS_ROW: NewsSettingsRow = {
   language_code: "uk",
   topic_codes: ["nature", "science"],
   custom_topics: ["Морська біологія"],
+  excluded_topic_codes: ["war_conflict"],
   approval_policy: "automatic",
   next_run_at: "2026-08-10T06:00:00.000Z",
   version: 7,
@@ -117,6 +119,12 @@ test("SettingsService preserves exact news-settings DTOs, nullable CAS conflicts
     updatedBy: 5,
     expectedVersion: 7,
   };
+  const excludedInput: UpdateNewsExcludedTopicsInput = {
+    channelId: "@channel",
+    excludedTopicCodes: [],
+    updatedBy: 5,
+    expectedVersion: 7,
+  };
   const calls: unknown[] = [];
   const conflict = new Error("settings CAS conflict");
   let updateMode: "success" | "null" | "error" = "success";
@@ -135,6 +143,10 @@ test("SettingsService preserves exact news-settings DTOs, nullable CAS conflicts
       if (updateMode === "error") throw conflict;
       return SETTINGS_ROW;
     },
+    async updateNewsExcludedTopics(input) {
+      calls.push(["updateExcluded", input]);
+      return SETTINGS_ROW;
+    },
   };
   const service = serviceFrom(settings, {
     async getOrCreateNewsFeatureFlags() { return []; },
@@ -148,8 +160,13 @@ test("SettingsService preserves exact news-settings DTOs, nullable CAS conflicts
   assert.equal(await service.getOrCreateNewsSettings(getOrCreateInput), SETTINGS_ROW);
   assert.equal(await service.getNewsSettings("@channel"), SETTINGS_ROW);
   assert.equal(await service.updateNewsSettings(updateInput), SETTINGS_ROW);
+  assert.equal(
+    await service.updateNewsExcludedTopics(excludedInput),
+    SETTINGS_ROW,
+  );
   assert.equal((calls[0] as unknown[])[1], getOrCreateInput);
   assert.equal((calls[2] as unknown[])[1], updateInput);
+  assert.equal((calls[3] as unknown[])[1], excludedInput);
 
   updateMode = "null";
   assert.equal(await service.updateNewsSettings(updateInput), null);
@@ -179,6 +196,7 @@ test("SettingsService preserves bound-input expiry and one-shot consume DTOs", a
     async getOrCreateNewsSettings() { return null; },
     async getNewsSettings() { return null; },
     async updateNewsSettings() { return null; },
+    async updateNewsExcludedTopics() { return null; },
   }, {
     async getOrCreateNewsFeatureFlags() { return []; },
     async getNewsFeatureFlags() { return []; },
@@ -222,6 +240,7 @@ test("SettingsService preserves Labs rows and nullable stale-version updates", a
     async getOrCreateNewsSettings() { return null; },
     async getNewsSettings() { return null; },
     async updateNewsSettings() { return null; },
+    async updateNewsExcludedTopics() { return null; },
   }, {
     async getOrCreateNewsFeatureFlags(input) {
       calls.push(["create", input]);

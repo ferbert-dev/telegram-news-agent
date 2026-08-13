@@ -27,15 +27,17 @@ Preview a message without publishing:
 npm run telegram:send -- --text "AI news update"
 ```
 
-Publish after reviewing the preview:
+Publish only through the approved-draft state machine:
 
 ```bash
-npm run telegram:send -- --text "AI news update" --send
+# Direct send is intentionally disabled. Publish an approved draft instead:
+npm run drafts -- publish --id <draft-id>
 ```
 
-Use `--file path/to/message.txt` for longer messages and `--silent` to disable
-subscriber notifications. The command accepts exactly one of `--text` or
-`--file`.
+Use `--file path/to/message.txt` for longer previews. The command accepts
+exactly one of `--text` or `--file`; its former direct `--send` path is disabled
+because it had no durable publication claim, receipt, or ambiguous-send
+reconciliation.
 
 ## Automated News Run
 

@@ -14,6 +14,7 @@ import type {
   NewsSettingsPersistence,
   NewsSettingsRow,
   UpdateNewsSettingsInput,
+  UpdateNewsExcludedTopicsInput,
 } from "./settings.contracts.js";
 import {
   mapNewsSettingsRow,
@@ -27,6 +28,7 @@ const newsSettingsSelection = {
   language_code: newsBotSettings.languageCode,
   topic_codes: newsBotSettings.topicCodes,
   custom_topics: newsBotSettings.customTopics,
+  excluded_topic_codes: newsBotSettings.excludedTopicCodes,
   approval_policy: newsBotSettings.approvalPolicy,
   next_run_at: newsBotSettings.nextRunAt,
   version: newsBotSettings.version,
@@ -58,6 +60,11 @@ const updateNewsSettingsFunction = postgresRows<NewsSettingsDatabaseRow>(
   "public.update_news_settings",
   10,
 );
+const updateNewsExcludedTopicsFunction =
+  postgresRows<NewsSettingsDatabaseRow>(
+    "public.update_news_excluded_topics",
+    4,
+  );
 
 @Injectable()
 export class NewsSettingsRepository
@@ -126,6 +133,21 @@ export class NewsSettingsRepository
       ],
     );
     const row = this.optionalOne(rows, "Update news settings");
+    return row === null ? null : mapNewsSettingsRow(row);
+  }
+
+  async updateNewsExcludedTopics({
+    channelId,
+    excludedTopicCodes,
+    updatedBy,
+    expectedVersion,
+  }: UpdateNewsExcludedTopicsInput): Promise<NewsSettingsRow | null> {
+    const rows = await this.functionRows(
+      "Update news excluded topics",
+      updateNewsExcludedTopicsFunction,
+      [channelId, excludedTopicCodes, updatedBy, expectedVersion],
+    );
+    const row = this.optionalOne(rows, "Update news excluded topics");
     return row === null ? null : mapNewsSettingsRow(row);
   }
 }

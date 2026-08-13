@@ -123,6 +123,7 @@ export function mapNewsSettingsRow(
     language_code: newsLanguageCode(row.language_code),
     topic_codes: row.topic_codes,
     custom_topics: row.custom_topics,
+    excluded_topic_codes: row.excluded_topic_codes,
     approval_policy: newsApprovalPolicy(row.approval_policy),
     next_run_at: toNullableIsoTimestamp(row.next_run_at),
     version: row.version,

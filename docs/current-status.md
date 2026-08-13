@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-08-09
+Last updated: 2026-08-12
 
 ## Project
 
@@ -48,6 +48,44 @@ Last updated: 2026-08-09
   deferred to 08:00, and a draft completed after 22:00 is checkpointed for
   morning recovery without repeating research. Safe defaults remain broad,
   English, manual review, paused scheduling, and night pause enabled.
+- The excluded-topics development slices persist a versioned, per-channel
+  `war_conflict` preference and expose a localized `/settings` toggle. Manual
+  `/news` and scheduled snapshots freeze the preference with its settings
+  version. Discovery now applies one fail-closed policy before each ranking
+  step, prevents AI curation from returning ineligible IDs, and rechecks the
+  selected full evidence before drafting; blocked evidence is safely rejected
+  while research continues to the next ranked candidate. All-policy-blocked
+  runs durably complete with zero results and sanitized policy metadata before
+  returning the existing `no_candidates` outcome. An empty exclusion list
+  preserves exact provider-search request parity as an explicit incident kill
+  switch. A checked-in final veto now evaluates only the exact outbound body at
+  the common approved-draft boundary, records returned model usage, and uses a
+  current-settings CAS before the atomic claim. Non-allow, uncertain,
+  malformed, and classifier-error outcomes perform zero Telegram news sends
+  and atomically reject the eligible draft/article with a sanitized,
+  idempotent policy-block audit containing the outbound SHA-256 rather than
+  content. Automatic, scheduler, manual-review, and drafts-CLI news sends share
+  this boundary. Scheduler recovery replays an existing durable policy block as
+  terminal rather than misreporting a failed run. The former direct
+  `telegram:send --send` path is disabled because it lacked a durable claim,
+  receipt, and ambiguous-send recovery; `telegram:send` remains offline preview
+  only. Admin/status/preview messages remain outside the news boundary. This remains
+  repository/integration state only: production settings and publication are
+  unchanged until integration review, merge, deployment, and Telegram QA.
+- The additive `EditorialApplicationModule` exposes grounded draft, approved
+  publication, and reconciliation use cases behind Symbol ports. Its
+  publication boundary mirrors the same classify-before-claim settings-CAS and
+  durable-block semantics, while the legacy live runtime now routes every
+  current news-publication caller through the shared `publishApprovedDraft`
+  boundary. The existing recovery path never resends an ambiguous message: a
+  sent reconciliation records the real Telegram receipt and a not-sent
+  reconciliation returns the draft to approval.
+- Final-veto rollback is application-image-first. The forward migration keeps
+  both legacy claim overloads for N-1 compatibility and its additive audit
+  table/functions can remain readable. Setting exclusions to `[]` is the
+  explicit incident bypass and suppresses classifier/audit changes, but is not
+  the normal rollback. Clean PostgreSQL and automated caller coverage are part
+  of the development evidence; post-deploy Telegram QA is still required.
 - Private admin `/labs` controls experimental, per-channel feature flags. The
   first V1 flag classifies articles against a PostgreSQL tag catalogue in
   Off/Collect/Enabled modes; story connections remain disabled pending tag

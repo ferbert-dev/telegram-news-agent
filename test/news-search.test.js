@@ -109,6 +109,13 @@ test("checkpointed news search saves the completed draft before returning", asyn
 
   assert.equal(writes[0].update_id, 11);
   assert.equal(writes[0].draft_id, "draft-new");
+  assert.deepEqual(writes[0].settings_snapshot.excludedTopicCodes, [
+    "war_conflict",
+  ]);
+  assert.deepEqual(writes[0].settings_snapshot.excludedTopicsProvenance, {
+    source: "news_bot_settings",
+    settingsVersion: 1,
+  });
   assert.equal(result.resumed, false);
 });
 
@@ -121,6 +128,7 @@ test("tiered search passes one normalized settings snapshot into workflow", asyn
       language_code: "de",
       topic_codes: ["nature", "animals"],
       custom_topics: ["Meeresbiologie"],
+      excluded_topic_codes: ["war_conflict"],
       approval_policy: "automatic",
       version: 4,
     },
@@ -140,6 +148,11 @@ test("tiered search passes one normalized settings snapshot into workflow", asyn
   assert.equal(received.approvalPolicy, "automatic");
   assert.equal(received.newsSettings.languageCode, "de");
   assert.deepEqual(received.newsSettings.topicCodes, ["nature", "animals"]);
+  assert.deepEqual(received.newsSettings.excludedTopicCodes, ["war_conflict"]);
+  assert.deepEqual(received.newsSettings.excludedTopicsProvenance, {
+    source: "news_bot_settings",
+    settingsVersion: 4,
+  });
   assert.match(received.query, /Meeresbiologie/);
   assert.match(received.query, /German/);
 });

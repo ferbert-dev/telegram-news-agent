@@ -92,6 +92,9 @@ const samples = {
   approveDraft: ["draft-id"],
   rejectDraft: ["draft-id"],
   claimDraftForPublication: ["draft-id", "@channel"],
+  claimDraftForPublicationWithPolicy: [{ draftId: "draft-id", channelId: "@channel", settingsVersion: 1, outboundTextSha256: "0".repeat(64) }],
+  blockDraftPublication: [{ draftId: "draft-id", channelId: "@channel", stage: "final_publication", publicationPath: "manual_review", topicCode: "war_conflict", classification: "uncertain", settingsVersion: 1, outboundText: "post", outboundTextSha256: "0".repeat(64), reasonCode: "excluded_topic_uncertain" }],
+  findPublicationPolicyBlockByDraft: ["draft-id", "@channel"],
   finalizeDraftPublication: [{ draftId: "draft-id", channelId: "@channel", messageId: 7, messageText: "post" }],
   findPublicationByDraft: ["draft-id"],
   resetDraftPublication: ["draft-id", "RESET"],
@@ -109,6 +112,7 @@ const samples = {
   getOrCreateNewsSettings: [{ channelId: "@channel", reviewChatId: 1, updatedBy: 2 }],
   getNewsSettings: ["@channel"],
   updateNewsSettings: [{ channelId: "@channel", reviewChatId: 1, scheduleIntervalMinutes: 180, languageCode: "de", topicCodes: [], customTopics: [], approvalPolicy: "manual", quietHoursEnabled: true, updatedBy: 2, expectedVersion: 1 }],
+  updateNewsExcludedTopics: [{ channelId: "@channel", excludedTopicCodes: [], updatedBy: 2, expectedVersion: 1 }],
   getOrCreateNewsFeatureFlags: [{ channelId: "@channel", updatedBy: 2 }],
   getNewsFeatureFlags: ["@channel"],
   updateNewsFeatureFlag: [{ channelId: "@channel", featureKey: "article_tags", state: "enabled", updatedBy: 2, expectedVersion: 1 }],
@@ -187,7 +191,7 @@ function fixture(calls: Call[] = []) {
   return { facade, ports };
 }
 
-test("facade and owner manifest cover exactly all 68 live NewsRepository domain methods", () => {
+test("facade and owner manifest cover exactly all 72 live NewsRepository domain methods", () => {
   const legacyMethods = Object.getOwnPropertyNames(NewsRepository.prototype)
     .filter((method) => !infrastructureMethods.has(method))
     .sort();
@@ -196,13 +200,13 @@ test("facade and owner manifest cover exactly all 68 live NewsRepository domain 
     .sort();
   const manifestMethods = Object.keys(LEGACY_PERSISTENCE_METHOD_OWNERS).sort();
 
-  assert.equal(legacyMethods.length, 68);
+  assert.equal(legacyMethods.length, 72);
   assert.deepEqual(facadeMethods, legacyMethods);
   assert.deepEqual(manifestMethods, legacyMethods);
   assert.equal(Object.values(LEGACY_PERSISTENCE_METHOD_OWNERS).includes("fallback" as Owner), false);
 });
 
-test("all 68 methods delegate once to their declared owner and preserve legacy arguments", async () => {
+test("all 72 methods delegate once to their declared owner and preserve legacy arguments", async () => {
   const calls: Call[] = [];
   const { facade } = fixture(calls);
   const dynamicFacade = facade as unknown as DynamicPort;

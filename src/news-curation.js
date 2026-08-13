@@ -19,6 +19,33 @@ export const NEWS_CANDIDATE_CURATION_JSON_SCHEMA = {
   required: ["rankedCandidateIds"],
 };
 
+function sanitizedUsageEvents(value) {
+  return (Array.isArray(value) ? value : [])
+    .filter((event) => event && typeof event === "object")
+    .map((event) => ({
+      provider: event.provider,
+      providerResponseId: event.providerResponseId,
+      model: event.model,
+      operation: event.operation,
+      inputTokens: event.inputTokens,
+      cachedInputTokens: event.cachedInputTokens,
+      outputTokens: event.outputTokens,
+      reasoningTokens: event.reasoningTokens,
+      webSearchCalls: event.webSearchCalls,
+      estimatedCostUsd: event.estimatedCostUsd,
+      pricing: event.pricing,
+    }));
+}
+
+export class InvalidNewsCandidateCurationError extends Error {
+  constructor(usageEvents = []) {
+    super("AI curation returned invalid candidate IDs");
+    this.name = "InvalidNewsCandidateCurationError";
+    this.code = "invalid_candidate_ids";
+    this.usageEvents = sanitizedUsageEvents(usageEvents);
+  }
+}
+
 function plainText(value, maxLength = 700) {
   const input = String(value ?? "").slice(0, maxLength * 4);
   const text = load(`<body>${input}</body>`)("body")
@@ -121,7 +148,14 @@ export async function curateNewsCandidates({
 
   const curated = [];
   const curatedUrls = new Set();
-  for (const id of generated.value.rankedCandidateIds) {
+  const rankedCandidateIds = generated.value.rankedCandidateIds;
+  if (
+    new Set(rankedCandidateIds).size !== rankedCandidateIds.length ||
+    rankedCandidateIds.some((id) => !candidateById.has(id))
+  ) {
+    throw new InvalidNewsCandidateCurationError(generated.usageEvents);
+  }
+  for (const id of rankedCandidateIds) {
     const candidate = candidateById.get(id);
     if (!candidate || curatedUrls.has(candidate.canonicalUrl)) continue;
     curated.push(candidate);

@@ -1,8 +1,9 @@
 # NestJS and Drizzle migration blueprint
 
 Status: Drizzle persistence and legacy-facade parity are complete. Reversible
-NestJS application services now cover Usage, Settings, Catalog/Research and
-Operations; production composition and entrypoints remain legacy.
+NestJS application services now cover Usage, Settings, Catalog/Research,
+Operations, Editorial, Telegram control and scheduled-news one-shot
+orchestration; production composition and entrypoints remain legacy.
 
 Notion Epic: [Engineer Telegram News Agent into a modular NestJS platform](https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb)
 
@@ -16,14 +17,16 @@ This is a query-layer and composition-root migration. It does **not** copy produ
 
 The baseline audit found:
 
-- 23 PostgreSQL tables: 22 application tables plus `schema_migrations`.
-- 23 foreign keys in the Drizzle schema snapshot.
-- 47 current PostgreSQL function names and 49 live signatures.
+- 24 PostgreSQL tables: 23 application tables plus `schema_migrations`.
+- 26 foreign keys in the Drizzle schema snapshot.
+- 52 current PostgreSQL function names and 54 live signatures.
   `update_news_settings` and the publication-claim function each intentionally
   retain one compatibility overload. A clean PostgreSQL 17 inventory corrected
-  the earlier static count and remains authoritative for both overloads.
-- 68 domain persistence methods and six infrastructure helpers in `NewsRepository`.
-- 31 domain paths suitable for typed Drizzle queries and 37 paths that should retain a PostgreSQL function as their atomic boundary.
+  the earlier static count and remains authoritative for both overloads. The
+  excluded-topic foundation adds one validator and one dedicated optimistic-CAS
+  update without changing either `update_news_settings` signature.
+- 72 domain persistence methods and six infrastructure helpers in `NewsRepository`.
+- 32 domain paths suitable for typed Drizzle queries and 40 paths that should retain a PostgreSQL function as their atomic boundary.
 - Five public methods with no production call sites: `createDraft`,
   `recordPublication`, `transitionArticle`, `transitionDraft`, and
   `replaceArticleTopics`. They remain facade compatibility methods, not new
@@ -106,14 +109,50 @@ facade imports persistence modules only.
 ### Application services and adapters
 
 - `ResearchService` coordinates source collection, ranking, extraction and AI providers.
-- `EditorialWorkflowService` coordinates drafting, review and publication.
+- `EditorialWorkflowService` exposes grounded review-draft generation,
+  approved publication and operator reconciliation through one Symbol-backed
+  application port. Its publication use case keeps PostgreSQL claim/finalize/
+  release/reset functions authoritative and evaluates a Symbol-bound excluded-
+  topic policy against current settings and the exact outbound text immediately
+  before the transport-neutral publication gateway. Provider, policy and send
+  adapters are deliberately not wired into the current runtime; durable policy
+  audit/rejection and enforcement across every live send path remain the
+  separate final-veto slice.
 - `SettingsService` owns validated channel configuration and Labs flags.
-- `SchedulerService` owns due-work orchestration and quiet-hours recovery.
+- `SchedulerApplicationModule` exports only a Symbol-backed one-shot
+  `SchedulerService`; it starts no scheduler loop and remains unwired from the
+  production entrypoint. `RunScheduledNewsOnceUseCase` owns due claims,
+  schedule and pipeline-lease heartbeats, frozen settings provenance,
+  manual-review and automatic-publication branching, durable draft/receipt
+  checkpoints, quiet-hours rechecks, policy-block completion and unresolved
+  publication pause. Claimed rows and their frozen settings snapshots are
+  shape- and provenance-validated before any workflow side effect; gateway
+  results are also checked against their exact runtime discriminants. A
+  completed workflow result crosses its durable boundary before cancellation:
+  `review_ready` is checkpointed and `no_candidates` is finished before an
+  abort can prevent presentation/publication, so retry does not rerun domain
+  work. PostgreSQL remains authoritative for due selection, token CAS,
+  recurrence and Europe/Madrid recovery. The bounded
+  `SchedulerNewsWorkflowApplicationPort` deliberately preserves the legacy
+  tier/window result without choosing `candidates[0]` or interpreting
+  uncontracted research output; concrete ResearchService plus editorial draft
+  composition remains a cross-slice parity/runtime-adapter task.
 - `PipelineLeaseService` exposes acquire, renew and release without moving
   owner fencing or server-time semantics out of PostgreSQL.
 - `NotionAuditDeliveryService` enqueues and sequentially replays the durable
   audit outbox through a Symbol-bound outbound gateway. Claim ordering,
   `SKIP LOCKED`, completion and retry/backoff remain PostgreSQL-owned.
+- `TelegramControlApplicationModule` exposes a Symbol-backed transport-neutral
+  update router for checkpointed `/news`, settings, Labs, usage stats, manual
+  review decisions and review-session recovery. Required semantic presentation
+  runs before a claimed update is completed. Legacy callback acknowledgements
+  and manual-review policy-block notices remain best effort; an automatic
+  `/news` policy-block notice is required and retryable. Update claims, checkpoints,
+  expiry/rebind and double-tap decisions stay behind the existing typed
+  PostgreSQL persistence ports. The Telegram Bot API gateway owns admin checks,
+  raw API payloads, outcome rendering and review controls. Settings, Labs and
+  stats have additive adapters over their verified legacy transport flows; the
+  new slice remains deliberately unwired from the authoritative legacy poller.
 - Telegram is a transport adapter. Research and editorial core code do not import Telegram.
 - OpenAI and Gemini remain behind the existing AI-provider interface.
 - The first Nest runtime uses `createApplicationContext`; no HTTP listener is added.
@@ -129,7 +168,8 @@ The retained groups include:
 - review-draft creation, approval and rejection;
 - publication claim, finalize, reset and rejected-release recovery;
 - pipeline lease acquire, renew and release;
-- settings creation/update and feature-flag version CAS;
+- settings creation/update, dedicated excluded-topic update, and feature-flag
+  version CAS;
 - schedule claim, checkpoint, renewal, quiet-hours deferral and completion;
 - Telegram update claims and review-session decisions;
 - Notion audit-outbox claim, completion and retry.
@@ -156,11 +196,14 @@ Do not compare writes by dual-writing production. Mutation parity runs only on i
 
 Before repository migration resumes, CI must create a clean PostgreSQL 17 database and produce a machine-readable inventory that verifies:
 
-- all 23 tables and 23 foreign keys;
+- all 24 tables and 26 foreign keys;
 - columns, PostgreSQL types, nullability and defaults;
 - primary, unique and check constraints;
 - expected and unexpected indexes, including partial indexes;
-- 47 function names, 49 signatures, return types, volatility, security mode and configured search path; the two extra signatures are the compatibility overloads for settings update and publication claim;
+- 52 function names, 54 signatures, return types, volatility, security mode and
+  configured search path; the two compatibility overloads for settings update
+  and publication claim remain present alongside the excluded-topic validator
+  and dedicated update function;
 - function-body checksums or normalized definitions;
 - RLS state, policies, grants and revoked public access;
 - migration idempotency: apply the ordered migrations twice, then require every local migration to report `applied` and no unexpected object drift.

@@ -162,6 +162,15 @@ export class LegacyPersistenceFacade implements LegacyPersistence {
   claimDraftForPublication(...args: Parameters<EditorialPersistence["claimDraftForPublication"]>) {
     return this.editorial.claimDraftForPublication(...args);
   }
+  claimDraftForPublicationWithPolicy(...args: Parameters<EditorialPersistence["claimDraftForPublicationWithPolicy"]>) {
+    return this.editorial.claimDraftForPublicationWithPolicy(...args);
+  }
+  blockDraftPublication(...args: Parameters<EditorialPersistence["blockDraftPublication"]>) {
+    return this.editorial.blockDraftPublication(...args);
+  }
+  findPublicationPolicyBlockByDraft(...args: Parameters<EditorialPersistence["findPublicationPolicyBlockByDraft"]>) {
+    return this.editorial.findPublicationPolicyBlockByDraft(...args);
+  }
   finalizeDraftPublication(...args: Parameters<EditorialPersistence["finalizeDraftPublication"]>) {
     return this.editorial.finalizeDraftPublication(...args);
   }
@@ -215,6 +224,9 @@ export class LegacyPersistenceFacade implements LegacyPersistence {
   }
   updateNewsSettings(...args: Parameters<NewsSettingsPersistence["updateNewsSettings"]>) {
     return this.settings.updateNewsSettings(...args);
+  }
+  updateNewsExcludedTopics(...args: Parameters<NewsSettingsPersistence["updateNewsExcludedTopics"]>) {
+    return this.settings.updateNewsExcludedTopics(...args);
   }
   getOrCreateNewsFeatureFlags(...args: Parameters<NewsFeatureFlagsPersistence["getOrCreateNewsFeatureFlags"]>) {
     return this.featureFlags.getOrCreateNewsFeatureFlags(...args);

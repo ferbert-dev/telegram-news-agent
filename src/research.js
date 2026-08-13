@@ -20,6 +20,11 @@ import {
 } from "./news-settings.js";
 import { withRetry } from "./retry.js";
 import { evaluateStoryDuplicate } from "./story-deduplication.js";
+import {
+  applyExcludedTopicPolicy,
+  excludedTopicDefinitions,
+  EXCLUDED_TOPIC_POLICY_PROMPT_VERSION,
+} from "./excluded-topic-policy.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const FEED_CONCURRENCY = 8;
@@ -246,6 +251,7 @@ export async function runResearch({
   retryImpl = withRetry,
   now = new Date(),
   newsSettings,
+  log = console,
 }) {
   const normalizedSettings = newsSettings
     ? normalizeNewsSettings(newsSettings)
@@ -253,6 +259,7 @@ export async function runResearch({
   const settingsSnapshot = normalizedSettings
     ? newsSettingsSnapshot(normalizedSettings)
     : null;
+  const excludedTopicCodes = normalizedSettings?.excludedTopicCodes ?? [];
   const run = await repository.startSearchRun({
     query,
     metadata: {
@@ -261,8 +268,117 @@ export async function runResearch({
       news_settings: settingsSnapshot,
     },
   });
+  let terminalRunRecorded = false;
 
   try {
+    const excludedTopicAudits = [];
+    const recordExcludedTopicPolicy = async (
+      policyResult,
+      { articleId = null } = {},
+    ) => {
+      excludedTopicAudits.push(policyResult.audit);
+      await recordAiUsageEvents(repository, policyResult.usageEvents, {
+        channelId: normalizedSettings?.channelId ?? null,
+        searchRunId: run.id,
+        articleId,
+      });
+      if (
+        policyResult.audit.enabled &&
+        (policyResult.audit.blockedCount > 0 ||
+          policyResult.audit.semanticClassifiedCount > 0)
+      ) {
+        try {
+          log.info?.(
+            JSON.stringify({
+              event: "excluded_topic_policy",
+              ...policyResult.audit,
+            }),
+          );
+        } catch {
+          // Observability is best-effort and must not alter policy decisions.
+        }
+      }
+      return policyResult;
+    };
+    const applyPolicy = async (
+      candidates,
+      stage,
+      context = {},
+    ) =>
+      recordExcludedTopicPolicy(
+        await applyExcludedTopicPolicy({
+          candidates,
+          excludedTopicCodes,
+          aiProvider: discoveryProvider,
+          stage,
+        }),
+        context,
+      );
+    const excludedTopicPolicySummary = () => {
+      const enabledAudits = excludedTopicAudits.filter(
+        (audit) => audit.enabled,
+      );
+      const acquisitionAudits = enabledAudits.filter(
+        (audit) => audit.stage !== "selected_evidence",
+      );
+      const evidenceAudits = enabledAudits.filter(
+        (audit) => audit.stage === "selected_evidence",
+      );
+      const providers = new Map();
+      for (const audit of enabledAudits) {
+        for (const provider of audit.providers) {
+          const key = `${provider.provider ?? "unknown"}\u0000${provider.model ?? "unknown"}`;
+          providers.set(key, provider);
+        }
+      }
+      const sum = (audits, field) =>
+        audits.reduce((total, audit) => total + Number(audit[field] ?? 0), 0);
+      return {
+        enabled: excludedTopicCodes.length > 0,
+        policy_codes: [...excludedTopicCodes],
+        prompt_version: EXCLUDED_TOPIC_POLICY_PROMPT_VERSION,
+        input_count: sum(acquisitionAudits, "inputCount"),
+        eligible_count: sum(acquisitionAudits, "eligibleCount"),
+        blocked_count: sum(acquisitionAudits, "blockedCount"),
+        deterministic_blocked_count: sum(
+          acquisitionAudits,
+          "deterministicBlockedCount",
+        ),
+        semantic_classified_count: sum(
+          acquisitionAudits,
+          "semanticClassifiedCount",
+        ),
+        evidence_checked_count: sum(evidenceAudits, "inputCount"),
+        evidence_blocked_count: sum(evidenceAudits, "blockedCount"),
+        usage_event_count: sum(enabledAudits, "usageEventCount"),
+        providers: [...providers.values()],
+        stages: enabledAudits.map((audit) => ({
+          stage: audit.stage,
+          input_count: audit.inputCount,
+          eligible_count: audit.eligibleCount,
+          blocked_count: audit.blockedCount,
+          deterministic_blocked_count: audit.deterministicBlockedCount,
+          semantic_classified_count: audit.semanticClassifiedCount,
+          semantic_blocked_count: audit.semanticBlockedCount,
+          prompt_version: audit.promptVersion,
+          providers: audit.providers,
+          usage_event_count: audit.usageEventCount,
+        })),
+      };
+    };
+    const finishPolicyFilteredSearchRun = async (terminalStage) => {
+      await repository.finishSearchRun(run.id, {
+        resultCount: 0,
+        metadata: {
+          status: "no_candidates",
+          reason: "excluded_topic_policy",
+          terminal_stage: terminalStage,
+          excluded_topic_policy: excludedTopicPolicySummary(),
+          news_settings: settingsSnapshot,
+        },
+      });
+      terminalRunRecorded = true;
+    };
     const sources = await repository.listEnabledSources();
     const primarySources = sources.filter((source) => source.is_primary);
     const rssSources = sources.filter(
@@ -447,6 +563,8 @@ export async function runResearch({
           : null,
       ),
     );
+    const initialPolicy = await applyPolicy(candidates, "discovery");
+    candidates = initialPolicy.eligible;
     let ranked = rankCandidates(candidates, {
       now,
       keywords,
@@ -477,7 +595,11 @@ export async function runResearch({
             discoveryKind: "discovered_rss_feed",
           })),
       );
-      candidates = [...candidates, ...discoveredCandidates];
+      const discoveredPolicy = await applyPolicy(
+        discoveredCandidates,
+        "discovered_feed",
+      );
+      candidates = [...candidates, ...discoveredPolicy.eligible];
       ranked = rankCandidates(candidates, { now, keywords, windowHours });
     }
 
@@ -492,6 +614,11 @@ export async function runResearch({
           providerRequest.languageCode = normalizedSettings.languageCode;
           providerRequest.topicCodes = [...normalizedSettings.topicCodes];
           providerRequest.customTopics = [...normalizedSettings.customTopics];
+          if (excludedTopicCodes.length) {
+            providerRequest.excludedTopics = excludedTopicDefinitions(
+              excludedTopicCodes,
+            );
+          }
         }
         providerDiscovery = await discoveryProvider.searchNews(providerRequest);
         await recordAiUsageEvents(repository, providerDiscovery.usageEvents, {
@@ -553,7 +680,12 @@ export async function runResearch({
             ];
           },
         );
-        ranked = rankCandidates([...candidates, ...providerCandidates], {
+        const providerPolicy = await applyPolicy(
+          providerCandidates,
+          "provider_search",
+        );
+        candidates = [...candidates, ...providerPolicy.eligible];
+        ranked = rankCandidates(candidates, {
           now,
           keywords,
           windowHours,
@@ -587,6 +719,10 @@ export async function runResearch({
         );
         ranked = candidateCuration.candidates;
       } catch (error) {
+        await recordAiUsageEvents(repository, error?.usageEvents, {
+          channelId: normalizedSettings?.channelId ?? null,
+          searchRunId: run.id,
+        });
         candidateCuration = {
           error: error?.code ?? "candidate_curation_failed",
         };
@@ -594,8 +730,18 @@ export async function runResearch({
     }
 
     if (!ranked.length) {
+      const policySummary = excludedTopicPolicySummary();
+      const allAcquiredCandidatesBlocked =
+        policySummary.input_count > 0 &&
+        policySummary.eligible_count === 0 &&
+        policySummary.blocked_count === policySummary.input_count;
+      if (allAcquiredCandidatesBlocked) {
+        await finishPolicyFilteredSearchRun("acquisition");
+      }
       throw new NoResearchCandidatesError(
-        "No recent news candidates were found",
+        policySummary.blocked_count > 0
+          ? "No recent news candidates remained after excluded-topic policy"
+          : "No recent news candidates were found",
       );
     }
 
@@ -665,6 +811,7 @@ export async function runResearch({
       aiCalls: 0,
     };
     const deduplicationRejectedArticleIds = new Set();
+    const exclusionRejectedArticleIds = new Set();
     const recentPublishedStories = storyDeduplication.enabled
       ? await repository.listRecentPublishedStories({
           channelId: normalizedSettings?.channelId ?? null,
@@ -675,6 +822,34 @@ export async function runResearch({
         })
       : [];
     let selected = null;
+    const evidenceAllowed = async (candidate, evidenceText) => {
+      const result = await applyPolicy(
+        [{ ...candidate, evidenceText }],
+        "selected_evidence",
+        { articleId: candidate.article.id },
+      );
+      if (result.eligible.length) return true;
+      const rejection = result.blocked[0];
+      await repository.transitionArticle(
+        candidate.article.id,
+        "discovered",
+        "rejected",
+        {
+          metadata: {
+            ...(candidate.article.metadata ?? {}),
+            excluded_topic_policy: {
+              stage: "selected_evidence",
+              policy_codes: [...excludedTopicCodes],
+              prompt_version: EXCLUDED_TOPIC_POLICY_PROMPT_VERSION,
+              reason: rejection?.reason ?? "semantic_uncertain",
+              policy_code: rejection?.policyCode ?? null,
+            },
+          },
+        },
+      );
+      exclusionRejectedArticleIds.add(candidate.article.id);
+      return false;
+    };
     for (const candidate of articles) {
       if (storyDeduplication.enabled) {
         const storyDecision = await evaluateStoryDuplicate({
@@ -733,79 +908,123 @@ export async function runResearch({
         }
       }
       if (candidate.verificationStatus === "unverified_community") {
+        const evidenceText = candidate.summary || candidate.title;
+        if (!(await evidenceAllowed(candidate, evidenceText))) {
+          continue;
+        }
         selected = {
           ...candidate,
-          evidenceText: candidate.summary || candidate.title,
+          evidenceText,
         };
         break;
       }
+      let extracted;
       try {
-        const extracted = await retryImpl(
+        extracted = await retryImpl(
           () => fetchArticleImpl(candidate.canonicalUrl),
           { attempts: 3, baseDelayMs: 300 },
         );
-        await repository.saveRawContent({
-          article_id: candidate.article.id,
-          content: extracted.text,
-          content_type: "text",
-          language_code: null,
-          extractor: candidate.source.is_primary
-            ? "primary-html"
-            : "web-html",
-          content_hash: extracted.contentHash,
-          metadata: {
-            source_url: candidate.canonicalUrl,
-            final_url: extracted.finalUrl,
-            extraction_kind: candidate.source.is_primary
-              ? "primary_article_text"
-              : "web_article_text",
-          },
-        });
-        selected = { ...candidate, evidenceText: extracted.text };
-        break;
       } catch (error) {
         extractionErrors.push({
           article_id: candidate.article.id,
           source_url: candidate.canonicalUrl,
           error: error instanceof Error ? error.message : String(error),
         });
+        continue;
       }
+      await repository.saveRawContent({
+        article_id: candidate.article.id,
+        content: extracted.text,
+        content_type: "text",
+        language_code: null,
+        extractor: candidate.source.is_primary
+          ? "primary-html"
+          : "web-html",
+        content_hash: extracted.contentHash,
+        metadata: {
+          source_url: candidate.canonicalUrl,
+          final_url: extracted.finalUrl,
+          extraction_kind: candidate.source.is_primary
+            ? "primary_article_text"
+            : "web_article_text",
+        },
+      });
+      if (!(await evidenceAllowed(candidate, extracted.text))) {
+        continue;
+      }
+      selected = { ...candidate, evidenceText: extracted.text };
+      break;
     }
 
     if (!selected) {
-      const webSearchFallback = articles.find(
-        (candidate) =>
-          !deduplicationRejectedArticleIds.has(candidate.article.id) &&
-          candidate.verificationStatus === "web_source" &&
-          String(candidate.summary || candidate.title).trim(),
-      );
-      if (webSearchFallback) {
+      for (const webSearchFallback of articles) {
+        const evidenceText = String(
+          webSearchFallback.summary || webSearchFallback.title,
+        ).trim();
+        if (
+          deduplicationRejectedArticleIds.has(
+            webSearchFallback.article.id,
+          ) ||
+          exclusionRejectedArticleIds.has(webSearchFallback.article.id) ||
+          webSearchFallback.verificationStatus !== "web_source" ||
+          !evidenceText
+        ) {
+          continue;
+        }
+        if (!(await evidenceAllowed(webSearchFallback, evidenceText))) {
+          continue;
+        }
         selected = {
           ...webSearchFallback,
           verificationStatus: "web_search_summary",
-          evidenceText: webSearchFallback.summary || webSearchFallback.title,
+          evidenceText,
           evidenceKind: "web_search_summary",
         };
+        break;
       }
     }
 
     if (!selected) {
-      const feedFallback = articles.find(
-        (candidate) =>
-          !deduplicationRejectedArticleIds.has(candidate.article.id) &&
-          candidate.source.is_primary &&
-          String(candidate.summary || candidate.title).trim(),
-      );
-      if (feedFallback) {
+      for (const feedFallback of articles) {
+        const evidenceText = String(
+          feedFallback.summary || feedFallback.title,
+        ).trim();
+        if (
+          deduplicationRejectedArticleIds.has(feedFallback.article.id) ||
+          exclusionRejectedArticleIds.has(feedFallback.article.id) ||
+          !feedFallback.source.is_primary ||
+          !evidenceText
+        ) {
+          continue;
+        }
+        if (!(await evidenceAllowed(feedFallback, evidenceText))) {
+          continue;
+        }
         selected = {
           ...feedFallback,
-          evidenceText: feedFallback.summary || feedFallback.title,
+          evidenceText,
           evidenceKind: "primary_feed_summary",
         };
+        break;
       }
     }
 
     if (!selected) {
+      const remainingAfterDeduplication = articles.filter(
+        (candidate) =>
+          !deduplicationRejectedArticleIds.has(candidate.article.id),
+      );
+      if (
+        remainingAfterDeduplication.length > 0 &&
+        remainingAfterDeduplication.every((candidate) =>
+          exclusionRejectedArticleIds.has(candidate.article.id),
+        )
+      ) {
+        await finishPolicyFilteredSearchRun("selected_evidence");
+        throw new NoResearchCandidatesError(
+          "No ranked news evidence remained after excluded-topic policy",
+        );
+      }
       throw new Error("No ranked news evidence could be extracted");
     }
 
@@ -874,6 +1093,9 @@ export async function runResearch({
           semantic_ai_call_count: storyDeduplication.aiCalls,
           semantic_ai_call_limit: MAX_SEMANTIC_STORY_AI_CALLS,
         },
+        ...(excludedTopicCodes.length
+          ? { excluded_topic_policy: excludedTopicPolicySummary() }
+          : {}),
         news_settings: settingsSnapshot,
       },
     });
@@ -886,7 +1108,9 @@ export async function runResearch({
       extractionErrors,
     };
   } catch (error) {
-    await repository.failSearchRun(run.id, error);
+    if (!terminalRunRecorded) {
+      await repository.failSearchRun(run.id, error);
+    }
     throw error;
   }
 }

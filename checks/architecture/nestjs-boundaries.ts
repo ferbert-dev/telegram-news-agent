@@ -70,8 +70,19 @@ function assertApplicationDependencies(file: string, source: string): void {
     assert.doesNotMatch(specifier, /news-repository/, file);
     assert.doesNotMatch(specifier, /(?:^|\/)notion-audit(?:\.js)?$/, file);
     assert.doesNotMatch(specifier, /(?:^|\/)pipeline(?:\.js)?$/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)draft(?:\.js)?$/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)publish(?:\.js)?$/, file);
+    assert.doesNotMatch(
+      specifier,
+      /(?:^|\/)publication-recovery(?:\.js)?$/,
+      file,
+    );
     assert.doesNotMatch(specifier, /(?:openai|gemini)-provider/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)(?:openai|@google\/genai)(?:\/|$)/, file);
     assert.doesNotMatch(specifier, /telegram-(?:bot|polling)/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)telegram(?:\.js)?$/, file);
+    assert.doesNotMatch(specifier, /(?:^|\/)send-message(?:\.js)?$/, file);
+    assert.doesNotMatch(specifier, /(?:\/transport\/|-transport\.)/, file);
     assert.doesNotMatch(specifier, /^(?:node:)?https?(?:\/|$)/, file);
     assert.doesNotMatch(specifier, /^(?:axios|undici)(?:\/|$)/, file);
   }
@@ -217,6 +228,26 @@ test("application boundary scanner covers root contracts and tokens and rejects 
       "src/example/legacy-application.tokens.ts",
       `export { NewsRepository } from "../../news-repository.js";`,
     ],
+    [
+      "src/editorial/editorial-application.contracts.ts",
+      `import OpenAI from "openai";`,
+    ],
+    [
+      "src/editorial/editorial-application.tokens.ts",
+      `import { GoogleGenAI } from "@google/genai";`,
+    ],
+    [
+      "src/editorial/editorial-application.module.ts",
+      `export { sendTelegramMessage } from "../telegram.js";`,
+    ],
+    [
+      "src/editorial/application/publish-approved-draft.use-case.ts",
+      `export { publishApprovedDraft } from "../../publish.js";`,
+    ],
+    [
+      "src/telegram/telegram-control-application.module.ts",
+      `export { TelegramBotApiGateway } from "./transport/telegram-bot-api.gateway.js";`,
+    ],
   ]);
   for (const [file, source] of forbidden) {
     assert.equal(isApplicationLayerFile(file), true, file);
@@ -252,6 +283,43 @@ test("Nest TypeScript composition remains standalone without an HTTP platform or
     }
     assert.doesNotMatch(source, /NestFactory\.create\s*\(/, name);
     assert.doesNotMatch(source, /\.listen\s*\(/, name);
+  }
+});
+
+test("additive Telegram application slice is not wired into the legacy poller or production entrypoint", async () => {
+  for (const file of [
+    path.join(sourceRoot, "telegram-bot.js"),
+    path.join(sourceRoot, "telegram-polling.js"),
+  ]) {
+    const source = await readFile(file, "utf8");
+    assert.doesNotMatch(source, /telegram-control-application/, relative(file));
+    assert.doesNotMatch(source, /TelegramControlTransportHandler/, relative(file));
+  }
+});
+
+test("additive Scheduler application is one-shot and remains unwired from the legacy production loop", async () => {
+  const applicationModule = await readFile(
+    path.join(sourceRoot, "scheduler/scheduler-application.module.ts"),
+    "utf8",
+  );
+  const useCase = await readFile(
+    path.join(
+      sourceRoot,
+      "scheduler/application/run-scheduled-news-once.use-case.ts",
+    ),
+    "utf8",
+  );
+  assert.doesNotMatch(applicationModule, /@nestjs\/schedule/);
+  assert.doesNotMatch(applicationModule, /\b(?:Cron|Interval|Timeout)\s*\(/);
+  assert.doesNotMatch(useCase, /\bwhile\s*\(/);
+  assert.doesNotMatch(useCase, /runNewsScheduler|news-scheduler\.js/);
+  assert.doesNotMatch(useCase, /ResearchService|candidates\s*\[\s*0\s*\]/);
+  assert.match(useCase, /SCHEDULER_NEWS_WORKFLOW_APPLICATION/);
+
+  for (const entrypoint of ["telegram-bot.js", "news-scheduler.js"]) {
+    const source = await readFile(path.join(sourceRoot, entrypoint), "utf8");
+    assert.doesNotMatch(source, /scheduler-application/, entrypoint);
+    assert.doesNotMatch(source, /RunScheduledNewsOnceUseCase/, entrypoint);
   }
 });
 

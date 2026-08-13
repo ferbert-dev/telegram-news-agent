@@ -398,7 +398,10 @@ test("news settings repository methods use versioned PostgreSQL functions", asyn
   const repository = new NewsRepository({
     async query(text, parameters) {
       calls.push([text, parameters]);
-      if (text.includes("update_news_settings")) {
+      if (
+        text.includes("update_news_settings") ||
+        text.includes("update_news_excluded_topics")
+      ) {
         return { rows: [] };
       }
       return {
@@ -435,6 +438,15 @@ test("news settings repository methods use versioned PostgreSQL functions", asyn
     }),
     null,
   );
+  assert.equal(
+    await repository.updateNewsExcludedTopics({
+      channelId: "@channel",
+      excludedTopicCodes: [],
+      updatedBy: 7,
+      expectedVersion: 1,
+    }),
+    null,
+  );
 
   assert.deepEqual(calls, [
     [
@@ -456,6 +468,10 @@ test("news settings repository methods use versioned PostgreSQL functions", asyn
         7,
         1,
       ],
+    ],
+    [
+      "select * from public.update_news_excluded_topics($1, $2, $3, $4)",
+      ["@channel", [], 7, 1],
     ],
   ]);
 });

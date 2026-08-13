@@ -5,6 +5,10 @@ import type { Pool } from "pg";
 import type {
   CreateDraftInput,
   CreateReviewDraftInput,
+  BlockDraftPublicationInput,
+  BlockDraftPublicationResult,
+  ClaimDraftForPublicationWithPolicyInput,
+  ClaimDraftForPublicationWithPolicyResult,
   DraftListRow,
   DraftRow,
   DraftStatus,
@@ -13,6 +17,7 @@ import type {
   EditorialPersistence,
   FinalizeDraftPublicationInput,
   PublishedPostRow,
+  PublicationPolicyBlockRow,
   RecordPublicationInput,
 } from "../../editorial/editorial-persistence.contracts.js";
 import {
@@ -20,15 +25,18 @@ import {
   mapDraftRow,
   mapDraftWithArticleRow,
   mapPublishedPostRow,
+  mapPublicationPolicyBlockRow,
   type DraftDatabaseRow,
   type DraftListDatabaseRow,
   type DraftWithArticleDatabaseRow,
   type PublishedPostDatabaseRow,
+  type PublicationPolicyBlockDatabaseRow,
 } from "../../editorial/editorial-row-mappers.js";
 import { assertTransition } from "../../pipeline-states.js";
 import { DRIZZLE_DB, PG_POOL } from "../database.tokens.js";
 import type { DrizzleDatabase } from "../drizzle-client.js";
 import { drafts, publishedPosts } from "../schema/editorial.js";
+import { publicationPolicyBlocks } from "../schema/publication-policy.js";
 import { articles } from "../schema/research.js";
 import {
   postgresRows,
@@ -78,6 +86,51 @@ const publicationSelection = {
   created_at: publishedPosts.createdAt,
 };
 
+const publicationPolicyBlockSelection = {
+  id: publicationPolicyBlocks.id,
+  idempotency_key: publicationPolicyBlocks.idempotencyKey,
+  telegram_channel_id: publicationPolicyBlocks.telegramChannelId,
+  draft_id: publicationPolicyBlocks.draftId,
+  article_id: publicationPolicyBlocks.articleId,
+  stage: publicationPolicyBlocks.stage,
+  publication_path: publicationPolicyBlocks.publicationPath,
+  topic_code: publicationPolicyBlocks.topicCode,
+  classification: publicationPolicyBlocks.classification,
+  settings_version: publicationPolicyBlocks.settingsVersion,
+  outbound_text_sha256: publicationPolicyBlocks.outboundTextSha256,
+  provider: publicationPolicyBlocks.provider,
+  model: publicationPolicyBlocks.model,
+  prompt_version: publicationPolicyBlocks.promptVersion,
+  reason_code: publicationPolicyBlocks.reasonCode,
+  created_at: publicationPolicyBlocks.createdAt,
+};
+
+type PolicyClaimDatabaseRow = DraftDatabaseRow & { outcome: string };
+type PolicyBlockResultDatabaseRow = {
+  outcome: string;
+  block_id: string | null;
+  draft_id: string | null;
+  article_id: string | null;
+  draft_status: string | null;
+  reason_code: string | null;
+  created_at: string | Date | null;
+};
+
+function policyDraftStatus(value: string | null): DraftStatus | null {
+  if (value === null) return null;
+  if (
+    value !== "draft" &&
+    value !== "review" &&
+    value !== "approved" &&
+    value !== "publishing" &&
+    value !== "rejected" &&
+    value !== "published"
+  ) {
+    throw new Error("Invalid draft status in publication policy outcome");
+  }
+  return value;
+}
+
 const createReviewDraftFunction = postgresRows<DraftDatabaseRow>(
   "public.create_review_draft",
   7,
@@ -98,6 +151,16 @@ const claimDraftForPublicationFunction = postgresRows<DraftDatabaseRow>(
   "public.claim_draft_for_publication",
   2,
 );
+const claimDraftForPublicationWithPolicyFunction =
+  postgresRows<PolicyClaimDatabaseRow>(
+    "public.claim_draft_for_publication_with_policy",
+    4,
+  );
+const blockDraftPublicationFunction =
+  postgresRows<PolicyBlockResultDatabaseRow>(
+    "public.block_draft_publication",
+    13,
+  );
 const finalizeDraftPublicationFunction =
   postgresRows<PublishedPostDatabaseRow>(
     "public.finalize_draft_publication",
@@ -299,6 +362,122 @@ export class EditorialRepository
     );
     return optionalDraft(rows[0]);
   }
+
+  async claimDraftForPublicationWithPolicy({
+    draftId,
+    channelId,
+    settingsVersion,
+    outboundTextSha256,
+  }: ClaimDraftForPublicationWithPolicyInput): Promise<ClaimDraftForPublicationWithPolicyResult> {
+    const rows = await this.functionRows(
+      "Claim draft for publication with policy",
+      claimDraftForPublicationWithPolicyFunction,
+      [draftId, channelId, settingsVersion, Buffer.from(outboundTextSha256, "hex")],
+    );
+    const row = rows[0];
+    if (row === undefined) {
+      throw new Error("Policy-aware publication claim returned no outcome");
+    }
+    const { outcome, ...draft } = row;
+    if (
+      outcome !== "claimed" &&
+      outcome !== "already_published" &&
+      outcome !== "already_blocked" &&
+      outcome !== "stale_settings" &&
+      outcome !== "outbound_changed" &&
+      outcome !== "not_publishable"
+    ) {
+      throw new Error("Invalid policy-aware publication claim outcome");
+    }
+    return {
+      outcome,
+      draft: draft.id === null ? null : mapDraftRow(draft),
+    };
+  }
+
+  async blockDraftPublication({
+    draftId,
+    channelId,
+    stage,
+    publicationPath,
+    topicCode,
+    classification,
+    settingsVersion,
+    outboundText,
+    outboundTextSha256,
+    provider = null,
+    model = null,
+    promptVersion = null,
+    reasonCode,
+  }: BlockDraftPublicationInput): Promise<BlockDraftPublicationResult> {
+    const rows = await this.functionRows(
+      "Block draft publication",
+      blockDraftPublicationFunction,
+      [
+        draftId,
+        channelId,
+        stage,
+        publicationPath,
+        topicCode,
+        classification,
+        settingsVersion,
+        outboundText,
+        Buffer.from(outboundTextSha256, "hex"),
+        provider,
+        model,
+        promptVersion,
+        reasonCode,
+      ],
+    );
+    const row = rows[0];
+    if (row === undefined) {
+      throw new Error("Draft publication block returned no outcome");
+    }
+    if (
+      row.outcome !== "blocked" &&
+      row.outcome !== "already_published" &&
+      row.outcome !== "already_blocked" &&
+      row.outcome !== "stale_settings" &&
+      row.outcome !== "outbound_changed" &&
+      row.outcome !== "not_publishable"
+    ) {
+      throw new Error("Invalid draft publication block outcome");
+    }
+    return {
+      outcome: row.outcome,
+      blockId: row.block_id,
+      draftId: row.draft_id,
+      articleId: row.article_id,
+      draftStatus: policyDraftStatus(row.draft_status),
+      reasonCode: row.reason_code,
+      createdAt: row.created_at === null ? null : toIsoTimestamp(row.created_at),
+    };
+  }
+
+  async findPublicationPolicyBlockByDraft(
+    draftId: string,
+    channelId: string,
+  ): Promise<PublicationPolicyBlockRow | null> {
+    const operation = "Find publication policy block by draft";
+    const rows = await this.operation(operation, () =>
+      this.database
+        .select(publicationPolicyBlockSelection)
+        .from(publicationPolicyBlocks)
+        .where(
+          and(
+            eq(publicationPolicyBlocks.draftId, draftId),
+            eq(publicationPolicyBlocks.telegramChannelId, channelId),
+          ),
+        ),
+    );
+    const row = this.optionalOne(rows, operation);
+    return row === null
+      ? null
+      : mapPublicationPolicyBlockRow(
+          row as PublicationPolicyBlockDatabaseRow,
+        );
+  }
+
 
   async finalizeDraftPublication({
     draftId,

@@ -192,6 +192,13 @@ test("runPipeline researches and creates a review draft without publishing", asy
     aiClient,
     model: "test-model",
     ownerId: "00000000-0000-4000-8000-000000000001",
+    newsSettings: {
+      languageCode: "en",
+      topicCodes: ["ai"],
+      customTopics: [],
+      excludedTopicCodes: [],
+      version: 1,
+    },
     now: new Date("2026-06-27T12:00:00Z"),
     fetchFeedImpl: async () => [
       {
@@ -245,6 +252,18 @@ test("runPipeline carries configured topics and language through research and dr
       return { provider: "openai", model: "test-model", items: [] };
     },
     async generateStructured(request) {
+      if (request.usageOperation === "excluded_topic_classification") {
+        return {
+          provider: "openai",
+          model: "test-model",
+          usageEvents: [],
+          value: {
+            assessments: [
+              { topicCode: "war_conflict", relation: "unrelated" },
+            ],
+          },
+        };
+      }
       if (request.usageOperation === "feed_candidate_curation") {
         curationRequest = request;
         return {
@@ -328,6 +347,53 @@ test("runPipeline carries configured topics and language through research and dr
   assert.equal(result.features.editorialEnrichment, "off");
   assert.equal(result.settings.version, 5);
   assert.equal(result.settings.languageCode, "de");
+});
+
+test("runPipeline never drafts when discovery is entirely policy-filtered", async () => {
+  const repository = repositoryFixture();
+  let draftWrites = 0;
+  repository.createReviewDraft = async () => {
+    draftWrites += 1;
+    throw new Error("must not draft");
+  };
+
+  await assert.rejects(
+    runPipeline({
+      repository,
+      aiProvider: {
+        async generateStructured() {
+          throw new Error("deterministic exclusion must precede AI calls");
+        },
+      },
+      ownerId: "00000000-0000-4000-8000-000000000001",
+      newsSettings: {
+        channelId: "@channel",
+        languageCode: "en",
+        topicCodes: ["ai"],
+        customTopics: [],
+        excludedTopicCodes: ["war_conflict"],
+        version: 10,
+      },
+      now: new Date("2026-06-27T12:00:00Z"),
+      fetchFeedImpl: async () => [
+        {
+          title: "Missile strike kills three civilians in overnight attack",
+          canonicalUrl: "https://example.com/conflict-event",
+          publishedAt: "2026-06-27T10:00:00Z",
+          summary: "Officials reported the attack.",
+          author: "Primary",
+          contentHash: "conflict-event",
+        },
+      ],
+    }),
+    /excluded-topic policy/,
+  );
+
+  assert.equal(draftWrites, 0);
+  assert.deepEqual(repository.calls.at(-1).slice(0, 2), [
+    "release",
+    "daily-news-pipeline",
+  ]);
 });
 
 test("runPipeline refuses a concurrent run", async () => {

@@ -183,6 +183,22 @@ test(
       const winningToken = initialClaim.schedule_claim_token as string;
       assert.ok(new Set<string>([firstToken, competingToken]).has(winningToken));
       assert.equal(initialClaim.schedule_settings_snapshot?.languageCode, "de");
+      assert.deepEqual(
+        initialClaim.schedule_settings_snapshot?.excludedTopicCodes,
+        ["war_conflict"],
+      );
+      assert.deepEqual(
+        initialClaim.schedule_settings_snapshot?.excludedTopicsProvenance,
+        {
+          source: "news_bot_settings",
+          settingsVersion: initialClaim.version,
+        },
+      );
+      await one(
+        pool,
+        "select * from public.update_news_excluded_topics($1, $2, $3, $4)",
+        [channelId, [], 700_000_000_002, initialClaim.version],
+      );
 
       const draftCheckpoint = {
         channelId,
@@ -254,6 +270,7 @@ test(
         recovered.schedule_settings_snapshot,
         initialClaim.schedule_settings_snapshot,
       );
+      assert.deepEqual(recovered.excluded_topic_codes, []);
       assert.equal(
         await repository.renewNewsScheduleClaim({
           channelId,

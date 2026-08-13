@@ -29,6 +29,7 @@ const claimedSettingsRow: NewsSettingsDatabaseRow = {
   language_code: "de",
   topic_codes: ["world", "nature"],
   custom_topics: ["Ocean exploration"],
+  excluded_topic_codes: ["war_conflict"],
   approval_policy: "automatic",
   next_run_at: postgresTimestamp,
   version: 4,

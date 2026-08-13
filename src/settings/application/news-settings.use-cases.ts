@@ -5,6 +5,7 @@ import type {
   NewsSettingsPersistence,
   NewsSettingsRow,
   UpdateNewsSettingsInput,
+  UpdateNewsExcludedTopicsInput,
 } from "../settings.contracts.js";
 import { NEWS_SETTINGS_REPOSITORY } from "../settings.tokens.js";
 
@@ -34,5 +35,11 @@ export class NewsSettingsUseCases {
 
   update(input: UpdateNewsSettingsInput): Promise<NewsSettingsRow | null> {
     return this.settings.updateNewsSettings(input);
+  }
+
+  updateExcludedTopics(
+    input: UpdateNewsExcludedTopicsInput,
+  ): Promise<NewsSettingsRow | null> {
+    return this.settings.updateNewsExcludedTopics(input);
   }
 }
