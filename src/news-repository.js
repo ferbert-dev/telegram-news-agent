@@ -1157,6 +1157,121 @@ export class NewsRepository {
     )[0];
   }
 
+  async enqueueTelegramNewsJob({
+    updateId,
+    updateClaimToken,
+    channelId,
+    controlChatId,
+    requestedBy,
+    settingsSnapshot,
+  }) {
+    return (
+      await this.functionRows(
+        "enqueue_telegram_news_job",
+        [
+          updateId,
+          updateClaimToken,
+          channelId,
+          controlChatId,
+          requestedBy,
+          settingsSnapshot,
+        ],
+        "Enqueue Telegram news job",
+      )
+    )[0];
+  }
+
+  async claimNextTelegramNewsJob({
+    claimToken,
+    staleAfterSeconds = 1800,
+    maxExecutionAttempts = 3,
+    maxDeliveryAttempts = 10,
+  }) {
+    return (
+      await this.functionRows(
+        "claim_next_telegram_news_job",
+        [
+          claimToken,
+          staleAfterSeconds,
+          maxExecutionAttempts,
+          maxDeliveryAttempts,
+        ],
+        "Claim next Telegram news job",
+      )
+    )[0] ?? null;
+  }
+
+  async renewTelegramNewsJobClaim({ jobId, claimToken }) {
+    return this.functionScalar(
+      "renew_telegram_news_job_claim",
+      [jobId, claimToken],
+      "Renew Telegram news job claim",
+    );
+  }
+
+  async recordTelegramNewsJobOutcome({
+    jobId,
+    claimToken,
+    outcomeStatus,
+    draftId = null,
+    publicationMessageId = null,
+    errorCode = null,
+  }) {
+    return (
+      await this.functionRows(
+        "record_telegram_news_job_outcome",
+        [
+          jobId,
+          claimToken,
+          outcomeStatus,
+          draftId,
+          publicationMessageId,
+          errorCode,
+        ],
+        "Record Telegram news job outcome",
+      )
+    )[0] ?? null;
+  }
+
+  async retryTelegramNewsJob({
+    jobId,
+    claimToken,
+    errorCode,
+    maxAttempts = 3,
+    terminal = false,
+  }) {
+    return (
+      await this.functionRows(
+        "retry_telegram_news_job",
+        [jobId, claimToken, errorCode, maxAttempts, terminal],
+        "Retry Telegram news job",
+      )
+    )[0] ?? null;
+  }
+
+  async retryTelegramNewsJobDelivery({
+    jobId,
+    claimToken,
+    errorCode,
+    maxAttempts = 10,
+  }) {
+    return (
+      await this.functionRows(
+        "retry_telegram_news_job_delivery",
+        [jobId, claimToken, errorCode, maxAttempts],
+        "Retry Telegram news job delivery",
+      )
+    )[0] ?? null;
+  }
+
+  async completeTelegramNewsJob({ jobId, claimToken }) {
+    return this.functionScalar(
+      "complete_telegram_news_job",
+      [jobId, claimToken],
+      "Complete Telegram news job",
+    );
+  }
+
   async getTelegramNewsCheckpoint(updateId) {
     const result = await this.query(
       "Get Telegram news checkpoint",

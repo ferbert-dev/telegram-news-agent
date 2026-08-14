@@ -85,6 +85,25 @@ persists a sanitized policy block and rejects the draft/article, with zero
 gateway sends. This module remains additive and unwired into the legacy
 production send paths, so it does not itself claim runtime enforcement.
 
+Manual `/news` has an opt-in PostgreSQL-backed background boundary. The polling
+handler validates authorization and freezes the settings snapshot, then
+atomically enqueues under the claimed Telegram update before acknowledging the
+admin. A separate finite worker owns exactly one execution or delivery claim at
+a time. It runs the existing checkpointed workflow with the original update ID,
+persists `review_ready`, `published`, `no_candidates`, or
+`blocked_by_policy`, and only then performs the private admin delivery. An
+execution failure that exhausts its retry budget is persisted as a sanitized
+`failed` outcome and follows the same retryable admin-delivery phase. Stale
+claims are recoverable; execution and delivery attempt budgets are independent,
+and delivery recovery cannot rerun research or resend an idempotently published
+channel article. The global pipeline lease continues to serialize manual and
+scheduled research. `TELEGRAM_NEWS_JOB_MODE=off` is exact legacy routing and is
+the deployment rollback switch; job rows are retained as audit/recovery state.
+The additive NestJS Telegram application uses the same acceptance contract:
+its `/news` use case freezes settings and enqueues with the active update claim
+token, then renders `research_queued` or `already_running`; it never performs
+research or publication inline with the control update.
+
 ### Configuration
 
 Administrators use native Telegram inline keyboards rather than a Mini App.

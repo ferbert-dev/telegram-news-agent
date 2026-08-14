@@ -12,16 +12,19 @@ import { PG_POOL } from "../../src/database/database.tokens.js";
 import { createDrizzleDatabase } from "../../src/database/drizzle-client.js";
 import type {
   TelegramCheckpointsPersistence,
+  TelegramNewsJobsPersistence,
   TelegramReviewSessionsPersistence,
   TelegramUpdatesPersistence,
 } from "../../src/telegram/telegram-persistence.contracts.js";
 import { TelegramPersistenceModule } from "../../src/telegram/telegram-persistence.module.js";
 import {
   TELEGRAM_CHECKPOINTS_PERSISTENCE,
+  TELEGRAM_NEWS_JOBS_PERSISTENCE,
   TELEGRAM_REVIEW_SESSIONS_PERSISTENCE,
   TELEGRAM_UPDATES_PERSISTENCE,
 } from "../../src/telegram/telegram-persistence.tokens.js";
 import { TelegramCheckpointsRepository } from "../../src/telegram/telegram-checkpoints-repository.js";
+import { TelegramNewsJobsRepository } from "../../src/telegram/telegram-news-jobs-repository.js";
 import { TelegramReviewSessionsRepository } from "../../src/telegram/telegram-review-sessions-repository.js";
 import {
   mapTelegramNewsCheckpointRow,
@@ -39,6 +42,7 @@ const canonicalTimestamp = "2026-08-09T18:34:56.123Z";
 const updateId = 9_001;
 const draftId = "00000000-0000-4000-8000-000000000001";
 const sessionId = "a".repeat(48);
+const jobId = "00000000-0000-4000-8000-000000000004";
 
 const checkpointRow: TelegramNewsCheckpointDatabaseRow = {
   update_id: String(updateId),
@@ -169,9 +173,7 @@ class TelegramPool extends EventEmitter {
       text.includes('inner join "drafts"')
     ) {
       rows = this.hasPending ? [[sessionId]] : [];
-    } else if (
-      text.includes('from "telegram_news_request_checkpoints"')
-    ) {
+    } else if (text.includes('from "telegram_news_request_checkpoints"')) {
       rows = this.checkpointRows;
     } else if (
       text.includes('insert into "telegram_news_request_checkpoints"')
@@ -185,28 +187,77 @@ class TelegramPool extends EventEmitter {
     } else if (text.includes('"public".')) {
       rows =
         this.functionRows ??
-        (text.includes("claim_telegram_update")
+        (text.includes("enqueue_telegram_news_job")
           ? [
               {
-                claimed: true,
-                claim_token: "00000000-0000-4000-8000-000000000002",
-                claim_status: "claimed",
+                id: jobId,
+                enqueue_outcome: "queued",
+                job_status: "queued",
+                active_job_id: null,
               },
             ]
-          : text.includes("record_telegram_update_failure")
+          : text.includes("claim_next_telegram_news_job")
             ? [
                 {
-                  attempt_count: 1,
-                  terminal: false,
-                  failure_status: "failed",
-                  recorded: true,
+                  id: jobId,
+                  request_update_id: String(updateId),
+                  telegram_channel_id: "@channel",
+                  control_chat_id: "99",
+                  requested_by: "42",
+                  settings_snapshot: {},
+                  claim_phase: "execute",
+                  claim_token: "00000000-0000-4000-8000-000000000002",
+                  outcome_status: null,
+                  draft_id: null,
+                  publication_message_id: null,
+                  error_code: null,
+                  execution_attempt_count: 0,
+                  delivery_attempt_count: 0,
                 },
               ]
-            : text.includes("finish_telegram_update")
-            ? [{ value: true }]
-            : text.includes("decide_telegram_review_session")
-              ? [decisionRow]
-              : [reviewSessionRow]);
+            : text.includes("record_telegram_news_job_outcome") ||
+                text.includes("retry_telegram_news_job")
+              ? [
+                  {
+                    id: jobId,
+                    status: text.includes("record_")
+                      ? "outcome_ready"
+                      : "queued",
+                    outcome_status: text.includes("record_")
+                      ? "no_candidates"
+                      : null,
+                    draft_id: null,
+                    publication_message_id: null,
+                    error_code: text.includes("record_") ? null : "failed",
+                    execution_attempt_count: text.includes("retry_") ? 1 : 0,
+                    delivery_attempt_count: 0,
+                  },
+                ]
+              : text.includes("renew_telegram_news_job_claim") ||
+                  text.includes("complete_telegram_news_job")
+                ? [{ value: true }]
+                : text.includes("claim_telegram_update")
+                  ? [
+                      {
+                        claimed: true,
+                        claim_token: "00000000-0000-4000-8000-000000000002",
+                        claim_status: "claimed",
+                      },
+                    ]
+                  : text.includes("record_telegram_update_failure")
+                    ? [
+                        {
+                          attempt_count: 1,
+                          terminal: false,
+                          failure_status: "failed",
+                          recorded: true,
+                        },
+                      ]
+                    : text.includes("finish_telegram_update")
+                      ? [{ value: true }]
+                      : text.includes("decide_telegram_review_session")
+                        ? [decisionRow]
+                        : [reviewSessionRow]);
     } else {
       throw new Error(`Unexpected test query: ${text}`);
     }
@@ -223,6 +274,7 @@ function repositories(pool: TelegramPool) {
   const database = createDrizzleDatabase(pool as unknown as Pool);
   return {
     updates: new TelegramUpdatesRepository(pool as unknown as Pool, database),
+    jobs: new TelegramNewsJobsRepository(pool as unknown as Pool, database),
     checkpoints: new TelegramCheckpointsRepository(
       pool as unknown as Pool,
       database,
@@ -287,7 +339,102 @@ test("five ordinary Telegram paths use typed Drizzle and preserve pending fallba
   assert.match(saveSql, /do update set "status" = \$/);
   assert.ok(saveSql.includes('"draft_id" = $'));
   assert.ok(!saveSql.includes("claim_token"));
-  assert.ok(pool.calls.slice(0, 5).every((call) => !call.text.includes('"public".')));
+  assert.ok(
+    pool.calls.slice(0, 5).every((call) => !call.text.includes('"public".')),
+  );
+});
+
+test("seven durable Telegram news job methods use exact PostgreSQL signatures and typed rows", async () => {
+  const pool = new TelegramPool();
+  const { jobs } = repositories(pool);
+  const claimToken = "00000000-0000-4000-8000-000000000002";
+
+  assert.equal(
+    (
+      await jobs.enqueueTelegramNewsJob({
+        updateId,
+        updateClaimToken: claimToken,
+        channelId: "@channel",
+        controlChatId: 99,
+        requestedBy: 42,
+        settingsSnapshot: {},
+      })
+    ).enqueue_outcome,
+    "queued",
+  );
+  assert.equal(
+    (await jobs.claimNextTelegramNewsJob({ claimToken }))?.request_update_id,
+    updateId,
+  );
+  assert.equal(
+    await jobs.renewTelegramNewsJobClaim({ jobId, claimToken }),
+    true,
+  );
+  assert.equal(
+    (
+      await jobs.recordTelegramNewsJobOutcome({
+        jobId,
+        claimToken,
+        outcomeStatus: "no_candidates",
+      })
+    )?.status,
+    "outcome_ready",
+  );
+  assert.equal(
+    (
+      await jobs.retryTelegramNewsJob({
+        jobId,
+        claimToken,
+        errorCode: "failed",
+      })
+    )?.execution_attempt_count,
+    1,
+  );
+  assert.equal(
+    (
+      await jobs.retryTelegramNewsJobDelivery({
+        jobId,
+        claimToken,
+        errorCode: "delivery_failed",
+      })
+    )?.status,
+    "queued",
+  );
+  assert.equal(await jobs.completeTelegramNewsJob({ jobId, claimToken }), true);
+
+  assert.deepEqual(
+    pool.calls.map(({ text, values }) => ({ text, values })),
+    [
+      {
+        text: 'select * from "public"."enqueue_telegram_news_job"($1, $2, $3, $4, $5, $6)',
+        values: [updateId, claimToken, "@channel", 99, 42, {}],
+      },
+      {
+        text: 'select * from "public"."claim_next_telegram_news_job"($1, $2, $3, $4)',
+        values: [claimToken, 1800, 3, 10],
+      },
+      {
+        text: 'select "public"."renew_telegram_news_job_claim"($1, $2) as value',
+        values: [jobId, claimToken],
+      },
+      {
+        text: 'select * from "public"."record_telegram_news_job_outcome"($1, $2, $3, $4, $5, $6)',
+        values: [jobId, claimToken, "no_candidates", null, null, null],
+      },
+      {
+        text: 'select * from "public"."retry_telegram_news_job"($1, $2, $3, $4, $5)',
+        values: [jobId, claimToken, "failed", 3, false],
+      },
+      {
+        text: 'select * from "public"."retry_telegram_news_job_delivery"($1, $2, $3, $4)',
+        values: [jobId, claimToken, "delivery_failed", 10],
+      },
+      {
+        text: 'select "public"."complete_telegram_news_job"($1, $2) as value',
+        values: [jobId, claimToken],
+      },
+    ],
+  );
 });
 
 test("six retained Telegram methods call exact parameterized PostgreSQL signatures and preserve defaults", async () => {
@@ -432,6 +579,15 @@ const updateMethods = [
   "finishTelegramUpdate",
   "recordTelegramUpdateFailure",
 ] as const satisfies readonly (keyof TelegramUpdatesPersistence)[];
+const newsJobMethods = [
+  "enqueueTelegramNewsJob",
+  "claimNextTelegramNewsJob",
+  "renewTelegramNewsJobClaim",
+  "recordTelegramNewsJobOutcome",
+  "retryTelegramNewsJob",
+  "retryTelegramNewsJobDelivery",
+  "completeTelegramNewsJob",
+] as const satisfies readonly (keyof TelegramNewsJobsPersistence)[];
 const checkpointMethods = [
   "getTelegramNewsCheckpoint",
   "saveTelegramNewsCheckpoint",
@@ -450,6 +606,8 @@ class TelegramPersistenceConsumer {
   constructor(
     @Inject(TELEGRAM_UPDATES_PERSISTENCE)
     readonly updates: TelegramUpdatesPersistence,
+    @Inject(TELEGRAM_NEWS_JOBS_PERSISTENCE)
+    readonly jobs: TelegramNewsJobsPersistence,
     @Inject(TELEGRAM_CHECKPOINTS_PERSISTENCE)
     readonly checkpoints: TelegramCheckpointsPersistence,
     @Inject(TELEGRAM_REVIEW_SESSIONS_PERSISTENCE)
@@ -463,7 +621,7 @@ class TelegramPersistenceConsumer {
 })
 class TelegramPersistenceConsumerModule {}
 
-test("TelegramPersistenceModule exports three Symbol aliases backed by three single repository instances and exactly eleven methods", async () => {
+test("TelegramPersistenceModule exports four Symbol aliases backed by four single repository instances and exactly eighteen methods", async () => {
   const pool = new TelegramPool();
   const moduleRef = await Test.createTestingModule({
     imports: [TelegramPersistenceConsumerModule],
@@ -475,15 +633,24 @@ test("TelegramPersistenceModule exports three Symbol aliases backed by three sin
   try {
     const consumer = moduleRef.get(TelegramPersistenceConsumer);
     const updates = moduleRef.get(TelegramUpdatesRepository);
+    const jobs = moduleRef.get(TelegramNewsJobsRepository);
     const checkpoints = moduleRef.get(TelegramCheckpointsRepository);
     const reviews = moduleRef.get(TelegramReviewSessionsRepository);
 
     assert.equal(typeof TELEGRAM_UPDATES_PERSISTENCE, "symbol");
+    assert.equal(typeof TELEGRAM_NEWS_JOBS_PERSISTENCE, "symbol");
     assert.equal(typeof TELEGRAM_CHECKPOINTS_PERSISTENCE, "symbol");
     assert.equal(typeof TELEGRAM_REVIEW_SESSIONS_PERSISTENCE, "symbol");
     assert.equal(consumer.updates, updates);
+    assert.equal(consumer.jobs, jobs);
     assert.equal(consumer.checkpoints, checkpoints);
     assert.equal(consumer.reviews, reviews);
+    assert.deepEqual(
+      Object.getOwnPropertyNames(TelegramNewsJobsRepository.prototype)
+        .filter((name) => name !== "constructor")
+        .sort(),
+      [...newsJobMethods].sort(),
+    );
     assert.deepEqual(
       Object.getOwnPropertyNames(TelegramUpdatesRepository.prototype)
         .filter((name) => name !== "constructor")
@@ -503,8 +670,11 @@ test("TelegramPersistenceModule exports three Symbol aliases backed by three sin
       [...reviewMethods].sort(),
     );
     assert.equal(
-      updateMethods.length + checkpointMethods.length + reviewMethods.length,
-      11,
+      updateMethods.length +
+        newsJobMethods.length +
+        checkpointMethods.length +
+        reviewMethods.length,
+      18,
     );
     assert.deepEqual(
       Reflect.getMetadata("exports", TelegramPersistenceModule),
@@ -512,6 +682,7 @@ test("TelegramPersistenceModule exports three Symbol aliases backed by three sin
         TELEGRAM_UPDATES_PERSISTENCE,
         TELEGRAM_CHECKPOINTS_PERSISTENCE,
         TELEGRAM_REVIEW_SESSIONS_PERSISTENCE,
+        TELEGRAM_NEWS_JOBS_PERSISTENCE,
       ],
     );
   } finally {

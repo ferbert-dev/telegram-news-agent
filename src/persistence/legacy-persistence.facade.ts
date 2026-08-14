@@ -30,12 +30,14 @@ import {
 } from "../settings/settings.tokens.js";
 import type {
   TelegramCheckpointsPersistence,
+  TelegramNewsJobsPersistence,
   TelegramReviewSessionsPersistence,
   TelegramUpdatesPersistence,
   TelegramUpdateTerminalStatus,
 } from "../telegram/telegram-persistence.contracts.js";
 import {
   TELEGRAM_CHECKPOINTS_PERSISTENCE,
+  TELEGRAM_NEWS_JOBS_PERSISTENCE,
   TELEGRAM_REVIEW_SESSIONS_PERSISTENCE,
   TELEGRAM_UPDATES_PERSISTENCE,
 } from "../telegram/telegram-persistence.tokens.js";
@@ -70,6 +72,8 @@ export class LegacyPersistenceFacade implements LegacyPersistence {
     private readonly scheduler: SchedulerPersistence,
     @Inject(TELEGRAM_UPDATES_PERSISTENCE)
     private readonly telegramUpdates: TelegramUpdatesPersistence,
+    @Inject(TELEGRAM_NEWS_JOBS_PERSISTENCE)
+    private readonly telegramNewsJobs: TelegramNewsJobsPersistence,
     @Inject(TELEGRAM_CHECKPOINTS_PERSISTENCE)
     private readonly telegramCheckpoints: TelegramCheckpointsPersistence,
     @Inject(TELEGRAM_REVIEW_SESSIONS_PERSISTENCE)
@@ -306,6 +310,27 @@ export class LegacyPersistenceFacade implements LegacyPersistence {
       terminal,
       claimToken,
     });
+  }
+  enqueueTelegramNewsJob(...args: Parameters<TelegramNewsJobsPersistence["enqueueTelegramNewsJob"]>) {
+    return this.telegramNewsJobs.enqueueTelegramNewsJob(...args);
+  }
+  claimNextTelegramNewsJob(...args: Parameters<TelegramNewsJobsPersistence["claimNextTelegramNewsJob"]>) {
+    return this.telegramNewsJobs.claimNextTelegramNewsJob(...args);
+  }
+  renewTelegramNewsJobClaim(...args: Parameters<TelegramNewsJobsPersistence["renewTelegramNewsJobClaim"]>) {
+    return this.telegramNewsJobs.renewTelegramNewsJobClaim(...args);
+  }
+  recordTelegramNewsJobOutcome(...args: Parameters<TelegramNewsJobsPersistence["recordTelegramNewsJobOutcome"]>) {
+    return this.telegramNewsJobs.recordTelegramNewsJobOutcome(...args);
+  }
+  retryTelegramNewsJob(...args: Parameters<TelegramNewsJobsPersistence["retryTelegramNewsJob"]>) {
+    return this.telegramNewsJobs.retryTelegramNewsJob(...args);
+  }
+  retryTelegramNewsJobDelivery(...args: Parameters<TelegramNewsJobsPersistence["retryTelegramNewsJobDelivery"]>) {
+    return this.telegramNewsJobs.retryTelegramNewsJobDelivery(...args);
+  }
+  completeTelegramNewsJob(...args: Parameters<TelegramNewsJobsPersistence["completeTelegramNewsJob"]>) {
+    return this.telegramNewsJobs.completeTelegramNewsJob(...args);
   }
   getTelegramNewsCheckpoint(...args: Parameters<TelegramCheckpointsPersistence["getTelegramNewsCheckpoint"]>) {
     return this.telegramCheckpoints.getTelegramNewsCheckpoint(...args);

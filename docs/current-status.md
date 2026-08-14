@@ -80,6 +80,15 @@ Last updated: 2026-08-12
   boundary. The existing recovery path never resends an ambiguous message: a
   sent reconciliation records the real Telegram receipt and a not-sent
   reconciliation returns the draft to approval.
+- Manual `/news` now has a disabled-by-default durable single-worker path.
+  When `TELEGRAM_NEWS_JOB_MODE=enabled`, polling persists the request before its
+  acknowledgement, the background worker reuses the existing update checkpoint
+  and global pipeline lease, and PostgreSQL separately fences execution and
+  private-result delivery. This keeps `/stats`, `/settings`, `/labs`, and review
+  callbacks responsive without allowing two `/news` searches. Production stays
+  on the legacy path until migration, release authority, and Telegram QA enable
+  the flag. The additive NestJS Telegram `/news` route now uses the same durable
+  enqueue-before-presentation contract instead of invoking its workflow inline.
 - Final-veto rollback is application-image-first. The forward migration keeps
   both legacy claim overloads for N-1 compatibility and its additive audit
   table/functions can remain readable. Setting exclusions to `[]` is the

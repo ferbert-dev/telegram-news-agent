@@ -21,6 +21,7 @@ import { FeatureFlagsRepository } from "../../src/settings/feature-flags-reposit
 import { NewsSettingsRepository } from "../../src/settings/news-settings-repository.js";
 import { TelegramSettingsInputRepository } from "../../src/settings/telegram-settings-input-repository.js";
 import { TelegramCheckpointsRepository } from "../../src/telegram/telegram-checkpoints-repository.js";
+import { TelegramNewsJobsRepository } from "../../src/telegram/telegram-news-jobs-repository.js";
 import { TelegramReviewSessionsRepository } from "../../src/telegram/telegram-review-sessions-repository.js";
 import { TelegramUpdatesRepository } from "../../src/telegram/telegram-updates-repository.js";
 
@@ -71,6 +72,7 @@ test(
     const settingsInput = new TelegramSettingsInputRepository(pool, database);
     const scheduler = new SchedulerRepository(pool, database);
     const telegramUpdates = new TelegramUpdatesRepository(pool, database);
+    const telegramNewsJobs = new TelegramNewsJobsRepository(pool, database);
     const telegramCheckpoints = new TelegramCheckpointsRepository(pool, database);
     const telegramReviews = new TelegramReviewSessionsRepository(pool, database);
     const facade = new LegacyPersistenceFacade(
@@ -86,6 +88,7 @@ test(
       settingsInput,
       scheduler,
       telegramUpdates,
+      telegramNewsJobs,
       telegramCheckpoints,
       telegramReviews,
     );

@@ -17,16 +17,16 @@ This is a query-layer and composition-root migration. It does **not** copy produ
 
 The baseline audit found:
 
-- 24 PostgreSQL tables: 23 application tables plus `schema_migrations`.
-- 26 foreign keys in the Drizzle schema snapshot.
-- 52 current PostgreSQL function names and 54 live signatures.
+- 25 PostgreSQL tables: 24 application tables plus `schema_migrations`.
+- 29 foreign keys in the Drizzle schema snapshot.
+- 59 current PostgreSQL function names and 61 live signatures.
   `update_news_settings` and the publication-claim function each intentionally
   retain one compatibility overload. A clean PostgreSQL 17 inventory corrected
   the earlier static count and remains authoritative for both overloads. The
   excluded-topic foundation adds one validator and one dedicated optimistic-CAS
   update without changing either `update_news_settings` signature.
-- 72 domain persistence methods and six infrastructure helpers in `NewsRepository`.
-- 32 domain paths suitable for typed Drizzle queries and 40 paths that should retain a PostgreSQL function as their atomic boundary.
+- 79 domain persistence methods and six infrastructure helpers in `NewsRepository`.
+- 32 domain paths suitable for typed Drizzle queries and 47 paths that should retain a PostgreSQL function as their atomic boundary.
 - Five public methods with no production call sites: `createDraft`,
   `recordPublication`, `transitionArticle`, `transitionDraft`, and
   `replaceArticleTopics`. They remain facade compatibility methods, not new
@@ -46,7 +46,7 @@ Ordered SQL migrations and live PostgreSQL introspection remain authoritative.
 | Editorial | `drafts`, `published_posts` | Draft review, publication state and receipts |
 | Story deduplication | `article_story_decisions`, `story_publication_claims` | Cross-run story memory, semantic relation audit and race-safe publication reservation |
 | Settings | `news_bot_settings`, `news_feature_flags`, `telegram_settings_inputs` | Channel configuration, experiments and settings input |
-| Telegram | `telegram_updates`, `telegram_review_sessions`, `telegram_news_request_checkpoints` | Update idempotency, review controls and resumable `/news` requests |
+| Telegram | `telegram_updates`, `telegram_review_sessions`, `telegram_news_request_checkpoints`, `telegram_news_jobs` | Update idempotency, review controls, resumable `/news` checkpoints and the opt-in single-worker queue |
 | Operations | `pipeline_leases`, `notion_audit_outbox` | Cross-process ownership and durable audit delivery |
 | Technical | `schema_migrations` | Applied migration checksums and history |
 
@@ -143,13 +143,18 @@ facade imports persistence modules only.
   audit outbox through a Symbol-bound outbound gateway. Claim ordering,
   `SKIP LOCKED`, completion and retry/backoff remain PostgreSQL-owned.
 - `TelegramControlApplicationModule` exposes a Symbol-backed transport-neutral
-  update router for checkpointed `/news`, settings, Labs, usage stats, manual
+  update router for durable `/news` acceptance, settings, Labs, usage stats, manual
   review decisions and review-session recovery. Required semantic presentation
   runs before a claimed update is completed. Legacy callback acknowledgements
   and manual-review policy-block notices remain best effort; an automatic
   `/news` policy-block notice is required and retryable. Update claims, checkpoints,
   expiry/rebind and double-tap decisions stay behind the existing typed
-  PostgreSQL persistence ports. The Telegram Bot API gateway owns admin checks,
+  PostgreSQL persistence ports. Its `/news` use case freezes the current
+  settings snapshot and atomically enqueues under the active update claim before
+  presenting `research_queued` or `already_running`; research/publication never
+  run inline with the control update. Terminal execution failures also cross a
+  durable sanitized outcome boundary before the separately retryable admin
+  notice. The Telegram Bot API gateway owns admin checks,
   raw API payloads, outcome rendering and review controls. Settings, Labs and
   stats have additive adapters over their verified legacy transport flows; the
   new slice remains deliberately unwired from the authoritative legacy poller.
@@ -196,11 +201,11 @@ Do not compare writes by dual-writing production. Mutation parity runs only on i
 
 Before repository migration resumes, CI must create a clean PostgreSQL 17 database and produce a machine-readable inventory that verifies:
 
-- all 24 tables and 26 foreign keys;
+- all 25 tables and 29 foreign keys;
 - columns, PostgreSQL types, nullability and defaults;
 - primary, unique and check constraints;
 - expected and unexpected indexes, including partial indexes;
-- 52 function names, 54 signatures, return types, volatility, security mode and
+- 59 function names, 61 signatures, return types, volatility, security mode and
   configured search path; the two compatibility overloads for settings update
   and publication claim remain present alongside the excluded-topic validator
   and dedicated update function;

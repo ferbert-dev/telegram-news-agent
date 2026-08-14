@@ -1,12 +1,15 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   check,
   index,
   integer,
   jsonb,
   pgTable,
+  smallint,
   text,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -125,5 +128,84 @@ export const telegramNewsRequestCheckpoints = pgTable(
     index("telegram_news_request_checkpoints_draft_id_idx")
       .on(table.draftId)
       .where(sql`${table.draftId} is not null`),
+  ],
+).enableRLS();
+
+export const telegramNewsJobs = pgTable(
+  "telegram_news_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    requestUpdateId: bigint("request_update_id", { mode: "number" })
+      .notNull()
+      .unique()
+      .references(() => telegramUpdates.updateId, { onDelete: "restrict" }),
+    telegramChannelId: text("telegram_channel_id").notNull(),
+    controlChatId: bigint("control_chat_id", { mode: "number" }).notNull(),
+    requestedBy: bigint("requested_by", { mode: "number" }).notNull(),
+    settingsSnapshot: jsonb("settings_snapshot").$type<JsonObject>().notNull(),
+    status: text("status").default("queued").notNull(),
+    workerSlot: smallint("worker_slot").default(1).notNull(),
+    activeJobId: uuid("active_job_id").references(
+      (): AnyPgColumn => telegramNewsJobs.id,
+      { onDelete: "restrict" },
+    ),
+    claimToken: uuid("claim_token"),
+    claimedAt: timestampWithTimezone("claimed_at"),
+    availableAt: timestampWithTimezone("available_at").defaultNow().notNull(),
+    executionAttemptCount: integer("execution_attempt_count")
+      .default(0)
+      .notNull(),
+    deliveryAttemptCount: integer("delivery_attempt_count")
+      .default(0)
+      .notNull(),
+    outcomeStatus: text("outcome_status"),
+    draftId: uuid("draft_id").references(() => drafts.id, {
+      onDelete: "restrict",
+    }),
+    publicationMessageId: bigint("publication_message_id", {
+      mode: "number",
+    }),
+    errorCode: text("error_code"),
+    createdAt: timestampWithTimezone("created_at").defaultNow().notNull(),
+    updatedAt: timestampWithTimezone("updated_at").defaultNow().notNull(),
+    completedAt: timestampWithTimezone("completed_at"),
+  },
+  (table) => [
+    check(
+      "telegram_news_jobs_channel_check",
+      sql`btrim(${table.telegramChannelId}) <> '' and length(${table.telegramChannelId}) <= 255`,
+    ),
+    check(
+      "telegram_news_jobs_actor_check",
+      sql`${table.controlChatId} > 0 and ${table.requestedBy} > 0`,
+    ),
+    check(
+      "telegram_news_jobs_settings_snapshot_check",
+      sql`jsonb_typeof(${table.settingsSnapshot}) = 'object'`,
+    ),
+    check(
+      "telegram_news_jobs_status_check",
+      sql`${table.status} in ('queued', 'processing', 'outcome_ready', 'delivering', 'completed', 'failed', 'suppressed')`,
+    ),
+    check("telegram_news_jobs_worker_slot_check", sql`${table.workerSlot} = 1`),
+    check(
+      "telegram_news_jobs_attempts_check",
+      sql`${table.executionAttemptCount} >= 0 and ${table.deliveryAttemptCount} >= 0`,
+    ),
+    check(
+      "telegram_news_jobs_outcome_status_check",
+      sql`${table.outcomeStatus} is null or ${table.outcomeStatus} in ('review_ready', 'published', 'no_candidates', 'blocked_by_policy', 'failed', 'already_running')`,
+    ),
+    uniqueIndex("telegram_news_jobs_single_worker_idx")
+      .on(table.workerSlot)
+      .where(sql`${table.status} in ('processing', 'delivering')`),
+    uniqueIndex("telegram_news_jobs_active_channel_idx")
+      .on(table.telegramChannelId)
+      .where(
+        sql`${table.status} in ('queued', 'processing', 'outcome_ready', 'delivering')`,
+      ),
+    index("telegram_news_jobs_available_idx")
+      .on(table.availableAt, table.createdAt)
+      .where(sql`${table.status} in ('queued', 'outcome_ready')`),
   ],
 ).enableRLS();

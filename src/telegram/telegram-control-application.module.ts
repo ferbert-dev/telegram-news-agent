@@ -19,7 +19,6 @@ import type {
   TelegramControlClock,
   TelegramControlFeatureGateway,
   TelegramControlIdGenerator,
-  TelegramNewsWorkflowGateway,
   TelegramReviewPresentationGateway,
 } from "./telegram-application.contracts.js";
 import {
@@ -30,7 +29,6 @@ import {
   TELEGRAM_CONTROL_ID_GENERATOR,
   TELEGRAM_EDITORIAL_WORKFLOW,
   TELEGRAM_LABS_CONTROL,
-  TELEGRAM_NEWS_WORKFLOW,
   TELEGRAM_REVIEW_PRESENTATION,
   TELEGRAM_SETTINGS_CONTROL,
   TELEGRAM_STATS_CONTROL,
@@ -40,7 +38,6 @@ import { TelegramPersistenceModule } from "./telegram-persistence.module.js";
 export type TelegramControlApplicationGateways = {
   authorization: TelegramAdminAuthorizationGateway;
   audit: TelegramControlAuditGateway;
-  news: TelegramNewsWorkflowGateway;
   editorial: EditorialWorkflowApplicationPort;
   reviewPresentation: TelegramReviewPresentationGateway;
   settings: TelegramControlFeatureGateway;
@@ -63,7 +60,6 @@ export class TelegramControlApplicationModule {
       providers: [
         { provide: TELEGRAM_ADMIN_AUTHORIZATION, useValue: gateways.authorization },
         { provide: TELEGRAM_CONTROL_AUDIT, useValue: gateways.audit },
-        { provide: TELEGRAM_NEWS_WORKFLOW, useValue: gateways.news },
         { provide: TELEGRAM_EDITORIAL_WORKFLOW, useValue: gateways.editorial },
         { provide: TELEGRAM_REVIEW_PRESENTATION, useValue: gateways.reviewPresentation },
         { provide: TELEGRAM_SETTINGS_CONTROL, useValue: gateways.settings },

@@ -77,10 +77,7 @@ export class HandleTelegramControlUpdateUseCase
         try {
           this.validateRequest(request);
           await this.requireAdmin(request);
-          if (request.route.kind === "news") {
-            await present({ status: "research_started" });
-          }
-          const outcome = await this.route(request);
+          const outcome = await this.route(request, claim.claim_token);
           await present(outcome);
           const finished = await this.updates.finishTelegramUpdate({
             updateId: request.updateId,
@@ -192,10 +189,13 @@ export class HandleTelegramControlUpdateUseCase
     }
   }
 
-  private route(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  private route(
+    request: TelegramControlRequest,
+    updateClaimToken: string,
+  ): Promise<TelegramControlOutcome> {
     switch (request.route.kind) {
       case "news":
-        return this.news.execute(request);
+        return this.news.execute(request, updateClaimToken);
       case "review":
         return this.review.execute(request);
       case "settings":

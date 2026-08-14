@@ -389,7 +389,7 @@ test("concrete Bot API outcome renderer keeps required sends retryable and manua
     "token",
     async (_token, method, payload) => {
       calls.push(`${method}:${String(payload.text)}`);
-      if (String(payload.text).startsWith("Research started")) {
+      if (String(payload.text).startsWith("Research queued")) {
         throw new Error("required Telegram delivery failed");
       }
       if (String(payload.text).startsWith("Publication was blocked")) {
@@ -408,14 +408,19 @@ test("concrete Bot API outcome renderer keeps required sends retryable and manua
     route: { kind: "news" },
   };
   await assert.rejects(
-    renderer.render(newsRequest, { status: "research_started" }),
+    renderer.render(newsRequest, { status: "research_queued" }),
     /required Telegram delivery failed/,
   );
   await renderer.render(newsRequest, {
     status: "blocked_by_policy",
     publicationPath: "manual_review",
   });
-  assert.equal(calls.length, 2);
+  await renderer.render(newsRequest, { status: "already_running" });
+  assert.equal(
+    calls[2],
+    "sendMessage:A news search is already queued or running. The existing request will finish here.",
+  );
+  assert.equal(calls.length, 3);
 });
 
 test("legacy settings, Labs, and stats adapters execute verified transport flows behind neutral ports", async () => {
@@ -499,7 +504,6 @@ test("TelegramControlApplicationModule exposes a real Nest application identity 
       TelegramControlApplicationModule.register({
         authorization: { async isChannelAdmin() { return true; } },
         audit: { async run(_context, operation) { return operation(); } },
-        news: { async run() { return { status: "no_candidates" }; } },
         editorial: {
           async generateReviewDraft() { throw new Error("unused"); },
           async publishApprovedDraft() { throw new Error("unused"); },

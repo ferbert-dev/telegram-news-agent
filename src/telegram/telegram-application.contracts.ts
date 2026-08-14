@@ -1,5 +1,4 @@
 import type { DraftRow } from "../editorial/editorial-persistence.contracts.js";
-import type { NewsSettingsRow } from "../settings/settings.contracts.js";
 
 export type TelegramControlChatType = "private" | "group" | "supergroup" | "channel";
 
@@ -57,28 +56,6 @@ export interface TelegramControlFeatureGateway {
   execute(request: TelegramControlRequest): Promise<TelegramControlOutcome>;
 }
 
-export type TelegramNewsWorkflowInput = {
-  updateId: number;
-  actorId: number;
-  chatId: number;
-  channelId: string;
-  settings: NewsSettingsRow;
-};
-
-export type TelegramNewsWorkflowResult =
-  | { status: "no_candidates" }
-  | {
-      status: "review_ready";
-      draftId: string;
-      preview: string;
-      windowHours: number;
-    };
-
-/** Finite research/drafting seam; it never owns Telegram polling or rendering. */
-export interface TelegramNewsWorkflowGateway {
-  run(input: TelegramNewsWorkflowInput): Promise<TelegramNewsWorkflowResult>;
-}
-
 export type RestoreReviewControlsResult = "available" | "missing";
 
 /** Semantic presentation port implemented by a Telegram Bot API adapter. */
@@ -111,7 +88,10 @@ export interface TelegramControlClock {
 }
 
 export interface TelegramNewsApplicationPort {
-  execute(request: TelegramControlRequest): Promise<TelegramControlOutcome>;
+  execute(
+    request: TelegramControlRequest,
+    updateClaimToken: string,
+  ): Promise<TelegramControlOutcome>;
 }
 
 export interface TelegramReviewDecisionApplicationPort {

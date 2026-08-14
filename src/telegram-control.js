@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { newsSettingsSnapshot } from "./news-settings.js";
 import { publishApprovedDraft } from "./publish.js";
 import { withNotionAudit } from "./notion-audit.js";
 import {
@@ -306,6 +307,7 @@ export async function handleControlUpdate(
     newSessionId = () => randomBytes(24).toString("hex"),
     publishDraft = publishApprovedDraft,
     aiProvider,
+    durableNewsJobsEnabled = false,
   },
 ) {
   const classification = classifyControlUpdate(update, botUsername, botId);
@@ -350,6 +352,8 @@ export async function handleControlUpdate(
               now,
               newSessionId,
               updateId: update.update_id,
+              updateClaimToken: claimed.claim_token,
+              durableNewsJobsEnabled,
             },
           );
         } else if (classification.kind === "callback") {
@@ -599,6 +603,8 @@ async function handleNewsCommand(
     now,
     newSessionId,
     updateId,
+    updateClaimToken,
+    durableNewsJobsEnabled = false,
   },
 ) {
   const chatId = requirePrivateChat(message);
@@ -610,6 +616,36 @@ async function handleNewsCommand(
     channelId,
     callTelegram,
   });
+
+  if (durableNewsJobsEnabled) {
+    const settings = await repository.getOrCreateNewsSettings({
+      channelId,
+      reviewChatId: chatId,
+      updatedBy: userId,
+    });
+    const job = await repository.enqueueTelegramNewsJob({
+      updateId,
+      updateClaimToken,
+      channelId,
+      controlChatId: chatId,
+      requestedBy: userId,
+      settingsSnapshot: newsSettingsSnapshot(settings),
+    });
+    const alreadyRunning = job?.enqueue_outcome === "already_running";
+    await callTelegram(token, "sendMessage", {
+      chat_id: chatId,
+      text: alreadyRunning
+        ? "A news search is already queued or running. The existing request will finish here."
+        : "Research queued. The result will appear here; /stats, /settings and /labs remain available while it runs.",
+    });
+    return {
+      jobId: job?.id ?? null,
+      jobStatus: job?.enqueue_outcome ?? "queued",
+      auditResult: alreadyRunning
+        ? "A concurrent manual news request was durably recorded as already running."
+        : "The manual news request was durably queued for background execution.",
+    };
+  }
 
   await callTelegram(token, "sendMessage", {
     chat_id: chatId,

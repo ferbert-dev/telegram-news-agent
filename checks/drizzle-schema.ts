@@ -28,6 +28,7 @@ test("Drizzle snapshot covers every current PostgreSQL table", () => {
     "source_topics",
     "sources",
     "story_publication_claims",
+    "telegram_news_jobs",
     "telegram_news_request_checkpoints",
     "telegram_review_sessions",
     "telegram_settings_inputs",
@@ -55,7 +56,7 @@ test("Drizzle snapshot preserves RLS and foreign-key coverage", () => {
       (count, config) => count + config.foreignKeys.length,
       0,
     ),
-    26,
+    29,
   );
 });
 
@@ -70,4 +71,5 @@ test("every declared non-constraint index has a stable unique name", () => {
   assert.ok(
     names.includes("telegram_news_request_checkpoints_draft_id_idx"),
   );
+  assert.ok(names.includes("telegram_news_jobs_single_worker_idx"));
 });

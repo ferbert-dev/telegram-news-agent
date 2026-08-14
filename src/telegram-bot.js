@@ -24,6 +24,11 @@ import {
 } from "./telegram-polling.js";
 import { callTelegram, getTelegramConfig } from "./telegram.js";
 import {
+  deliverTelegramNewsJobOutcome,
+  getTelegramNewsJobsConfig,
+  runTelegramNewsJobWorker,
+} from "./telegram-news-jobs.js";
+import {
   runCheckpointedNewsSearch,
   runTieredNewsSearch,
 } from "./news-search.js";
@@ -34,6 +39,7 @@ import { runWorkflow } from "./workflow.js";
 
 const { token, channelId } = getTelegramConfig();
 const polling = getPollingConfig();
+const newsJobs = getTelegramNewsJobsConfig();
 const databaseClient = createDatabaseClient();
 const repository = new NewsRepository(databaseClient);
 const auditLogger = new NotionAuditLogger(getNotionAuditConfig());
@@ -84,6 +90,37 @@ async function runNews({ updateId, userId, chatId }) {
     telegram: { token, channelId },
     editor,
   });
+}
+
+async function runDurableNewsJob(job, { signal }) {
+  signal?.throwIfAborted();
+  return withNotionAudit(
+    auditLogger,
+    {
+      name: "Telegram /news - background run",
+      objective: `Complete durable Telegram news job ${job.id} for settings version ${job.settings_snapshot?.version ?? "unknown"}.`,
+    },
+    async (auditRun) => {
+      const value = await runCheckpointedNewsSearch({
+        updateId: job.request_update_id,
+        runWorkflow,
+        repository,
+        aiProvider,
+        settings: job.settings_snapshot,
+        telegram: { token, channelId },
+        editor,
+      });
+      return {
+        value,
+        auditResult: `Durable manual news outcome: ${value.status}.`,
+        auditLinks: auditRun.pageUrl,
+      };
+    },
+    {
+      outbox: repository,
+      sanitizeError: () => "telegram_news_job_failed",
+    },
+  );
 }
 
 async function runScheduledNews(settings) {
@@ -142,6 +179,7 @@ async function handleUpdate(update, { classification } = {}) {
       auditLogger,
       callTelegram,
       runNews,
+      durableNewsJobsEnabled: newsJobs.enabled,
     });
     if (!result.handled) {
       const claimed = await repository.claimTelegramUpdate(
@@ -220,6 +258,7 @@ console.log(
     event: "telegram_control_started",
     mode: "polling",
     scheduler: "database",
+    durable_news_jobs: newsJobs.enabled ? "enabled" : "off",
     bot_id: bot.id,
     ai_providers: aiProvider.names,
   }),
@@ -251,7 +290,38 @@ try {
     withAudit: withScheduledAudit,
   });
   services.push(pollingService, schedulerService);
-  await Promise.all([pollingService, schedulerService]);
+  if (newsJobs.enabled) {
+    services.push(
+      runTelegramNewsJobWorker({
+        signal: controller.signal,
+        repository,
+        runNewsJob: runDurableNewsJob,
+        deliverOutcome: (job, { signal }) =>
+          deliverTelegramNewsJobOutcome({
+            job,
+            repository,
+            signal,
+            deliverReview: (input) =>
+              deliverReviewDraft({
+                ...input,
+                token,
+                repository,
+                callTelegram,
+              }),
+            sendAdmin: (chatId, text) =>
+              callTelegram(token, "sendMessage", {
+                chat_id: chatId,
+                text,
+              }),
+          }),
+        pollIntervalMs: newsJobs.pollIntervalMs,
+        staleAfterSeconds: newsJobs.staleAfterSeconds,
+        maxExecutionAttempts: newsJobs.maxExecutionAttempts,
+        maxDeliveryAttempts: newsJobs.maxDeliveryAttempts,
+      }),
+    );
+  }
+  await Promise.all(services);
 } finally {
   controller.abort();
   await Promise.allSettled(services);

@@ -14,6 +14,7 @@ import type {
 } from "../settings/settings.contracts.js";
 import type {
   TelegramCheckpointsPersistence,
+  TelegramNewsJobsPersistence,
   TelegramReviewSessionsPersistence,
   TelegramUpdateClaimRow,
   TelegramUpdateFailureRow,
@@ -22,14 +23,15 @@ import type {
 import type { UsageReportingPersistence } from "../usage/usage-persistence.contracts.js";
 
 /**
- * Typed compatibility boundary for the 72 domain methods on NewsRepository.
+ * Typed compatibility boundary for the 79 domain methods on NewsRepository.
  *
  * It intentionally keeps the two historical positional Telegram update
  * signatures. Every other method already has the same external shape as its
  * owning narrow persistence port.
  */
 export interface LegacyPersistence
-  extends CatalogPersistence,
+  extends
+    CatalogPersistence,
     ResearchIngestionPersistence,
     StoryDeduplicationPersistence,
     EditorialPersistence,
@@ -41,6 +43,7 @@ export interface LegacyPersistence
     TelegramSettingsInputPersistence,
     SchedulerPersistence,
     TelegramCheckpointsPersistence,
+    TelegramNewsJobsPersistence,
     TelegramReviewSessionsPersistence {
   claimTelegramUpdate(
     updateId: number,
@@ -135,6 +138,13 @@ export const LEGACY_PERSISTENCE_METHOD_OWNERS = {
   claimTelegramUpdate: "telegramUpdates",
   finishTelegramUpdate: "telegramUpdates",
   recordTelegramUpdateFailure: "telegramUpdates",
+  enqueueTelegramNewsJob: "telegramNewsJobs",
+  claimNextTelegramNewsJob: "telegramNewsJobs",
+  renewTelegramNewsJobClaim: "telegramNewsJobs",
+  recordTelegramNewsJobOutcome: "telegramNewsJobs",
+  retryTelegramNewsJob: "telegramNewsJobs",
+  retryTelegramNewsJobDelivery: "telegramNewsJobs",
+  completeTelegramNewsJob: "telegramNewsJobs",
   getTelegramNewsCheckpoint: "telegramCheckpoints",
   saveTelegramNewsCheckpoint: "telegramCheckpoints",
   hasPendingTelegramReview: "telegramReviewSessions",
