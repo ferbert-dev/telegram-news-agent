@@ -32,6 +32,7 @@ import {
 } from "./story-deduplication.js";
 import {
   telegramNewsRequestCheckpoints,
+  telegramNewsJobs,
   telegramReviewSessions,
   telegramUpdates,
 } from "./telegram.js";
@@ -56,6 +57,7 @@ export const databaseTables = [
   sourceTopics,
   storyPublicationClaims,
   telegramNewsRequestCheckpoints,
+  telegramNewsJobs,
   telegramReviewSessions,
   telegramSettingsInputs,
   telegramUpdates,

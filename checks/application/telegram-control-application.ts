@@ -7,7 +7,6 @@ import type {
   TelegramControlAuditGateway,
   TelegramControlFeatureGateway,
   TelegramControlRequest,
-  TelegramNewsWorkflowGateway,
   TelegramReviewPresentationGateway,
 } from "../../src/telegram/telegram-application.contracts.js";
 import { TelegramControlError } from "../../src/telegram/telegram-application.contracts.js";
@@ -19,14 +18,11 @@ import { RunTelegramNewsUseCase } from "../../src/telegram/application/run-teleg
 import { DecideTelegramReviewUseCase } from "../../src/telegram/application/decide-telegram-review.use-case.js";
 import { TelegramBotApiOutcomeRenderer } from "../../src/telegram/transport/telegram-bot-api.gateway.js";
 import type {
-  TelegramCheckpointsPersistence,
+  TelegramNewsJobsPersistence,
   TelegramReviewSessionsPersistence,
   TelegramUpdatesPersistence,
 } from "../../src/telegram/telegram-persistence.contracts.js";
-import type {
-  EditorialWorkflowApplicationPort,
-  PublishApprovedDraftResult,
-} from "../../src/editorial/editorial-application.contracts.js";
+import type { EditorialWorkflowApplicationPort } from "../../src/editorial/editorial-application.contracts.js";
 import type {
   DraftRow,
   EditorialPersistence,
@@ -41,6 +37,10 @@ const BASE_REQUEST = {
   chatId: 7001,
   chatType: "private" as const,
 };
+
+const asNewsJobs = (
+  overrides: Partial<TelegramNewsJobsPersistence>,
+): TelegramNewsJobsPersistence => overrides as TelegramNewsJobsPersistence;
 
 const DRAFT: DraftRow = {
   id: "draft-1",
@@ -57,10 +57,6 @@ const DRAFT: DraftRow = {
 
 function asUpdates(value: object): TelegramUpdatesPersistence {
   return value as TelegramUpdatesPersistence;
-}
-
-function asCheckpoints(value: object): TelegramCheckpointsPersistence {
-  return value as TelegramCheckpointsPersistence;
 }
 
 function asReviews(value: object): TelegramReviewSessionsPersistence {
@@ -263,7 +259,7 @@ test("required presentation fails the claim for retry and checkpoint recovery av
 
   assert.equal(recovered.status, "no_candidates");
   assert.equal(domainMutations, 1);
-  assert.equal(rendered, 2);
+  assert.equal(rendered, 1);
   assert.deepEqual(finishes, ["failed", "completed"]);
 });
 
@@ -477,10 +473,8 @@ test("automatic policy-block notice is retryable while manual review block remai
   assert.deepEqual(finishes, ["completed"]);
 });
 
-test("/news resumes checkpoints without research and fresh automatic runs checkpoint then publish or fail closed on policy block", async () => {
-  let researchCalls = 0;
-  const saved: unknown[] = [];
-  const published: unknown[] = [];
+test("Nest /news durably enqueues before presentation and suppresses a concurrent request", async () => {
+  const calls: unknown[] = [];
   const settingsRow = {
     telegram_channel_id: "@channel",
     review_chat_id: BASE_REQUEST.chatId,
@@ -509,243 +503,147 @@ test("/news resumes checkpoints without research and fresh automatic runs checkp
     updated_at: "2026-08-12T10:00:00.000Z",
     quiet_hours_enabled: true,
   };
-  const newsGateway: TelegramNewsWorkflowGateway = {
-    async run(input) {
-      researchCalls += 1;
-      assert.equal(input.settings.approval_policy, "manual");
-      return {
-        status: "review_ready",
-        draftId: DRAFT.id,
-        preview: DRAFT.body,
-        windowHours: 48,
-      };
-    },
-  };
-  const checkpoints = asCheckpoints({
-    async getTelegramNewsCheckpoint() { return null; },
-    async saveTelegramNewsCheckpoint(input: Record<string, unknown>) {
-      saved.push(input);
-      return {
-        update_id: BASE_REQUEST.updateId,
-        status: input.status,
-        draft_id: input.draft_id ?? null,
-        preview: input.preview ?? null,
-        window_hours: input.window_hours ?? null,
-        publication_message_id: input.publication_message_id ?? null,
-        settings_snapshot: input.settings_snapshot ?? {},
-        created_at: "2026-08-12T10:00:00.000Z",
-        updated_at: "2026-08-12T10:00:00.000Z",
-      };
-    },
-  });
-  const editorial = asEditorial({
-    async getDraft() { return DRAFT; },
-    async approveDraft() { return { ...DRAFT, status: "approved" }; },
-  });
-  const workflow = asWorkflow({
-    async publishApprovedDraft(input: unknown): Promise<PublishApprovedDraftResult> {
-      published.push(input);
-      return {
-        status: "blocked",
-        reasonCode: "excluded_topic",
-        publication: null,
-        draft: { ...DRAFT, status: "rejected" },
-      };
-    },
-  });
-  const presentation: TelegramReviewPresentationGateway = {
-    async restoreControls() { throw new Error("unused"); },
-    async disableControls() {},
-    async answerCallback() {},
-    async sendReview() { throw new Error("unused"); },
-  };
   const useCase = new RunTelegramNewsUseCase(
-    checkpoints,
-    asReviews({}),
-    editorial,
-    asSettings({ async getOrCreateNewsSettings() { return settingsRow; } }),
-    workflow,
-    newsGateway,
-    presentation,
-    { next: () => "a".repeat(48) },
-    { now: () => new Date("2026-08-12T10:00:00.000Z") },
-  );
-
-  const result = await useCase.execute({ ...BASE_REQUEST, route: { kind: "news" } });
-  assert.equal(result.status, "blocked_by_policy");
-  assert.equal(researchCalls, 1);
-  assert.equal(published.length, 1);
-  assert.deepEqual(saved.map((entry) => (entry as Record<string, unknown>).status), [
-    "review_ready",
-    "blocked_by_policy",
-  ]);
-  assert.deepEqual(
-    (saved[0] as { settings_snapshot: Record<string, unknown> }).settings_snapshot,
-    {
-      channelId: "@channel",
-      reviewChatId: BASE_REQUEST.chatId,
-      scheduleIntervalMinutes: null,
-      languageCode: "en",
-      topicCodes: ["ai"],
-      customTopics: [],
-      excludedTopicCodes: ["war_conflict"],
-      excludedTopicsProvenance: {
-        source: "news_bot_settings",
-        settingsVersion: 7,
-      },
-      approvalPolicy: "automatic",
-      quietHoursEnabled: true,
-      nextRunAt: null,
-      version: 7,
-      updatedBy: BASE_REQUEST.actorId,
-    },
-  );
-
-  const resumed = new RunTelegramNewsUseCase(
-    asCheckpoints({
-      async getTelegramNewsCheckpoint() {
+    asNewsJobs({
+      async enqueueTelegramNewsJob(input: unknown) {
+        calls.push(["enqueue", input]);
         return {
-          update_id: BASE_REQUEST.updateId,
-          status: "no_candidates",
-          draft_id: null,
-          preview: null,
-          window_hours: null,
-          publication_message_id: null,
-          settings_snapshot: settingsRow,
-          created_at: "2026-08-12T10:00:00.000Z",
-          updated_at: "2026-08-12T10:00:00.000Z",
+          id: "job-1",
+          enqueue_outcome: "queued" as const,
+          job_status: "queued" as const,
+          active_job_id: null,
         };
       },
     }),
-    asReviews({}),
-    editorial,
-    asSettings({}),
-    workflow,
-    { async run() { researchCalls += 1; throw new Error("must not run"); } },
-    presentation,
-    { next: () => "b".repeat(48) },
-    { now: () => new Date() },
-  );
-  assert.deepEqual(
-    await resumed.execute({ ...BASE_REQUEST, route: { kind: "news" } }),
-    {
-      status: "no_candidates",
-      draftId: null,
-      preview: null,
-      windowHours: null,
-      publicationMessageId: null,
-      resumed: true,
-    },
-  );
-  assert.equal(researchCalls, 1);
-
-  const resumedBlocked = new RunTelegramNewsUseCase(
-    asCheckpoints({
-      async getTelegramNewsCheckpoint() {
-        return {
-          update_id: BASE_REQUEST.updateId,
-          status: "blocked_by_policy",
-          draft_id: DRAFT.id,
-          preview: DRAFT.body,
-          window_hours: 48,
-          publication_message_id: null,
-          settings_snapshot: { approvalPolicy: "automatic" },
-          created_at: "2026-08-12T10:00:00.000Z",
-          updated_at: "2026-08-12T10:00:00.000Z",
-        };
+    asSettings({
+      async getOrCreateNewsSettings(input: unknown) {
+        calls.push(["settings", input]);
+        return settingsRow;
       },
     }),
-    asReviews({}),
-    editorial,
-    asSettings({}),
-    workflow,
-    { async run() { researchCalls += 1; throw new Error("must not rerun blocked checkpoint"); } },
-    presentation,
-    { next: () => "d".repeat(48) },
-    { now: () => new Date() },
   );
+
   assert.deepEqual(
-    await resumedBlocked.execute({ ...BASE_REQUEST, route: { kind: "news" } }),
+    await useCase.execute(
+      { ...BASE_REQUEST, route: { kind: "news" } },
+      "update-claim-token",
+    ),
     {
-      status: "blocked_by_policy",
-      draftId: DRAFT.id,
-      preview: DRAFT.body,
-      windowHours: 48,
-      publicationMessageId: null,
-      publicationPath: "automatic_news",
-      resumed: true,
+      status: "research_queued",
+      jobId: "job-1",
+      enqueueOutcome: "queued",
     },
   );
-  assert.equal(researchCalls, 1);
-
-  let resumedPublishCalls = 0;
-  const resumedAutomatic = new RunTelegramNewsUseCase(
-    asCheckpoints({
-      async getTelegramNewsCheckpoint() {
-        return {
-          update_id: BASE_REQUEST.updateId,
-          status: "review_ready",
-          draft_id: DRAFT.id,
-          preview: DRAFT.body,
-          window_hours: 48,
-          publication_message_id: null,
-          settings_snapshot: { approvalPolicy: "automatic" },
-          created_at: "2026-08-12T10:00:00.000Z",
-          updated_at: "2026-08-12T10:00:00.000Z",
-        };
+  assert.deepEqual(calls, [
+    [
+      "settings",
+      {
+        channelId: "@channel",
+        reviewChatId: BASE_REQUEST.chatId,
+        updatedBy: BASE_REQUEST.actorId,
       },
-      async saveTelegramNewsCheckpoint(input: Record<string, unknown>) {
-        return {
-          update_id: BASE_REQUEST.updateId,
-          status: input.status,
-          draft_id: input.draft_id,
-          preview: input.preview,
-          window_hours: input.window_hours,
-          publication_message_id: 42,
-          settings_snapshot: input.settings_snapshot,
-          created_at: "2026-08-12T10:00:00.000Z",
-          updated_at: "2026-08-12T10:00:00.000Z",
-        };
-      },
-    }),
-    asReviews({}),
-    editorial,
-    asSettings({}),
-    asWorkflow({
-      async publishApprovedDraft() {
-        resumedPublishCalls += 1;
-        return {
-          status: "published",
-          alreadyPublished: false,
-          publication: {
-            id: "publication-1",
-            draft_id: DRAFT.id,
-            article_id: DRAFT.article_id,
-            telegram_channel_id: "@channel",
-            telegram_message_id: 42,
-            published_at: "2026-08-12T10:01:00.000Z",
-            message_text: DRAFT.body,
-            metadata: {},
-            created_at: "2026-08-12T10:01:00.000Z",
+    ],
+    [
+      "enqueue",
+      {
+        updateId: BASE_REQUEST.updateId,
+        updateClaimToken: "update-claim-token",
+        channelId: "@channel",
+        controlChatId: BASE_REQUEST.chatId,
+        requestedBy: BASE_REQUEST.actorId,
+        settingsSnapshot: {
+          channelId: "@channel",
+          reviewChatId: BASE_REQUEST.chatId,
+          scheduleIntervalMinutes: null,
+          languageCode: "en",
+          topicCodes: ["ai"],
+          customTopics: [],
+          excludedTopicCodes: ["war_conflict"],
+          excludedTopicsProvenance: {
+            source: "news_bot_settings",
+            settingsVersion: 7,
           },
+          approvalPolicy: "automatic",
+          quietHoursEnabled: true,
+          nextRunAt: null,
+          version: 7,
+          updatedBy: BASE_REQUEST.actorId,
+        },
+      },
+    ],
+  ]);
+
+  const alreadyRunning = new RunTelegramNewsUseCase(
+    asNewsJobs({
+      async enqueueTelegramNewsJob() {
+        return {
+          id: "suppressed-job",
+          enqueue_outcome: "already_running" as const,
+          job_status: "suppressed" as const,
+          active_job_id: "active-job",
         };
       },
     }),
-    { async run() { throw new Error("must not research resumed automatic draft"); } },
-    presentation,
-    { next: () => "c".repeat(48) },
-    { now: () => new Date("2026-08-12T10:02:00.000Z") },
+    asSettings({
+      async getOrCreateNewsSettings() {
+        return settingsRow;
+      },
+    }),
   );
-  assert.equal(
-    (
-      await resumedAutomatic.execute({
-        ...BASE_REQUEST,
-        route: { kind: "news" },
-      })
-    ).status,
-    "published",
+  assert.deepEqual(
+    await alreadyRunning.execute(
+      { ...BASE_REQUEST, updateId: 102, route: { kind: "news" } },
+      "second-update-claim",
+    ),
+    {
+      status: "already_running",
+      jobId: "suppressed-job",
+      activeJobId: "active-job",
+      enqueueOutcome: "already_running",
+    },
   );
-  assert.equal(resumedPublishCalls, 1);
+
+  const ordered: unknown[] = [];
+  const router = new HandleTelegramControlUpdateUseCase(
+    asUpdates({
+      async claimTelegramUpdate() {
+        ordered.push("claim");
+        return {
+          claimed: true,
+          claim_token: "router-update-claim",
+          claim_status: "claimed",
+        };
+      },
+      async finishTelegramUpdate() {
+        ordered.push("finish");
+        return true;
+      },
+    }),
+    allowAdmin,
+    passAudit,
+    {
+      async execute(_request, updateClaimToken) {
+        ordered.push(["enqueue", updateClaimToken]);
+        return { status: "research_queued" };
+      },
+    },
+    { async execute() { throw new Error("unused review"); } },
+    unusedFeature,
+    unusedFeature,
+    unusedFeature,
+  );
+  await router.execute(
+    { ...BASE_REQUEST, route: { kind: "news" } },
+    async (outcome) => {
+      ordered.push(["present", outcome.status]);
+    },
+  );
+  assert.deepEqual(ordered, [
+    "claim",
+    ["enqueue", "router-update-claim"],
+    ["present", "research_queued"],
+    "finish",
+  ]);
 });
 
 test("manual review decision disables winning controls before reject/publish and preserves double-tap recovery", async () => {

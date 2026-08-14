@@ -31,6 +31,7 @@ import {
 } from "../../src/settings/settings.tokens.js";
 import {
   TELEGRAM_CHECKPOINTS_PERSISTENCE,
+  TELEGRAM_NEWS_JOBS_PERSISTENCE,
   TELEGRAM_REVIEW_SESSIONS_PERSISTENCE,
   TELEGRAM_UPDATES_PERSISTENCE,
 } from "../../src/telegram/telegram-persistence.tokens.js";
@@ -128,6 +129,13 @@ const samples = {
   claimTelegramUpdate: [101, "callback_query"],
   finishTelegramUpdate: [101, "claim", "completed"],
   recordTelegramUpdateFailure: [101, "callback_query", "handler_failed"],
+  enqueueTelegramNewsJob: [{ updateId: 101, updateClaimToken: "claim", channelId: "@channel", controlChatId: 1, requestedBy: 2, settingsSnapshot: {} }],
+  claimNextTelegramNewsJob: [{ claimToken: "claim" }],
+  renewTelegramNewsJobClaim: [{ jobId: "job-id", claimToken: "claim" }],
+  recordTelegramNewsJobOutcome: [{ jobId: "job-id", claimToken: "claim", outcomeStatus: "no_candidates" }],
+  retryTelegramNewsJob: [{ jobId: "job-id", claimToken: "claim", errorCode: "failed" }],
+  retryTelegramNewsJobDelivery: [{ jobId: "job-id", claimToken: "claim", errorCode: "delivery_failed" }],
+  completeTelegramNewsJob: [{ jobId: "job-id", claimToken: "claim" }],
   getTelegramNewsCheckpoint: [101],
   saveTelegramNewsCheckpoint: [{ update_id: 101, status: "no_candidates" }],
   hasPendingTelegramReview: ["@channel"],
@@ -169,6 +177,7 @@ function fixture(calls: Call[] = []) {
     settingsInput: port("settingsInput", calls),
     scheduler: port("scheduler", calls),
     telegramUpdates: port("telegramUpdates", calls),
+    telegramNewsJobs: port("telegramNewsJobs", calls),
     telegramCheckpoints: port("telegramCheckpoints", calls),
     telegramReviewSessions: port("telegramReviewSessions", calls),
   };
@@ -185,13 +194,14 @@ function fixture(calls: Call[] = []) {
     ports.settingsInput as never,
     ports.scheduler as never,
     ports.telegramUpdates as never,
+    ports.telegramNewsJobs as never,
     ports.telegramCheckpoints as never,
     ports.telegramReviewSessions as never,
   );
   return { facade, ports };
 }
 
-test("facade and owner manifest cover exactly all 72 live NewsRepository domain methods", () => {
+test("facade and owner manifest cover exactly all 79 live NewsRepository domain methods", () => {
   const legacyMethods = Object.getOwnPropertyNames(NewsRepository.prototype)
     .filter((method) => !infrastructureMethods.has(method))
     .sort();
@@ -200,13 +210,13 @@ test("facade and owner manifest cover exactly all 72 live NewsRepository domain 
     .sort();
   const manifestMethods = Object.keys(LEGACY_PERSISTENCE_METHOD_OWNERS).sort();
 
-  assert.equal(legacyMethods.length, 72);
+  assert.equal(legacyMethods.length, 79);
   assert.deepEqual(facadeMethods, legacyMethods);
   assert.deepEqual(manifestMethods, legacyMethods);
   assert.equal(Object.values(LEGACY_PERSISTENCE_METHOD_OWNERS).includes("fallback" as Owner), false);
 });
 
-test("all 72 methods delegate once to their declared owner and preserve legacy arguments", async () => {
+test("all 79 methods delegate once to their declared owner and preserve legacy arguments", async () => {
   const calls: Call[] = [];
   const { facade } = fixture(calls);
   const dynamicFacade = facade as unknown as DynamicPort;
@@ -246,6 +256,7 @@ test("Nest module exports the Symbol token as the same useExisting facade instan
     [TELEGRAM_SETTINGS_INPUT_REPOSITORY, ports.settingsInput],
     [SCHEDULER_PERSISTENCE, ports.scheduler],
     [TELEGRAM_UPDATES_PERSISTENCE, ports.telegramUpdates],
+    [TELEGRAM_NEWS_JOBS_PERSISTENCE, ports.telegramNewsJobs],
     [TELEGRAM_CHECKPOINTS_PERSISTENCE, ports.telegramCheckpoints],
     [TELEGRAM_REVIEW_SESSIONS_PERSISTENCE, ports.telegramReviewSessions],
   ] as const;

@@ -51,7 +51,6 @@ const moduleRef = await Test.createTestingModule({
     TelegramControlApplicationModule.register({
       authorization: { async isChannelAdmin() { return true; } },
       audit: { async run(_context, operation) { return operation(); } },
-      news: { async run() { return { status: "no_candidates" }; } },
       editorial: {
         async generateReviewDraft() { throw new Error("unused emitted generation"); },
         async publishApprovedDraft() { throw new Error("unused emitted publication"); },

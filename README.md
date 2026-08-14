@@ -220,6 +220,19 @@ pending updates are preserved. Run one polling process. A database lease,
 persisted update IDs, bounded jittered retries, and a 30-second shutdown
 deadline protect restarts and deployments.
 
+Manual `/news` can run through a durable single-worker queue by setting
+`TELEGRAM_NEWS_JOB_MODE=enabled`. The default is `off`, which preserves the
+legacy synchronous path. In enabled mode the Telegram update is acknowledged
+only after its job is stored under the update claim, so `/stats`, `/settings`,
+`/labs`, and review callbacks remain responsive while research runs. PostgreSQL
+permits one executing or delivering job, fences every mutation with a claim
+token, and stores the checkpointed outcome before Telegram delivery. Delivery
+retries never repeat research or channel publication. The existing pipeline
+lease still prevents overlap with the scheduler, and a second `/news` request
+is durably recorded as already running instead of starting another search.
+Enable this flag only after the forward migration and Telegram QA; disabling it
+restores the legacy request path without deleting queued-job history.
+
 Notion audit creation is fail-closed. If finalization fails after an operation,
 the payload is stored in `notion_audit_outbox`. Retry pending entries with:
 

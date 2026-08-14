@@ -225,6 +225,10 @@ export class TelegramBotApiOutcomeRenderer implements TelegramControlOutcomeRend
     outcome: TelegramControlOutcome,
   ): string | null {
     switch (outcome.status) {
+      case "research_queued":
+        return "Research queued. The result will appear here; /stats, /settings and /labs remain available while it runs.";
+      case "already_running":
+        return "A news search is already queued or running. The existing request will finish here.";
       case "research_started":
         return "Research started. The result will appear here.";
       case "no_candidates":

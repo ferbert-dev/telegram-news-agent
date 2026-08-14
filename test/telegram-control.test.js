@@ -352,6 +352,169 @@ test("/news requires private admin and persists a bound 24h session", async () =
   assert.match(keyboard[0][0].callback_data, /^news:p:[a-f0-9]+$/);
 });
 
+test("durable /news enqueues under the update claim before acknowledging and never runs synchronously", async () => {
+  const calls = [];
+  let ran = false;
+  const { dependencies } = fixture({
+    repository: {
+      async getOrCreateNewsSettings(input) {
+        calls.push(["settings", input]);
+        return {
+          telegram_channel_id: input.channelId,
+          review_chat_id: input.reviewChatId,
+          updated_by: input.updatedBy,
+          language_code: "en",
+          topic_codes: ["world"],
+          custom_topics: [],
+          excluded_topic_codes: [],
+          approval_policy: "manual",
+          schedule_interval_minutes: null,
+          quiet_hours_enabled: true,
+          version: 7,
+        };
+      },
+      async enqueueTelegramNewsJob(input) {
+        calls.push(["enqueue", input]);
+        return { enqueue_outcome: "queued", id: "job-1" };
+      },
+    },
+    callTelegram: async (_token, method, body) => {
+      calls.push([method, body]);
+      if (method === "getChatMember") return { status: "administrator" };
+      return { message_id: 77 };
+    },
+    dependencies: {
+      durableNewsJobsEnabled: true,
+      runNews: async () => {
+        ran = true;
+      },
+    },
+  });
+
+  const result = await handleControlUpdate(commandUpdate(), dependencies);
+
+  assert.equal(result.handled, true);
+  assert.equal(result.jobStatus, "queued");
+  assert.equal(ran, false);
+  const enqueue = calls.find(([name]) => name === "enqueue")[1];
+  assert.equal(enqueue.updateId, 10);
+  assert.equal(enqueue.updateClaimToken, "claim-1");
+  assert.equal(enqueue.channelId, "@channel");
+  assert.equal(enqueue.controlChatId, 9);
+  assert.equal(enqueue.requestedBy, 5);
+  assert.equal(enqueue.settingsSnapshot.version, 7);
+  const enqueueIndex = calls.findIndex(([name]) => name === "enqueue");
+  const ackIndex = calls.findIndex(
+    ([name, body]) => name === "sendMessage" && /queued/i.test(body.text),
+  );
+  assert.ok(enqueueIndex >= 0 && ackIndex > enqueueIndex);
+});
+
+test("a second durable /news request reports the existing job without starting research", async () => {
+  let ran = false;
+  const { calls, dependencies } = fixture({
+    repository: {
+      async getOrCreateNewsSettings(input) {
+        return {
+          telegram_channel_id: input.channelId,
+          review_chat_id: input.reviewChatId,
+          updated_by: input.updatedBy,
+          language_code: "en",
+          topic_codes: ["world"],
+          custom_topics: [],
+          excluded_topic_codes: [],
+          approval_policy: "manual",
+          schedule_interval_minutes: null,
+          quiet_hours_enabled: true,
+          version: 7,
+        };
+      },
+      async enqueueTelegramNewsJob() {
+        return { enqueue_outcome: "already_running", id: "request-2" };
+      },
+    },
+    dependencies: {
+      durableNewsJobsEnabled: true,
+      runNews: async () => {
+        ran = true;
+      },
+    },
+  });
+
+  const result = await handleControlUpdate(commandUpdate(), dependencies);
+
+  assert.equal(result.jobStatus, "already_running");
+  assert.equal(ran, false);
+  assert.ok(
+    calls.some(
+      ([name, body]) =>
+        name === "sendMessage" && /already queued or running/i.test(body.text),
+    ),
+  );
+});
+
+test("durable /news leaves /stats responsive while the queued workflow has not started", async () => {
+  let ran = false;
+  const { calls, dependencies } = fixture({
+    repository: {
+      async getOrCreateNewsSettings(input) {
+        return {
+          telegram_channel_id: input.channelId,
+          review_chat_id: input.reviewChatId,
+          updated_by: input.updatedBy,
+          language_code: "en",
+          topic_codes: ["world"],
+          custom_topics: [],
+          excluded_topic_codes: [],
+          approval_policy: "manual",
+          schedule_interval_minutes: null,
+          quiet_hours_enabled: true,
+          version: 7,
+        };
+      },
+      async enqueueTelegramNewsJob() {
+        return { enqueue_outcome: "queued", id: "job-1" };
+      },
+      async getDailyUsageDashboard() {
+        return {
+          summary: {
+            request_count: "0",
+            input_tokens: "0",
+            cached_input_tokens: "0",
+            output_tokens: "0",
+            reasoning_tokens: "0",
+            web_search_calls: "0",
+            priced_request_count: "0",
+            estimated_cost_usd: "0",
+          },
+          posts: [],
+        };
+      },
+    },
+    dependencies: {
+      durableNewsJobsEnabled: true,
+      runNews: async () => {
+        ran = true;
+        await new Promise(() => {});
+      },
+    },
+  });
+
+  await handleControlUpdate(commandUpdate(), dependencies);
+  await handleControlUpdate(
+    { ...commandUpdate({ text: "/stats" }), update_id: 12 },
+    dependencies,
+  );
+
+  assert.equal(ran, false);
+  assert.ok(
+    calls.some(
+      ([name, body]) =>
+        name === "sendMessage" && /AI usage today/.test(body.text),
+    ),
+  );
+});
+
 test("/news denial performs no pipeline mutation", async () => {
   let ran = false;
   const { calls, dependencies } = fixture({

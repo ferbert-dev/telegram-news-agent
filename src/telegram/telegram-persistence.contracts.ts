@@ -3,16 +3,25 @@ import type { JsonObject } from "../database/schema/common.js";
 export type TelegramUpdateClaimStatus = "claimed" | "busy" | "terminal";
 export type TelegramUpdateTerminalStatus = "completed" | "failed";
 export type TelegramUpdateFailureStatus =
-  | "completed"
-  | "failed"
-  | "processing"
-  | "quarantined";
+  "completed" | "failed" | "processing" | "quarantined";
 export type TelegramReviewDecision = "publish" | "reject";
 export type TelegramNewsCheckpointStatus =
+  "review_ready" | "published" | "blocked_by_policy" | "no_candidates";
+export type TelegramNewsJobStatus =
+  | "queued"
+  | "processing"
+  | "outcome_ready"
+  | "delivering"
+  | "completed"
+  | "failed"
+  | "suppressed";
+export type TelegramNewsJobOutcomeStatus =
   | "review_ready"
   | "published"
+  | "no_candidates"
   | "blocked_by_policy"
-  | "no_candidates";
+  | "failed"
+  | "already_running";
 
 export type TelegramUpdateClaimRow = {
   claimed: boolean;
@@ -37,6 +46,41 @@ export type TelegramNewsCheckpointRow = {
   updated_at: string;
   publication_message_id: number | null;
   settings_snapshot: JsonObject;
+};
+
+export type TelegramNewsJobEnqueueRow = {
+  id: string;
+  enqueue_outcome: "queued" | "already_running";
+  job_status: TelegramNewsJobStatus;
+  active_job_id: string | null;
+};
+
+export type TelegramNewsJobClaimRow = {
+  id: string;
+  request_update_id: number;
+  telegram_channel_id: string;
+  control_chat_id: number;
+  requested_by: number;
+  settings_snapshot: JsonObject;
+  claim_phase: "execute" | "deliver";
+  claim_token: string;
+  outcome_status: TelegramNewsJobOutcomeStatus | null;
+  draft_id: string | null;
+  publication_message_id: number | null;
+  error_code: string | null;
+  execution_attempt_count: number;
+  delivery_attempt_count: number;
+};
+
+export type TelegramNewsJobStateRow = {
+  id: string;
+  status: TelegramNewsJobStatus;
+  outcome_status: TelegramNewsJobOutcomeStatus | null;
+  draft_id: string | null;
+  publication_message_id: number | null;
+  error_code: string | null;
+  execution_attempt_count: number;
+  delivery_attempt_count: number;
 };
 
 export type TelegramReviewSessionRow = {
@@ -94,6 +138,48 @@ export type SaveTelegramNewsCheckpointInput = {
   updated_at?: string | Date;
 };
 
+export type EnqueueTelegramNewsJobInput = {
+  updateId: number;
+  updateClaimToken: string;
+  channelId: string;
+  controlChatId: number;
+  requestedBy: number;
+  settingsSnapshot: JsonObject;
+};
+
+export type ClaimNextTelegramNewsJobInput = {
+  claimToken: string;
+  staleAfterSeconds?: number;
+  maxExecutionAttempts?: number;
+  maxDeliveryAttempts?: number;
+};
+
+export type TelegramNewsJobClaimIdentity = {
+  jobId: string;
+  claimToken: string;
+};
+
+export type RecordTelegramNewsJobOutcomeInput = TelegramNewsJobClaimIdentity & {
+  outcomeStatus: Exclude<
+    TelegramNewsJobOutcomeStatus,
+    "already_running" | "failed"
+  >;
+  draftId?: string | null;
+  publicationMessageId?: number | null;
+  errorCode?: string | null;
+};
+
+export type RetryTelegramNewsJobInput = TelegramNewsJobClaimIdentity & {
+  errorCode: string;
+  maxAttempts?: number;
+  terminal?: boolean;
+};
+
+export type RetryTelegramNewsJobDeliveryInput = TelegramNewsJobClaimIdentity & {
+  errorCode: string;
+  maxAttempts?: number;
+};
+
 export type CreateTelegramReviewSessionInput = {
   id: string;
   draft_id: string;
@@ -136,6 +222,30 @@ export interface TelegramUpdatesPersistence {
   recordTelegramUpdateFailure(
     input: RecordTelegramUpdateFailureInput,
   ): Promise<TelegramUpdateFailureRow>;
+}
+
+export interface TelegramNewsJobsPersistence {
+  enqueueTelegramNewsJob(
+    input: EnqueueTelegramNewsJobInput,
+  ): Promise<TelegramNewsJobEnqueueRow>;
+  claimNextTelegramNewsJob(
+    input: ClaimNextTelegramNewsJobInput,
+  ): Promise<TelegramNewsJobClaimRow | null>;
+  renewTelegramNewsJobClaim(
+    input: TelegramNewsJobClaimIdentity,
+  ): Promise<boolean>;
+  recordTelegramNewsJobOutcome(
+    input: RecordTelegramNewsJobOutcomeInput,
+  ): Promise<TelegramNewsJobStateRow | null>;
+  retryTelegramNewsJob(
+    input: RetryTelegramNewsJobInput,
+  ): Promise<TelegramNewsJobStateRow | null>;
+  retryTelegramNewsJobDelivery(
+    input: RetryTelegramNewsJobDeliveryInput,
+  ): Promise<TelegramNewsJobStateRow | null>;
+  completeTelegramNewsJob(
+    input: TelegramNewsJobClaimIdentity,
+  ): Promise<boolean>;
 }
 
 export interface TelegramCheckpointsPersistence {
