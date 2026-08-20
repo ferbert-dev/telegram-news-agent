@@ -1,6 +1,27 @@
-# Agent Ops News Channel
+# Telegram News Agent
 
-Agent-operated project workspace for building a Telegram news channel bot and the delivery system around it.
+<p align="center">
+  <a href="docs/assets/graphify-architecture.svg">
+    <img src="docs/assets/graphify-architecture.svg" alt="Clickable Graphify runtime dependency graph of Telegram News Agent" width="1200">
+  </a>
+  <br>
+  <sub>Click the graph to open the full-size dependency map.</sub>
+</p>
+
+A production-oriented pet project that researches, writes, reviews, schedules,
+and safely publishes grounded news articles to Telegram. It combines a durable
+PostgreSQL workflow, multiple AI providers, bounded Exa web research, Telegram
+operator controls, Oracle deployment, and auditable agent engineering.
+
+## Portfolio Highlights
+
+- Evidence-grounded editorial enrichment with claim-to-source mapping.
+- RSS/GDELT-first discovery that reserves web search for bounded recovery and
+  material article details.
+- OpenAI, Gemini, and Exa provider fallback with per-operation usage accounting.
+- PostgreSQL leases, idempotent publication, crash recovery, and manual review.
+- Docker-based Oracle production deployment with migration and rollback gates.
+- Graphify-assisted architecture navigation and impact analysis.
 
 ## Goal
 
@@ -70,9 +91,14 @@ APPROVAL_POLICY=manual
 At least one configured provider is required. The default order remains OpenAI
 then Gemini. Exa is disabled by default; set `EXA_ENABLED=true`, provide
 `EXA_API_KEY`, and use `AI_PROVIDER_ORDER=exa,openai,gemini` to prefer it for
-news/feed searches while keeping structured generation on OpenAI or Gemini.
+news, feed, and article-detail research. Exa performs retrieval only; structured
+generation continues with OpenAI or Gemini because the fallback skips provider
+operations that Exa does not implement.
 `EXA_DAILY_SEARCH_CAP` is a per-process UTC-day guard, so account-wide quota
 monitoring is still required when more than one process or restart can run.
+When Exa is configured, a failed or capped Exa detail search does not fall
+through to paid OpenAI or Gemini web search. Without Exa, the existing provider
+fact-search fallback remains available.
 
 Normal research is feeds-first and does not call a paid web-search tool. The
 PostgreSQL source registry starts with 49 verified RSS/Atom feeds across world
@@ -87,6 +113,16 @@ summary in its extracted text. If a primary publisher blocks extraction, the
 pipeline can use that publisher's persisted feed summary. GDELT and
 automatically discovered feeds remain reduced-trust web sources until their
 direct article text is fetched.
+
+When the `editorial_enrichment` Labs feature is enabled, the editorial pass may
+request up to three narrowly scoped missing details for one article. Each Exa
+request searches up to five candidate pages in one API call. A second or third
+request is possible only after the previous result has been added to a valid
+regenerated article. Only an exact Exa highlight from a recognized government,
+academic, official, or reputable-news domain is accepted. Every accepted URL
+must appear in both the final draft sources and evidence map; otherwise the bot
+keeps the last fully grounded version. The same daily Exa cap covers feed, news,
+and detail searches.
 
 Paid search is reserved for recovery. If feeds and GDELT provide no recent
 candidate, the provider performs one low-context search for official RSS/Atom

@@ -245,7 +245,7 @@ test("editorial enrichment uses the configured provider and skips search by defa
   assert.equal(request.input.evidence[0].text, PRIMARY_TEXT);
 });
 
-test("editorial enrichment performs at most one narrow search and maps the added fact", async () => {
+test("editorial enrichment maps searched evidence into the regenerated article", async () => {
   const usage = [];
   let generations = 0;
   let searches = 0;
@@ -326,6 +326,8 @@ test("editorial enrichment performs at most one narrow search and maps the added
   assert.equal(generations, 2);
   assert.equal(searches, 1);
   assert.equal(result.search.status, "used");
+  assert.equal(result.search.attempts, 1);
+  assert.equal(result.search.usedFacts, 1);
   assert.equal(result.search.sourceUrl, SEARCH_URL);
   assert.ok(result.evidenceMap.some((entry) => entry.sourceUrl === SEARCH_URL));
   assert.deepEqual(
@@ -336,6 +338,223 @@ test("editorial enrichment performs at most one narrow search and maps the added
       "editorial_enrichment",
     ],
   );
+});
+
+test("editorial enrichment performs at most three sequential searches and uses every fact", async () => {
+  const details = [
+    {
+      query: "agency approval date",
+      claim: "The agency approved the system on 10 August 2026",
+      url: "https://agency.example.gov/approval",
+    },
+    {
+      query: "agency safety review scope",
+      claim: "The safety review covered two battery packs",
+      url: "https://agency.example.gov/safety-review",
+    },
+    {
+      query: "agency pilot start date",
+      claim: "The pilot starts in September 2026",
+      url: "https://agency.example.gov/pilot",
+    },
+  ];
+  const detailedDraft = (count) => {
+    const selected = details.slice(0, count);
+    const base = draft();
+    return {
+      ...base,
+      telegramText:
+        base.telegramText +
+        (selected.length
+          ? ` ${selected.map((detail) => detail.claim).join("; ")}.`
+          : ""),
+      claims: [
+        ...base.claims,
+        ...selected.map((detail) => ({
+          text: detail.claim,
+          sourceUrl: detail.url,
+        })),
+      ],
+      sourceUrls: [
+        ...base.sourceUrls,
+        ...selected.map((detail) => detail.url),
+      ],
+    };
+  };
+  const detailedMap = (count) => [
+    ...evidenceMap(),
+    ...details.slice(0, count).map((detail) => ({
+      claim: detail.claim,
+      sourceUrl: detail.url,
+      evidenceExcerpt: detail.claim,
+    })),
+  ];
+  let searches = 0;
+  const result = await enrichEditorialDraft({
+    aiProvider: {
+      async generateStructured(input) {
+        const count = input.input.factSearchCount;
+        assert.equal(input.input.factSearchLimit, 3);
+        assert.equal(input.input.evidence.length, count + 1);
+        const target = detailedDraft(count);
+        return {
+          value: {
+            ...editorialFields(
+              target,
+              "Each verified step moves the result closer to real-world use.",
+            ),
+            draft: target,
+            evidenceMap: detailedMap(count),
+            factRequest:
+              count < 3
+                ? {
+                    query: details[count].query,
+                    reason: "This detail is material to deployment readiness.",
+                    expectedClaim: details[count].claim,
+                  }
+                : {
+                    query: "a fourth detail must not be searched",
+                    reason: "This request exceeds the article search budget.",
+                    expectedClaim: "A fourth unsupported detail.",
+                  },
+          },
+          provider: "openai",
+          model: "configured-editor-model",
+        };
+      },
+      async searchFact(input) {
+        const detail = details[searches];
+        searches += 1;
+        assert.equal(input.query, detail.query);
+        return {
+          fact: {
+            claim: detail.claim,
+            sourceUrl: detail.url,
+            sourceTitle: `Agency evidence ${searches}`,
+            sourceKind: "government",
+            evidenceText: detail.claim,
+          },
+          usageEvents: [
+            {
+              provider: "exa",
+              model: "exa-search:auto",
+              operation: "editorial_fact_search",
+              webSearchCalls: 1,
+            },
+          ],
+        };
+      },
+    },
+    repository: {},
+    article,
+    baselineDraft: baselineDraft(),
+    evidence,
+    validateDraft: validateGroundedDraft,
+  });
+
+  assert.equal(searches, 3);
+  assert.equal(result.search.status, "limit_reached");
+  assert.equal(result.search.attempts, 3);
+  assert.equal(result.search.usedFacts, 3);
+  assert.equal(result.search.history.length, 3);
+  for (const detail of details) {
+    assert.ok(result.draft.sourceUrls.includes(detail.url));
+    assert.ok(result.evidenceMap.some((entry) => entry.sourceUrl === detail.url));
+  }
+});
+
+test("a later regeneration cannot drop an earlier accepted search fact", async () => {
+  const details = [
+    {
+      query: "agency approval date",
+      claim: "The agency approved the system on 10 August 2026",
+      url: "https://agency.example.gov/approval",
+    },
+    {
+      query: "agency pilot date",
+      claim: "The pilot starts in September 2026",
+      url: "https://agency.example.gov/pilot",
+    },
+  ];
+  let searches = 0;
+  const result = await enrichEditorialDraft({
+    aiProvider: {
+      async generateStructured(input) {
+        const count = input.input.factSearchCount;
+        const included =
+          count === 0 ? [] : count === 1 ? [details[0]] : [details[1]];
+        const base = draft();
+        const target = {
+          ...base,
+          telegramText:
+            base.telegramText +
+            (included.length
+              ? ` ${included.map((detail) => detail.claim).join("; ")}.`
+              : ""),
+          claims: [
+            ...base.claims,
+            ...included.map((detail) => ({
+              text: detail.claim,
+              sourceUrl: detail.url,
+            })),
+          ],
+          sourceUrls: [
+            ...base.sourceUrls,
+            ...included.map((detail) => detail.url),
+          ],
+        };
+        return {
+          value: {
+            ...editorialFields(target, "Verified deployment steps matter."),
+            draft: target,
+            evidenceMap: [
+              ...evidenceMap(),
+              ...included.map((detail) => ({
+                claim: detail.claim,
+                sourceUrl: detail.url,
+                evidenceExcerpt: detail.claim,
+              })),
+            ],
+            factRequest:
+              count < 2
+                ? {
+                    query: details[count].query,
+                    reason: "The deployment detail is material.",
+                    expectedClaim: details[count].claim,
+                  }
+                : null,
+          },
+          provider: "openai",
+          model: "configured-editor-model",
+        };
+      },
+      async searchFact() {
+        const detail = details[searches];
+        searches += 1;
+        return {
+          fact: {
+            claim: detail.claim,
+            sourceUrl: detail.url,
+            sourceTitle: `Agency evidence ${searches}`,
+            sourceKind: "government",
+            evidenceText: detail.claim,
+          },
+          usageEvents: [],
+        };
+      },
+    },
+    repository: {},
+    article,
+    baselineDraft: baselineDraft(),
+    evidence,
+    validateDraft: validateGroundedDraft,
+  });
+
+  assert.equal(searches, 2);
+  assert.equal(result.search.status, "evidence_not_used");
+  assert.equal(result.search.usedFacts, 1);
+  assert.ok(result.draft.sourceUrls.includes(details[0].url));
+  assert.ok(!result.draft.sourceUrls.includes(details[1].url));
 });
 
 test("a failed optional fact search keeps the source-grounded enriched draft", async () => {
