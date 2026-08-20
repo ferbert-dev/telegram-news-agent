@@ -115,7 +115,7 @@ export async function discoverNewFeedSources({
     });
     provider = discovery.provider ?? null;
     model = discovery.model ?? null;
-    if (!new Set(["openai", "gemini"]).has(provider)) {
+    if (!new Set(["openai", "gemini", "exa"]).has(provider)) {
       throw new Error("Feed discovery returned an unsupported provider");
     }
     await recordAiUsageEvents(repository, discovery.usageEvents, {

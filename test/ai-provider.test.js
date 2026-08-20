@@ -10,13 +10,25 @@ import {
 test("provider order defaults to OpenAI then Gemini and rejects unknown providers", () => {
   assert.deepEqual(getAiProviderOrder({}), ["openai", "gemini"]);
   assert.deepEqual(
-    getAiProviderOrder({ AI_PROVIDER_ORDER: "gemini, openai, gemini" }),
-    ["gemini", "openai"],
+    getAiProviderOrder({ EXA_ENABLED: "true", EXA_API_KEY: "exa-key" }),
+    ["exa", "openai", "gemini"],
+  );
+  assert.deepEqual(
+    getAiProviderOrder({ AI_PROVIDER_ORDER: "exa, gemini, openai, exa" }),
+    ["exa", "gemini", "openai"],
   );
   assert.throws(
     () => getAiProviderOrder({ AI_PROVIDER_ORDER: "gemini,unknown" }),
     /Unsupported AI provider/,
   );
+});
+
+test("configured Exa becomes the default retrieval provider", () => {
+  const provider = createAiProvider({
+    EXA_ENABLED: "true",
+    EXA_API_KEY: "exa-key",
+  });
+  assert.deepEqual(provider.names, ["exa"]);
 });
 
 test("missing OpenAI key is skipped while configured Gemini remains available", () => {
@@ -173,4 +185,34 @@ test("editorial fact search uses the configured provider fallback without changi
   const result = await provider.searchFact({ query: "one narrow fact" });
   assert.equal(result.model, "configured-gemini-model");
   assert.deepEqual(calls, ["openai", "gemini"]);
+});
+
+test("editorial fact search never falls through from Exa to a paid provider", async () => {
+  const calls = [];
+  const provider = createFallbackAiProvider(
+    [
+      {
+        name: "exa",
+        async searchFact() {
+          calls.push("exa");
+          throw Object.assign(new Error("daily cap"), { status: 429 });
+        },
+      },
+      {
+        name: "openai",
+        async searchFact() {
+          calls.push("openai");
+          return { fact: null };
+        },
+      },
+    ],
+    { log: { warn() {} } },
+  );
+
+  await assert.rejects(
+    provider.searchFact({ query: "one narrow fact" }),
+    (error) =>
+      error instanceof AiProvidersExhaustedError && error.errors.length === 1,
+  );
+  assert.deepEqual(calls, ["exa"]);
 });

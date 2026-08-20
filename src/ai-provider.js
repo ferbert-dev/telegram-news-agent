@@ -6,8 +6,12 @@ import {
   createOpenAiProvider,
   getOpenAiConfig,
 } from "./openai-provider.js";
+import {
+  createExaProvider,
+  getExaProviderConfig,
+} from "./exa-provider.js";
 
-const SUPPORTED_PROVIDERS = new Set(["openai", "gemini"]);
+const SUPPORTED_PROVIDERS = new Set(["openai", "gemini", "exa"]);
 
 export class AiProvidersExhaustedError extends AggregateError {
   constructor(operation, errors) {
@@ -19,7 +23,11 @@ export class AiProvidersExhaustedError extends AggregateError {
 }
 
 export function getAiProviderOrder(env = process.env) {
-  const order = (env.AI_PROVIDER_ORDER || "openai,gemini")
+  const configuredOrder = env.AI_PROVIDER_ORDER?.trim();
+  const defaultOrder = getExaProviderConfig(env)
+    ? "exa,openai,gemini"
+    : "openai,gemini";
+  const order = (configuredOrder || defaultOrder)
     .split(",")
     .map((name) => name.trim().toLowerCase())
     .filter(Boolean);
@@ -61,7 +69,7 @@ export function createFallbackAiProvider(
   const available = providers.filter(Boolean);
   if (!available.length) {
     throw new Error(
-      "No AI provider is configured; set OPENAI_API_KEY or GEMINI_API_KEY",
+      "No AI provider is configured; enable Exa or set an OpenAI/Gemini API key",
     );
   }
 
@@ -110,18 +118,40 @@ export function createFallbackAiProvider(
     }
   };
 
+  const executeFactSearch = async (input) => {
+    const exa = available.find(
+      (candidate) =>
+        candidate.name === "exa" && typeof candidate.searchFact === "function",
+    );
+    if (!exa) return execute("searchFact", input);
+    try {
+      return await exa.searchFact(input);
+    } catch (error) {
+      log.warn?.(
+        JSON.stringify({
+          event: "ai_provider_failed",
+          operation: "searchFact",
+          provider: exa.name,
+          error_code: classifyProviderError(error),
+        }),
+      );
+      throw new AiProvidersExhaustedError("searchFact", [error]);
+    }
+  };
+
   return {
     names: available.map((provider) => provider.name),
     generateStructured: (input) => execute("generateStructured", input),
     generateStructuredOnce: (input) => executeOnce("generateStructured", input),
     searchNews: (input) => execute("searchNews", input),
     searchFeeds: (input) => execute("searchFeeds", input),
-    searchFact: (input) => execute("searchFact", input),
+    searchFact: executeFactSearch,
   };
 }
 
 export function createAiProvider(env = process.env, { log = console } = {}) {
   const factories = {
+    exa: () => createExaProvider(getExaProviderConfig(env)),
     openai: () => createOpenAiProvider(getOpenAiConfig(env)),
     gemini: () => createGeminiProvider(getGeminiProviderConfig(env)),
   };

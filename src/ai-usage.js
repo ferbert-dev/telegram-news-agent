@@ -143,6 +143,22 @@ export function geminiUsageEvent(response, { model, operation }) {
   };
 }
 
+export function exaUsageEvent(response, { model, operation }) {
+  return {
+    provider: "exa",
+    providerResponseId: response?.requestId ?? response?.id ?? null,
+    model,
+    operation,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    webSearchCalls: 1,
+    estimatedCostUsd: null,
+    pricing: null,
+  };
+}
+
 export async function recordAiUsageEvents(
   repository,
   usageEvents,

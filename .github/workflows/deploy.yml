@@ -201,11 +201,15 @@ jobs:
           ORACLE_USER: ${{ vars.ORACLE_USER }}
           PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
         run: |
           test -n "$ORACLE_HOST"
           test -n "$ORACLE_USER"
           test -n "$PRODUCTION_ENV_FILE"
           test -n "$OPENAI_API_KEY"
+          if printf '%s\n' "$PRODUCTION_ENV_FILE" | grep -Eqi '^EXA_ENABLED=(1|true|yes|on)$'; then
+            test -n "$EXA_API_KEY"
+          fi
 
       - name: Upload deployment bundle
         env:
@@ -213,6 +217,7 @@ jobs:
           ORACLE_USER: ${{ vars.ORACLE_USER }}
           PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
         run: |
           install -d -m 700 deployment/ops/postgres/init
           install -m 644 compose.yaml deployment/compose.yaml
@@ -221,9 +226,12 @@ jobs:
           install -m 755 ops/configure-db-observer.sh deployment/ops/configure-db-observer.sh
           install -m 755 ops/postgres/init/00-create-app-role.sh deployment/ops/postgres/init/00-create-app-role.sh
           printf '%s\n' "$PRODUCTION_ENV_FILE" > deployment/.env.production
-          awk -F= '$1 != "OPENAI_API_KEY"' deployment/.env.production > deployment/.env.production.next
+          awk -F= '$1 != "OPENAI_API_KEY" && $1 != "EXA_API_KEY"' deployment/.env.production > deployment/.env.production.next
           mv deployment/.env.production.next deployment/.env.production
           printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> deployment/.env.production
+          if [ -n "$EXA_API_KEY" ]; then
+            printf 'EXA_API_KEY=%s\n' "$EXA_API_KEY" >> deployment/.env.production
+          fi
           chmod 600 deployment/.env.production
           tar -C deployment -czf deployment.tar.gz .
           scp deployment.tar.gz "${ORACLE_USER}@${ORACLE_HOST}:/tmp/telegram-news-agent-deployment.tar.gz"

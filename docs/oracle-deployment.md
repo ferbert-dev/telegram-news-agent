@@ -12,6 +12,13 @@ inbound internet port. Only SSH is required for this deployment design.
 PostgreSQL may additionally bind `55432` to the VM's `127.0.0.1` interface for
 an SSH tunnel; that loopback socket is not an internet-facing port.
 
+OpenAI, Gemini, Exa, RSS, GDELT, and Telegram calls are outbound HTTPS. Do not
+add an inbound `443` rule for web search. The Oracle subnet needs DNS resolution,
+an egress rule permitting TCP `443`, and a `0.0.0.0/0` route through an Internet
+Gateway for a public subnet or a NAT Gateway for a private subnet. Stateful
+security rules permit response traffic automatically. If existing provider and
+Telegram calls work from the VM, no Exa-specific port is normally required.
+
 Checked-in migrations seed 49 topic-mapped RSS/Atom sources and the GDELT DOC
 index. Normal runs fetch these free sources and use tool-free AI curation.
 Provider web search is a recovery path: first to discover, validate, and persist
@@ -53,6 +60,8 @@ Secrets:
 - `PRODUCTION_ENV_FILE`: the complete runtime environment file described below.
 - `OPENAI_API_KEY`: store this as an environment secret in the GitHub
   `production` environment. Only the deploy job can read it.
+- `EXA_API_KEY`: optional Exa credential. Store it as an environment secret in
+  the GitHub `production` environment; never include it in the multiline file.
 
 Use a dedicated deployment key rather than a personal interactive SSH key. Add
 only its public half to the Oracle user's `~/.ssh/authorized_keys`.
@@ -71,6 +80,11 @@ TELEGRAM_UPDATE_MODE=polling
 TELEGRAM_POLLING_MIGRATE_WEBHOOK=false
 APPROVAL_POLICY=manual
 AI_PROVIDER_ORDER=openai,gemini
+EXA_ENABLED=false
+EXA_SEARCH_TYPE=auto
+EXA_MODEL=
+EXA_DAILY_SEARCH_CAP=20
+EXA_MAX_RESULTS=8
 OPENAI_MODEL=gpt-5.4-2026-03-05
 OPENAI_REASONING_EFFORT=medium
 GEMINI_API_KEY=<secret>
@@ -81,10 +95,11 @@ NOTION_PIPELINE_AGENT_PAGE_ID=<id>
 NOTION_PIPELINE_TICKET_PAGE_ID=
 ```
 
-The deploy job appends the separately stored `OPENAI_API_KEY` environment
-secret to this file immediately before uploading the deployment bundle. With
-the order above, OpenAI GPT-5.4 is primary and Gemini is the fallback. Keep
-provider keys only in GitHub secrets, never in the repository.
+The deploy job appends separately stored `OPENAI_API_KEY` and, when present,
+`EXA_API_KEY` environment secrets immediately before uploading the deployment
+bundle. To enable Exa later, set `EXA_ENABLED=true` and
+`AI_PROVIDER_ORDER=exa,openai,gemini` in `PRODUCTION_ENV_FILE`. Keep provider
+keys only in GitHub secrets, never in the repository.
 
 Generate both database passwords independently. Hex values avoid URL-encoding
 ambiguity in the internal PostgreSQL connection string. `DATABASE_URL` is not

@@ -128,6 +128,7 @@ export const EDITORIAL_ENRICHMENT_JSON_SCHEMA = {
 };
 
 export const EDITORIAL_SIMILARITY_THRESHOLD = 0.68;
+export const MAX_EDITORIAL_FACT_SEARCHES = 3;
 const EDITORIAL_SIMILARITY_METRIC = "lexical_bigram_containment_v1";
 const EDITORIAL_HOOK_SIMILARITY_THRESHOLD = 0.5;
 const EDITORIAL_TARGET_MIN_WORDS = 90;
@@ -145,7 +146,7 @@ The baseline draft is already grounded. Rewrite it into a short, clear and memor
 - Preserve an honest caveat and all necessary source URLs.
 - For every factual claim, add exactly one evidenceMap item. Copy evidenceExcerpt exactly from the supplied evidence text; do not paraphrase the excerpt.
 
-Normally set factRequest to null. Request one fact only when a single specific material detail is genuinely necessary for accuracy and the supplied evidence does not contain it. The request must be a narrow factual query. The draft returned in the same response must remain accurate without the missing fact.`;
+Normally set factRequest to null. Request one fact at a time only when a single specific material detail is genuinely necessary for accuracy and the supplied evidence does not contain it. The request must be a narrow factual query. You may receive newly verified evidence and a remaining search budget in a later pass. The draft returned in the same response must remain accurate without the missing fact.`;
 
 function normalizedText(value) {
   return String(value ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
@@ -332,7 +333,7 @@ async function generateEditorial({
   baselineDraft,
   evidence,
   languageCode,
-  factSearchUsed,
+  factSearchCount,
   retryFeedback = null,
   repository,
   newsSettings,
@@ -343,9 +344,9 @@ async function generateEditorial({
       `${EDITORIAL_SYSTEM_PROMPT}\nWrite the full result in ${language.name}, except source URLs and verbatim evidence excerpts. ` +
       (retryFeedback
         ? "This is the single permitted similarity retry. Set factRequest to null. Use the same evidence, choose a sharper reader angle, change the hook and narrative order materially, and do not merely paraphrase the first attempt."
-        : factSearchUsed
-          ? "The one permitted fact search has already been used. Set factRequest to null."
-          : "No fact search has been used yet."),
+        : factSearchCount >= MAX_EDITORIAL_FACT_SEARCHES
+          ? `All ${MAX_EDITORIAL_FACT_SEARCHES} permitted fact searches have been used. Set factRequest to null.`
+          : `${factSearchCount} of ${MAX_EDITORIAL_FACT_SEARCHES} permitted fact searches have been used. Request at most one additional narrow fact only if it is still materially necessary.`),
     input: {
       task: retryFeedback
         ? "Rewrite the editorial attempt because it is too similar to the baseline."
@@ -364,7 +365,9 @@ async function generateEditorial({
         verificationStatus: item.verificationStatus ?? null,
         text: item.text ?? item.excerpt ?? "",
       })),
-      factSearchUsed,
+      factSearchUsed: factSearchCount > 0,
+      factSearchCount,
+      factSearchLimit: MAX_EDITORIAL_FACT_SEARCHES,
       ...(retryFeedback ? { retryFeedback } : {}),
     },
     zodSchema: EditorialEnrichmentResponse,
@@ -438,6 +441,17 @@ function validatedCandidate({
   };
 }
 
+function candidateUsesSource(candidate, sourceUrl) {
+  return (
+    candidate.draft.sourceUrls.includes(sourceUrl) &&
+    candidate.evidenceMap.some((entry) => entry.sourceUrl === sourceUrl)
+  );
+}
+
+function candidateUsesSources(candidate, sourceUrls) {
+  return sourceUrls.every((sourceUrl) => candidateUsesSource(candidate, sourceUrl));
+}
+
 async function retryIfTooSimilar({
   candidate,
   aiProvider,
@@ -448,6 +462,7 @@ async function retryIfTooSimilar({
   languageCode,
   newsSettings,
   validateDraft,
+  requiredSourceUrls = [],
 }) {
   const initialSimilarity = measureEditorialSimilarity(
     baselineDraft,
@@ -481,7 +496,7 @@ async function retryIfTooSimilar({
       baselineDraft,
       evidence,
       languageCode,
-      factSearchUsed: true,
+      factSearchCount: MAX_EDITORIAL_FACT_SEARCHES,
       retryFeedback: {
         similarityMetric: initialSimilarity.metric,
         similarityScore: initialSimilarity.score,
@@ -507,6 +522,9 @@ async function retryIfTooSimilar({
       evidence,
       languageCode,
     });
+    if (!candidateUsesSources(retried, requiredSourceUrls)) {
+      throw new Error("Similarity retry dropped supplemental evidence");
+    }
     const retrySimilarity = measureEditorialSimilarity(
       baselineDraft,
       retried.draft,
@@ -570,7 +588,7 @@ export async function enrichEditorialDraft({
     baselineDraft,
     evidence,
     languageCode,
-    factSearchUsed: false,
+    factSearchCount: 0,
     repository,
     newsSettings,
   });
@@ -581,7 +599,7 @@ export async function enrichEditorialDraft({
     evidence,
     languageCode,
   });
-  const request = initial.value.factRequest;
+  let request = initial.value.factRequest;
   const initialResult = {
     ...initialCandidate,
     evidence,
@@ -594,6 +612,11 @@ export async function enrichEditorialDraft({
           reason: request.reason,
           expectedClaim: request.expectedClaim,
           sourceUrl: null,
+          sourceKind: null,
+          attempts: 0,
+          usedFacts: 0,
+          maxAttempts: MAX_EDITORIAL_FACT_SEARCHES,
+          history: [],
         }
       : {
           requested: false,
@@ -603,13 +626,35 @@ export async function enrichEditorialDraft({
           reason: null,
           expectedClaim: null,
           sourceUrl: null,
+          sourceKind: null,
+          attempts: 0,
+          usedFacts: 0,
+          maxAttempts: MAX_EDITORIAL_FACT_SEARCHES,
+          history: [],
         },
   };
   let selected = initialResult;
   let selectedEvidence = evidence;
-  if (request && typeof aiProvider.searchFact === "function") {
+  const usedSourceUrls = [];
+  const seenQueries = new Set();
+  while (
+    request &&
+    typeof aiProvider.searchFact === "function" &&
+    selected.search.attempts < MAX_EDITORIAL_FACT_SEARCHES
+  ) {
+    const normalizedQuery = normalizedText(request.query).toLowerCase();
+    if (seenQueries.has(normalizedQuery)) {
+      selected = {
+        ...selected,
+        search: { ...selected.search, status: "duplicate_request" },
+      };
+      break;
+    }
+    seenQueries.add(normalizedQuery);
+    const attempt = selected.search.attempts + 1;
+    let searched;
     try {
-      const searched = await aiProvider.searchFact({
+      searched = await aiProvider.searchFact({
         query: request.query,
         expectedClaim: request.expectedClaim,
         languageCode,
@@ -619,66 +664,136 @@ export async function enrichEditorialDraft({
         searched.usageEvents,
         context(article, newsSettings),
       );
-      const fact = FactSearchEvidence.parse({ fact: searched.fact ?? null }).fact;
-      if (!fact) {
-        selected = {
-          ...selected,
-          search: { ...selected.search, performed: true, status: "no_evidence" },
-        };
-      } else {
-        selectedEvidence = [...evidence, supplementalEvidence(fact)];
-        try {
-          const regenerated = await generateEditorial({
-            aiProvider,
-            article,
-            baselineDraft,
-            evidence: selectedEvidence,
-            languageCode,
-            factSearchUsed: true,
-            repository,
-            newsSettings,
-          });
-          if (regenerated.value.factRequest) {
-            throw new Error(
-              "Editorial enrichment requested more than one fact search",
-            );
-          }
-          selected = {
-            ...validatedCandidate({
-              generated: regenerated,
-              validateDraft,
-              baselineDraft,
-              evidence: selectedEvidence,
-              languageCode,
-            }),
-            evidence: selectedEvidence,
-            search: {
-              ...selected.search,
-              performed: true,
-              status: "used",
-              sourceUrl: fact.sourceUrl,
-              sourceKind: fact.sourceKind,
-            },
-          };
-        } catch {
-          selected = {
-            ...selected,
-            evidence: selectedEvidence,
-            search: {
-              ...selected.search,
-              performed: true,
-              status: "evidence_saved_regeneration_failed",
-              sourceUrl: fact.sourceUrl,
-              sourceKind: fact.sourceKind,
-            },
-          };
-        }
-      }
     } catch {
       selected = {
         ...selected,
-        search: { ...selected.search, performed: true, status: "failed" },
+        search: {
+          ...selected.search,
+          performed: true,
+          status: "failed",
+          attempts: attempt,
+          history: [
+            ...selected.search.history,
+            { attempt, query: request.query, status: "failed", sourceUrl: null },
+          ],
+        },
       };
+      break;
+    }
+
+    const fact = FactSearchEvidence.parse({ fact: searched.fact ?? null }).fact;
+    if (!fact) {
+      selected = {
+        ...selected,
+        search: {
+          ...selected.search,
+          performed: true,
+          status: "no_evidence",
+          attempts: attempt,
+          history: [
+            ...selected.search.history,
+            { attempt, query: request.query, status: "no_evidence", sourceUrl: null },
+          ],
+        },
+      };
+      break;
+    }
+    if (usedSourceUrls.includes(fact.sourceUrl)) {
+      selected = {
+        ...selected,
+        search: {
+          ...selected.search,
+          performed: true,
+          status: "duplicate_evidence",
+          attempts: attempt,
+          history: [
+            ...selected.search.history,
+            {
+              attempt,
+              query: request.query,
+              status: "duplicate_evidence",
+              sourceUrl: fact.sourceUrl,
+            },
+          ],
+        },
+      };
+      break;
+    }
+
+    const candidateEvidence = [...selectedEvidence, supplementalEvidence(fact)];
+    try {
+      const regenerated = await generateEditorial({
+        aiProvider,
+        article,
+        baselineDraft,
+        evidence: candidateEvidence,
+        languageCode,
+        factSearchCount: attempt,
+        repository,
+        newsSettings,
+      });
+      const candidate = validatedCandidate({
+        generated: regenerated,
+        validateDraft,
+        baselineDraft,
+        evidence: candidateEvidence,
+        languageCode,
+      });
+      if (!candidateUsesSources(candidate, [...usedSourceUrls, fact.sourceUrl])) {
+        throw new Error("Editorial regeneration did not use searched evidence");
+      }
+      usedSourceUrls.push(fact.sourceUrl);
+      selectedEvidence = candidateEvidence;
+      request = regenerated.value.factRequest;
+      selected = {
+        ...candidate,
+        evidence: selectedEvidence,
+        search: {
+          ...selected.search,
+          performed: true,
+          status:
+            request && attempt >= MAX_EDITORIAL_FACT_SEARCHES
+              ? "limit_reached"
+              : "used",
+          query: request?.query ?? selected.search.query,
+          reason: request?.reason ?? selected.search.reason,
+          expectedClaim:
+            request?.expectedClaim ?? selected.search.expectedClaim,
+          sourceUrl: fact.sourceUrl,
+          sourceKind: fact.sourceKind,
+          attempts: attempt,
+          usedFacts: usedSourceUrls.length,
+          history: [
+            ...selected.search.history,
+            {
+              attempt,
+              query: normalizedQuery,
+              status: "used",
+              sourceUrl: fact.sourceUrl,
+            },
+          ],
+        },
+      };
+    } catch {
+      selected = {
+        ...selected,
+        search: {
+          ...selected.search,
+          performed: true,
+          status: "evidence_not_used",
+          attempts: attempt,
+          history: [
+            ...selected.search.history,
+            {
+              attempt,
+              query: request.query,
+              status: "evidence_not_used",
+              sourceUrl: fact.sourceUrl,
+            },
+          ],
+        },
+      };
+      break;
     }
   }
 
@@ -692,6 +807,7 @@ export async function enrichEditorialDraft({
     languageCode,
     newsSettings,
     validateDraft,
+    requiredSourceUrls: usedSourceUrls,
   });
   return {
     ...distinct,
