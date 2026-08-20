@@ -1,7 +1,11 @@
 # Telegram News Agent
 
 <p align="center">
-  <img src="docs/assets/graphify-architecture.png" alt="Graphify architecture map of Telegram News Agent" width="820">
+  <a href="docs/assets/graphify-architecture.svg">
+    <img src="docs/assets/graphify-architecture.svg" alt="Clickable Graphify runtime dependency graph of Telegram News Agent" width="1200">
+  </a>
+  <br>
+  <sub>Click the graph to open the full-size dependency map.</sub>
 </p>
 
 A production-oriented pet project that researches, writes, reviews, schedules,
