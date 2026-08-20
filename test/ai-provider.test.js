@@ -10,13 +10,22 @@ import {
 test("provider order defaults to OpenAI then Gemini and rejects unknown providers", () => {
   assert.deepEqual(getAiProviderOrder({}), ["openai", "gemini"]);
   assert.deepEqual(
-    getAiProviderOrder({ AI_PROVIDER_ORDER: "gemini, openai, gemini" }),
-    ["gemini", "openai"],
+    getAiProviderOrder({ AI_PROVIDER_ORDER: "exa, gemini, openai, exa" }),
+    ["exa", "gemini", "openai"],
   );
   assert.throws(
     () => getAiProviderOrder({ AI_PROVIDER_ORDER: "gemini,unknown" }),
     /Unsupported AI provider/,
   );
+});
+
+test("configured Exa is available without changing the default order", () => {
+  const provider = createAiProvider({
+    AI_PROVIDER_ORDER: "exa,openai,gemini",
+    EXA_ENABLED: "true",
+    EXA_API_KEY: "exa-key",
+  });
+  assert.deepEqual(provider.names, ["exa"]);
 });
 
 test("missing OpenAI key is skipped while configured Gemini remains available", () => {

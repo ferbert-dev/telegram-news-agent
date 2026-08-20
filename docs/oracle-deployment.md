@@ -53,6 +53,8 @@ Secrets:
 - `PRODUCTION_ENV_FILE`: the complete runtime environment file described below.
 - `OPENAI_API_KEY`: store this as an environment secret in the GitHub
   `production` environment. Only the deploy job can read it.
+- `EXA_API_KEY`: optional Exa credential. Store it as an environment secret in
+  the GitHub `production` environment; never include it in the multiline file.
 
 Use a dedicated deployment key rather than a personal interactive SSH key. Add
 only its public half to the Oracle user's `~/.ssh/authorized_keys`.
@@ -71,6 +73,11 @@ TELEGRAM_UPDATE_MODE=polling
 TELEGRAM_POLLING_MIGRATE_WEBHOOK=false
 APPROVAL_POLICY=manual
 AI_PROVIDER_ORDER=openai,gemini
+EXA_ENABLED=false
+EXA_SEARCH_TYPE=auto
+EXA_MODEL=
+EXA_DAILY_SEARCH_CAP=20
+EXA_MAX_RESULTS=8
 OPENAI_MODEL=gpt-5.4-2026-03-05
 OPENAI_REASONING_EFFORT=medium
 GEMINI_API_KEY=<secret>
@@ -81,10 +88,11 @@ NOTION_PIPELINE_AGENT_PAGE_ID=<id>
 NOTION_PIPELINE_TICKET_PAGE_ID=
 ```
 
-The deploy job appends the separately stored `OPENAI_API_KEY` environment
-secret to this file immediately before uploading the deployment bundle. With
-the order above, OpenAI GPT-5.4 is primary and Gemini is the fallback. Keep
-provider keys only in GitHub secrets, never in the repository.
+The deploy job appends separately stored `OPENAI_API_KEY` and, when present,
+`EXA_API_KEY` environment secrets immediately before uploading the deployment
+bundle. To enable Exa later, set `EXA_ENABLED=true` and
+`AI_PROVIDER_ORDER=exa,openai,gemini` in `PRODUCTION_ENV_FILE`. Keep provider
+keys only in GitHub secrets, never in the repository.
 
 Generate both database passwords independently. Hex values avoid URL-encoding
 ambiguity in the internal PostgreSQL connection string. `DATABASE_URL` is not

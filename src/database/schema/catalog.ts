@@ -54,7 +54,7 @@ export const sources = pgTable(
     ),
     check(
       "sources_discovered_by_check",
-      sql`${table.discoveredBy} in ('seed', 'manual', 'openai', 'gemini')`,
+      sql`${table.discoveredBy} in ('seed', 'manual', 'openai', 'gemini', 'exa')`,
     ),
     index("sources_enabled_primary_score_idx").on(
       table.enabled,

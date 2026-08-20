@@ -6,8 +6,12 @@ import {
   createOpenAiProvider,
   getOpenAiConfig,
 } from "./openai-provider.js";
+import {
+  createExaProvider,
+  getExaProviderConfig,
+} from "./exa-provider.js";
 
-const SUPPORTED_PROVIDERS = new Set(["openai", "gemini"]);
+const SUPPORTED_PROVIDERS = new Set(["openai", "gemini", "exa"]);
 
 export class AiProvidersExhaustedError extends AggregateError {
   constructor(operation, errors) {
@@ -61,7 +65,7 @@ export function createFallbackAiProvider(
   const available = providers.filter(Boolean);
   if (!available.length) {
     throw new Error(
-      "No AI provider is configured; set OPENAI_API_KEY or GEMINI_API_KEY",
+      "No AI provider is configured; enable Exa or set an OpenAI/Gemini API key",
     );
   }
 
@@ -122,6 +126,7 @@ export function createFallbackAiProvider(
 
 export function createAiProvider(env = process.env, { log = console } = {}) {
   const factories = {
+    exa: () => createExaProvider(getExaProviderConfig(env)),
     openai: () => createOpenAiProvider(getOpenAiConfig(env)),
     gemini: () => createGeminiProvider(getGeminiProviderConfig(env)),
   };

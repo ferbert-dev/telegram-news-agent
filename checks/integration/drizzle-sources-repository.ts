@@ -89,10 +89,11 @@ test(
         feedUrl: `https://discovered.integration.test/${suffix}.xml`,
         reliabilityScore: 65,
         topicCodes: ["science"],
-        discoveredBy: "openai",
+        discoveredBy: "exa",
         discoveryMetadata: { integration: true },
       });
       discoveredSourceId = discovered.id;
+      assert.equal(discovered.discovered_by, "exa");
 
       const discoveredWithTopics = (await repository.listEnabledSources()).find(
         (candidate) => candidate.id === discovered.id,
@@ -106,8 +107,8 @@ test(
       assert.equal(
         await repository.completeSourceDiscovery({
           topicKey,
-          provider: "openai",
-          model: "integration-model",
+          provider: "exa",
+          model: "exa-search:auto",
           resultCount: 1,
         }),
         true,

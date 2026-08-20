@@ -45,6 +45,12 @@ Configure these server-only values in `.env`:
 
 ```text
 AI_PROVIDER_ORDER=openai,gemini
+EXA_ENABLED=false
+EXA_API_KEY=
+EXA_SEARCH_TYPE=auto
+EXA_MODEL=
+EXA_DAILY_SEARCH_CAP=20
+EXA_MAX_RESULTS=8
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5.4-2026-03-05
 OPENAI_REASONING_EFFORT=medium
@@ -61,10 +67,12 @@ TELEGRAM_CHANNEL_ID=@HonestAINews
 APPROVAL_POLICY=manual
 ```
 
-At least one of `OPENAI_API_KEY` or `GEMINI_API_KEY` is required. The default
-order uses `gpt-5.4-2026-03-05` first and Gemini second. A missing key is
-skipped, and an OpenAI authentication, quota, rate-limit, or response error
-falls through to Gemini.
+At least one configured provider is required. The default order remains OpenAI
+then Gemini. Exa is disabled by default; set `EXA_ENABLED=true`, provide
+`EXA_API_KEY`, and use `AI_PROVIDER_ORDER=exa,openai,gemini` to prefer it for
+news/feed searches while keeping structured generation on OpenAI or Gemini.
+`EXA_DAILY_SEARCH_CAP` is a per-process UTC-day guard, so account-wide quota
+monitoring is still required when more than one process or restart can run.
 
 Normal research is feeds-first and does not call a paid web-search tool. The
 PostgreSQL source registry starts with 49 verified RSS/Atom feeds across world
