@@ -23,7 +23,11 @@ export class AiProvidersExhaustedError extends AggregateError {
 }
 
 export function getAiProviderOrder(env = process.env) {
-  const order = (env.AI_PROVIDER_ORDER || "openai,gemini")
+  const configuredOrder = env.AI_PROVIDER_ORDER?.trim();
+  const defaultOrder = getExaProviderConfig(env)
+    ? "exa,openai,gemini"
+    : "openai,gemini";
+  const order = (configuredOrder || defaultOrder)
     .split(",")
     .map((name) => name.trim().toLowerCase())
     .filter(Boolean);
@@ -114,13 +118,34 @@ export function createFallbackAiProvider(
     }
   };
 
+  const executeFactSearch = async (input) => {
+    const exa = available.find(
+      (candidate) =>
+        candidate.name === "exa" && typeof candidate.searchFact === "function",
+    );
+    if (!exa) return execute("searchFact", input);
+    try {
+      return await exa.searchFact(input);
+    } catch (error) {
+      log.warn?.(
+        JSON.stringify({
+          event: "ai_provider_failed",
+          operation: "searchFact",
+          provider: exa.name,
+          error_code: classifyProviderError(error),
+        }),
+      );
+      throw new AiProvidersExhaustedError("searchFact", [error]);
+    }
+  };
+
   return {
     names: available.map((provider) => provider.name),
     generateStructured: (input) => execute("generateStructured", input),
     generateStructuredOnce: (input) => executeOnce("generateStructured", input),
     searchNews: (input) => execute("searchNews", input),
     searchFeeds: (input) => execute("searchFeeds", input),
-    searchFact: (input) => execute("searchFact", input),
+    searchFact: executeFactSearch,
   };
 }
 

@@ -739,7 +739,7 @@ export async function enrichEditorialDraft({
         evidence: candidateEvidence,
         languageCode,
       });
-      if (!candidateUsesSource(candidate, fact.sourceUrl)) {
+      if (!candidateUsesSources(candidate, [...usedSourceUrls, fact.sourceUrl])) {
         throw new Error("Editorial regeneration did not use searched evidence");
       }
       usedSourceUrls.push(fact.sourceUrl);

@@ -64,7 +64,9 @@ search is capped, unavailable, weak, duplicated, or omitted by regeneration,
 the last fully grounded draft remains publishable and no further search is
 attempted. A similarity retry must retain every accepted supplemental source.
 OpenAI or Gemini still performs structured editorial generation; Exa only
-supplies retrieval evidence.
+supplies retrieval evidence. When Exa is configured, its fact-search operation
+is fail-closed and never falls through to a paid OpenAI or Gemini web search
+after an Exa error or daily-cap rejection.
 
 ### Story Deduplication
 

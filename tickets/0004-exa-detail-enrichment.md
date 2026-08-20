@@ -19,6 +19,9 @@ identifies one material missing fact or context question.
 - Share the daily cap with Exa feed and topic searches.
 - Return at most one fact with a direct URL and exact Exa highlight.
 - Reject sources outside the conservative trusted-domain classification.
+- Reject deceptive suffixes such as `nasa.gov.attacker.com`.
+- Never fall through from failed/capped Exa detail search to paid web search.
+- Require every regeneration to retain all previously accepted search sources.
 - Preserve evidence-map validation and fail closed to the baseline draft.
 - Record one web-search call, zero model tokens, and no invented Exa cost.
 - Document the research flow, Oracle egress, and portfolio architecture.

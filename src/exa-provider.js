@@ -24,7 +24,20 @@ const OFFICIAL_HOSTS = [
   "worldbank.org",
   "esa.int",
 ];
+const GOVERNMENT_HOSTS = [
+  "gov.uk",
+  "gov.au",
+  "gov.ca",
+  "gov.nz",
+  "gov.sg",
+  "gob.es",
+  "gouv.fr",
+  "bund.de",
+];
 const ACADEMIC_HOSTS = [
+  "ac.uk",
+  "edu.au",
+  "edu.ca",
   "arxiv.org",
   "doi.org",
   "nature.com",
@@ -154,15 +167,12 @@ function sourceKind(url) {
   const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
   if (
     hostname.endsWith(".gov") ||
-    hostname.includes(".gov.") ||
-    /(?:^|\.)(?:gov|gob|gouv)\.[a-z.]+$/u.test(hostname)
+    matchesHost(hostname, GOVERNMENT_HOSTS)
   ) {
     return "government";
   }
   if (
     hostname.endsWith(".edu") ||
-    hostname.includes(".edu.") ||
-    /(?:^|\.)ac\.[a-z.]+$/u.test(hostname) ||
     matchesHost(hostname, ACADEMIC_HOSTS)
   ) {
     return "academic";

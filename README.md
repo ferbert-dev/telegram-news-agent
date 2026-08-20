@@ -92,6 +92,9 @@ generation continues with OpenAI or Gemini because the fallback skips provider
 operations that Exa does not implement.
 `EXA_DAILY_SEARCH_CAP` is a per-process UTC-day guard, so account-wide quota
 monitoring is still required when more than one process or restart can run.
+When Exa is configured, a failed or capped Exa detail search does not fall
+through to paid OpenAI or Gemini web search. Without Exa, the existing provider
+fact-search fallback remains available.
 
 Normal research is feeds-first and does not call a paid web-search tool. The
 PostgreSQL source registry starts with 49 verified RSS/Atom feeds across world

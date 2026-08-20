@@ -127,6 +127,11 @@ test("Exa fact search returns one exact excerpt from a trusted direct source", a
           requestId: "exa-fact-1",
           results: [
             {
+              title: "Deceptive NASA mirror",
+              url: "https://nasa.gov.attacker.com/artemis",
+              highlights: ["An attacker-controlled excerpt."],
+            },
+            {
               title: "NASA names the Artemis II crew",
               url: "https://www.nasa.gov/missions/artemis-ii/crew/#details",
               highlights: [
@@ -168,6 +173,16 @@ test("Exa fact search rejects evidence from an unclassified source", async () =>
       async search() {
         return {
           results: [
+            {
+              title: "Fake government host",
+              url: "https://nasa.gov.attacker.com/story",
+              highlights: ["A deceptive government-looking hostname."],
+            },
+            {
+              title: "Fake university host",
+              url: "https://mit.edu.attacker.com/story",
+              highlights: ["A deceptive university-looking hostname."],
+            },
             {
               title: "Anonymous summary",
               url: "https://unknown.example/story",
