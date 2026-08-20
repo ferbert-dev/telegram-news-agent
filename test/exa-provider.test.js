@@ -116,6 +116,77 @@ test("Exa feed search keeps only eight direct RSS or Atom-looking URLs", async (
   assert.equal(result.usageEvents[0].operation, "feed_source_search");
 });
 
+test("Exa fact search returns one exact excerpt from a trusted direct source", async () => {
+  let request;
+  const provider = createExaProvider(config(), {
+    capStore: new Map(),
+    client: {
+      async search(query, options) {
+        request = { query, options };
+        return {
+          requestId: "exa-fact-1",
+          results: [
+            {
+              title: "NASA names the Artemis II crew",
+              url: "https://www.nasa.gov/missions/artemis-ii/crew/#details",
+              highlights: [
+                "The Artemis II crew consists of four astronauts.",
+              ],
+              text: "Untrusted surrounding page text is not used as evidence.",
+            },
+          ],
+        };
+      },
+    },
+  });
+
+  const result = await provider.searchFact({
+    query: "Who is flying on NASA Artemis II?",
+    expectedClaim: "The Artemis II crew consists of four astronauts.",
+  });
+
+  assert.deepEqual(result.fact, {
+    claim: "The Artemis II crew consists of four astronauts.",
+    sourceUrl: "https://www.nasa.gov/missions/artemis-ii/crew/",
+    sourceTitle: "NASA names the Artemis II crew",
+    sourceKind: "government",
+    evidenceText: "The Artemis II crew consists of four astronauts.",
+  });
+  assert.equal(result.provider, "exa");
+  assert.equal(result.usageEvents[0].operation, "editorial_fact_search");
+  assert.equal(result.usageEvents[0].webSearchCalls, 1);
+  assert.equal(request.options.numResults, 5);
+  assert.equal(request.options.category, undefined);
+  assert.equal(request.options.contents.text.maxCharacters, 3_500);
+  assert.match(request.query, /four astronauts/);
+});
+
+test("Exa fact search rejects evidence from an unclassified source", async () => {
+  const provider = createExaProvider(config(), {
+    capStore: new Map(),
+    client: {
+      async search() {
+        return {
+          results: [
+            {
+              title: "Anonymous summary",
+              url: "https://unknown.example/story",
+              highlights: ["A claim with no trusted source classification."],
+            },
+          ],
+        };
+      },
+    },
+  });
+
+  const result = await provider.searchFact({
+    query: "Verify a material detail",
+    expectedClaim: "A claim with no trusted source classification.",
+  });
+  assert.equal(result.fact, null);
+  assert.equal(result.usageEvents[0].webSearchCalls, 1);
+});
+
 test("Exa daily cap is shared by provider instances in one process", async () => {
   let calls = 0;
   const sharedConfig = config({
@@ -131,7 +202,7 @@ test("Exa daily cap is shared by provider instances in one process", async () =>
   const firstProvider = createExaProvider(sharedConfig, { client });
   const secondProvider = createExaProvider(sharedConfig, { client });
 
-  await firstProvider.searchNews({ query: "first" });
+  await firstProvider.searchFact({ query: "first", expectedClaim: "fact" });
   await assert.rejects(
     secondProvider.searchNews({ query: "second" }),
     (error) =>

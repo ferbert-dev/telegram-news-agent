@@ -12,6 +12,13 @@ inbound internet port. Only SSH is required for this deployment design.
 PostgreSQL may additionally bind `55432` to the VM's `127.0.0.1` interface for
 an SSH tunnel; that loopback socket is not an internet-facing port.
 
+OpenAI, Gemini, Exa, RSS, GDELT, and Telegram calls are outbound HTTPS. Do not
+add an inbound `443` rule for web search. The Oracle subnet needs DNS resolution,
+an egress rule permitting TCP `443`, and a `0.0.0.0/0` route through an Internet
+Gateway for a public subnet or a NAT Gateway for a private subnet. Stateful
+security rules permit response traffic automatically. If existing provider and
+Telegram calls work from the VM, no Exa-specific port is normally required.
+
 Checked-in migrations seed 49 topic-mapped RSS/Atom sources and the GDELT DOC
 index. Normal runs fetch these free sources and use tool-free AI curation.
 Provider web search is a recovery path: first to discover, validate, and persist

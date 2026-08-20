@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import Exa from "exa-js";
+import { FactSearchEvidence } from "./ai-fact-search.js";
 import { FeedDiscovery } from "./ai-feed-discovery.js";
 import { NewsDiscovery } from "./ai-news-discovery.js";
 import { exaUsageEvent } from "./ai-usage.js";
@@ -14,6 +15,43 @@ const EXA_SEARCH_TYPES = new Set([
 ]);
 const HOUR_MS = 60 * 60 * 1000;
 const PROCESS_DAILY_SEARCH_USAGE = new Map();
+const OFFICIAL_HOSTS = [
+  "europa.eu",
+  "un.org",
+  "who.int",
+  "nato.int",
+  "oecd.org",
+  "worldbank.org",
+  "esa.int",
+];
+const ACADEMIC_HOSTS = [
+  "arxiv.org",
+  "doi.org",
+  "nature.com",
+  "science.org",
+  "cell.com",
+  "pnas.org",
+  "nejm.org",
+];
+const REPUTABLE_NEWS_HOSTS = [
+  "reuters.com",
+  "apnews.com",
+  "bbc.com",
+  "bbc.co.uk",
+  "dw.com",
+  "theguardian.com",
+  "ft.com",
+  "bloomberg.com",
+  "npr.org",
+  "politico.com",
+  "euronews.com",
+  "aljazeera.com",
+  "tagesschau.de",
+  "spiegel.de",
+  "zeit.de",
+  "elpais.com",
+  "lemonde.fr",
+];
 
 export class ExaDailySearchCapError extends Error {
   constructor(cap) {
@@ -104,6 +142,58 @@ function normalizeNewsResults(response, limit) {
     if (items.length >= limit) break;
   }
   return NewsDiscovery.parse({ items });
+}
+
+function matchesHost(hostname, allowedHosts) {
+  return allowedHosts.some(
+    (allowed) => hostname === allowed || hostname.endsWith(`.${allowed}`),
+  );
+}
+
+function sourceKind(url) {
+  const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  if (
+    hostname.endsWith(".gov") ||
+    hostname.includes(".gov.") ||
+    /(?:^|\.)(?:gov|gob|gouv)\.[a-z.]+$/u.test(hostname)
+  ) {
+    return "government";
+  }
+  if (
+    hostname.endsWith(".edu") ||
+    hostname.includes(".edu.") ||
+    /(?:^|\.)ac\.[a-z.]+$/u.test(hostname) ||
+    matchesHost(hostname, ACADEMIC_HOSTS)
+  ) {
+    return "academic";
+  }
+  if (matchesHost(hostname, OFFICIAL_HOSTS)) return "official";
+  if (matchesHost(hostname, REPUTABLE_NEWS_HOSTS)) return "reputable_news";
+  return null;
+}
+
+function normalizeFactResult(response) {
+  for (const result of response?.results ?? []) {
+    const sourceUrl = publicHttpUrl(result?.url);
+    const sourceTitle = limitedText(result?.title, 300);
+    const evidenceText = Array.isArray(result?.highlights)
+      ? result.highlights
+          .map((highlight) => limitedText(highlight, 500))
+          .find(Boolean) ?? null
+      : null;
+    const kind = sourceUrl ? sourceKind(sourceUrl) : null;
+    if (!sourceUrl || !sourceTitle || !evidenceText || !kind) continue;
+    return FactSearchEvidence.parse({
+      fact: {
+        claim: evidenceText,
+        sourceUrl,
+        sourceTitle,
+        sourceKind: kind,
+        evidenceText,
+      },
+    });
+  }
+  return { fact: null };
 }
 
 function looksLikeFeedUrl(value) {
@@ -230,6 +320,33 @@ export function createExaProvider(
       );
       return {
         ...normalizeNewsResults(response, limit),
+        provider: "exa",
+        model: config.model,
+        usageEvents,
+      };
+    },
+
+    async searchFact(input = {}) {
+      const query = searchTerms({
+        query: input.query,
+        customTopics: [input.expectedClaim],
+      });
+      if (!query) throw new Error("Exa fact search query is empty");
+      const limit = Math.min(5, config.maxResults);
+      const { response, usageEvents } = await executeSearch(
+        query,
+        {
+          type: config.searchType,
+          numResults: limit,
+          contents: {
+            text: { maxCharacters: 3_500 },
+            highlights: { query },
+          },
+        },
+        "editorial_fact_search",
+      );
+      return {
+        ...normalizeFactResult(response),
         provider: "exa",
         model: config.model,
         usageEvents,

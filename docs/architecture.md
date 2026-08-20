@@ -29,6 +29,10 @@ PostgreSQL topic/source registry
   -> direct article extraction
   -> recheck selected full evidence against excluded topics
   -> grounded draft
+  -> optional editorial enrichment
+  -> up to three sequential Exa detail searches when facts are missing
+  -> validate direct URL + exact excerpt against the evidence map
+  -> enriched grounded draft or unchanged baseline fallback
 
 No fresh candidates
   -> cooldown-protected provider search for RSS/Atom endpoints
@@ -41,6 +45,26 @@ and an optional quarantine deadline. Source discovery state is keyed by the
 normalized topic set so repeated empty runs cannot repeatedly incur search-tool
 costs. Automatically discovered sources are additive and can be disabled by an
 operator; the pipeline never deletes them automatically.
+
+### Editorial Research
+
+The optional editorial pass starts from the already grounded draft and source
+evidence. It may identify one material missing fact, but it cannot browse
+unboundedly. The provider-neutral `searchFact` contract permits at most three
+sequential search attempts per article. Exa retrieves up to five candidate
+pages per call and returns at most one accepted fact from each call. A later
+search is allowed only after the prior fact is present in a valid regenerated
+draft and evidence map.
+
+Exa evidence is fail-closed. The adapter accepts only a direct HTTP source from
+a conservatively classified government, academic, official, or reputable-news
+domain, and it copies an exact Exa highlight rather than generating a factual
+paraphrase. The existing editorial evidence map validates the final claims. If
+search is capped, unavailable, weak, duplicated, or omitted by regeneration,
+the last fully grounded draft remains publishable and no further search is
+attempted. A similarity retry must retain every accepted supplemental source.
+OpenAI or Gemini still performs structured editorial generation; Exa only
+supplies retrieval evidence.
 
 ### Story Deduplication
 
