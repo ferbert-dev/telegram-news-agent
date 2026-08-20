@@ -3,7 +3,7 @@
 - Notion: https://app.notion.com/p/3c2d78850eab81659e54fc89a3fbeeba
 - Parent Epic: https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb
 - Depends on: `0002-exa-search-module.md`
-- Status: In Progress
+- Status: Done
 
 ## Objective
 
