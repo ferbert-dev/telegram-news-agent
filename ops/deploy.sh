@@ -43,15 +43,46 @@ if [[ -n "$previous_container" ]]; then
 fi
 
 rollback() {
-  if [[ -z "$previous_image" || "$previous_image" == "$image" ]]; then
+  if [[ -z "$previous_image" ]]; then
     return
   fi
   echo "New bot container failed; restoring ${previous_image}." >&2
-  APP_IMAGE="$previous_image" "${compose[@]}" up -d --no-deps bot
+  APP_IMAGE="$previous_image" "${compose[@]}" up -d --force-recreate --no-deps bot
+}
+
+rollback_on_error() {
+  status=$?
+  trap - ERR
+  rollback || true
+  exit "$status"
 }
 
 APP_IMAGE="$image" "${compose[@]}" pull db bot
 APP_IMAGE="$image" "${compose[@]}" up -d db
+
+db_container="$("${compose[@]}" ps -q db)"
+db_healthy=false
+for _ in {1..60}; do
+  db_status="$(
+    docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+      "$db_container" 2>/dev/null || true
+  )"
+  if [[ "$db_status" == "healthy" ]]; then
+    db_healthy=true
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$db_healthy" != "true" ]]; then
+  echo "PostgreSQL did not become healthy before credential reconciliation." >&2
+  "${compose[@]}" logs --tail=80 db >&2 || true
+  exit 1
+fi
+
+trap rollback_on_error ERR
+APP_IMAGE="$image" "${compose[@]}" exec -T db \
+  /docker-entrypoint-initdb.d/00-create-app-role.sh
 APP_IMAGE="$image" "${compose[@]}" run --rm migrate
 APP_IMAGE="$image" "${compose[@]}" up -d --no-deps bot
 
@@ -64,6 +95,7 @@ for _ in {1..6}; do
     && [[ "$(docker inspect --format '{{.RestartCount}}' "$container")" == "0" ]]; then
     healthy_checks=$((healthy_checks + 1))
     if [[ "$healthy_checks" -ge 3 ]]; then
+      trap - ERR
       echo "Deployment healthy: ${image}"
       "${compose[@]}" ps
       exit 0
@@ -74,5 +106,6 @@ for _ in {1..6}; do
 done
 
 "${compose[@]}" logs --tail=80 bot >&2 || true
+trap - ERR
 rollback
 exit 1
