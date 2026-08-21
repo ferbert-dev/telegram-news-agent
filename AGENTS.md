@@ -52,6 +52,17 @@ Prefer tickets that one agent can complete in one or two focused days. One imple
 - The Orchestrator owns integration, status transitions, Notion writes, and final authority checks.
 - Finalize every Agent Run with status, timestamps, duration, result, evidence links, and error/blocker details. If Notion is unavailable, use the fallback payload format in `agents/runs/README.md` and backfill before `Done`.
 
+### Cost-aware model routing
+
+- Keep the primary Orchestrator on `gpt-5.6-sol` with `high` reasoning for requirements, decomposition, integration, and final decisions.
+- Use `gpt-5.3-codex-spark` with `medium` reasoning by default for bounded code exploration, implementation, and targeted QA.
+- Use `gpt-5.6-luna` with `medium` reasoning for narrow research, inventory, repetitive processing, and grounded documentation work.
+- Use `gpt-5.6-terra` with `high` reasoning for ordinary independent closure review and complex but non-critical integration analysis.
+- Reserve `gpt-5.6-sol` with `high` reasoning for architecture, security, data-loss, PostgreSQL atomicity, production operations, and exact-head release gates.
+- Work in one vertical scope with at most two concurrent, disjoint subagents. Do not create an idle agent pool or delegate a small sequential task when coordination would cost more than direct execution.
+- Record the selected model, reasoning effort, and cost/quality rationale in every delegated handoff and Agent Run. If a configured model is unavailable on the active Codex host, stop and escalate instead of silently substituting another model.
+- Custom role profiles live in `.codex/agents/`; `.codex/config.toml` defines project defaults. Explicit spawn overrides are allowed only when the handoff explains why the default is insufficient.
+
 Role contracts and escalation boundaries are in `agents/roles.md` and the Notion Agent Registry.
 
 ## Closure review and retrospective

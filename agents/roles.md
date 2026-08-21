@@ -8,6 +8,24 @@ Each handoff defines context, objective, inputs, constraints, acceptance criteri
 
 Only the Orchestrator may spawn agents. Specialists do not recursively spawn under this governance.
 
+## Cost-aware model routing
+
+Project defaults are defined in `.codex/config.toml`; executable custom role profiles live in `.codex/agents/`. The primary thread owns orchestration and integration, while delegated agents receive one bounded objective and return distilled evidence.
+
+| Work | Custom agent | Model | Reasoning | Boundary |
+| --- | --- | --- | --- | --- |
+| Requirements, decomposition, integration, final decisions | Primary Orchestrator | `gpt-5.6-sol` | `high` | Do directly; delegate only bounded independent work |
+| Codebase mapping and impact discovery | `code_explorer` | `gpt-5.3-codex-spark` | `medium` | Read-only; verify Graphify against source/SQL/tests |
+| Routine implementation | `builder` | `gpt-5.3-codex-spark` | `medium` | One Ready ticket; no merge, deploy, or scope expansion |
+| Targeted QA and parity checks | `qa` | `gpt-5.3-codex-spark` | `medium` | Approved environment and bounded test surface only |
+| Narrow research and inventory | `researcher` | `gpt-5.6-luna` | `medium` | Primary evidence; escalate ambiguity or conflict |
+| Grounded documentation updates | `documentation` | `gpt-5.6-luna` | `medium` | Verified facts only; no runtime or external changes |
+| Routine independent review | `reviewer` | `gpt-5.6-terra` | `high` | Read-only PASS/FAIL/BLOCKED review |
+| Architecture, security, database, production, or exact-head review | `critical_reviewer` | `gpt-5.6-sol` | `high` | Reserved high-risk read-only gate |
+| Authorized release and production operations | `ops` | `gpt-5.6-sol` | `high` | Explicit authority and rollback required |
+
+Use one vertical scope and no more than two concurrent, disjoint subagents. A small sequential task stays with the Orchestrator when delegation overhead would exceed the likely benefit. Every handoff and Agent Run records the selected model, reasoning effort, and cost/quality rationale. Model routing is fail-closed: if the active Codex host does not expose the configured model, return to the Orchestrator instead of silently substituting another model.
+
 ## Orchestrator Agent
 
 - **Mission:** Own the Epic outcome and board integrity; create parent-linked, dependency-ordered tickets; coordinate independent bounded agents; integrate reviewed evidence; move statuses only when gates pass.
