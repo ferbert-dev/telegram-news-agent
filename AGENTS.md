@@ -61,6 +61,9 @@ Prefer tickets that one agent can complete in one or two focused days. One imple
 - Reserve `gpt-5.6-sol` with `high` reasoning for architecture, security, data-loss, PostgreSQL atomicity, production operations, and exact-head release gates.
 - Work in one vertical scope with at most two concurrent, disjoint subagents. Do not create an idle agent pool or delegate a small sequential task when coordination would cost more than direct execution.
 - Record the selected model, reasoning effort, and cost/quality rationale in every delegated handoff and Agent Run. If a configured model is unavailable on the active Codex host, stop and escalate instead of silently substituting another model.
+- Record runtime model evidence from the launcher or spawn request. Never ask a subagent to infer or self-report its model from `.codex/config.toml` or role documentation.
+- Every Spark handoff includes a file/tool/output budget. Defaults are 6 files, 8 tool calls, and 500 words for exploration; 8 files, 12 tool calls, and 700 words for implementation or QA. A worker returns `NEEDS_NARROWING` before exceeding the budget.
+- Spark agents use targeted searches, ranges, and concise failure excerpts. They must not dump complete large files, broad repository listings, full diffs, or full logs when narrower evidence is sufficient.
 - Custom role profiles live in `.codex/agents/`; `.codex/config.toml` defines project defaults. Explicit spawn overrides are allowed only when the handoff explains why the default is insufficient.
 
 Role contracts and escalation boundaries are in `agents/roles.md` and the Notion Agent Registry.

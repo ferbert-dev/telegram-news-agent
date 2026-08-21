@@ -24,7 +24,9 @@ Project defaults are defined in `.codex/config.toml`; executable custom role pro
 | Architecture, security, database, production, or exact-head review | `critical_reviewer` | `gpt-5.6-sol` | `high` | Reserved high-risk read-only gate |
 | Authorized release and production operations | `ops` | `gpt-5.6-sol` | `high` | Explicit authority and rollback required |
 
-Use one vertical scope and no more than two concurrent, disjoint subagents. A small sequential task stays with the Orchestrator when delegation overhead would exceed the likely benefit. Every handoff and Agent Run records the selected model, reasoning effort, and cost/quality rationale. Model routing is fail-closed: if the active Codex host does not expose the configured model, return to the Orchestrator instead of silently substituting another model.
+Use one vertical scope and no more than two concurrent, disjoint subagents. A small sequential task stays with the Orchestrator when delegation overhead would exceed the likely benefit. Every handoff and Agent Run records the selected model, reasoning effort, and cost/quality rationale from launcher or spawn metadata; workers never infer their runtime model from repository configuration. Model routing is fail-closed: if the active Codex host does not expose the configured model, return to the Orchestrator instead of silently substituting another model.
+
+Spark work is budgeted by default. Exploration receives up to 6 files, 8 tool calls, and 500 output words; implementation and QA receive up to 8 files, 12 tool calls, and 700 output words. Handoffs may grant a larger explicit budget when the ticket justifies it. Otherwise the agent returns `NEEDS_NARROWING` before expanding scope and uses targeted ranges or excerpts instead of full file, diff, listing, suite, or log dumps.
 
 ## Orchestrator Agent
 
