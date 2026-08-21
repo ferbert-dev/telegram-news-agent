@@ -6,4 +6,40 @@ enabled = true
 max_concurrent_threads_per_session = 2
 default_subagent_model = "gpt-5.3-codex-spark"
 default_subagent_reasoning_effort = "medium"
+
+[agents.code_explorer]
+description = "Read-only codebase explorer for locating execution paths, contracts, and affected files before implementation."
+config_file = "agents/code-explorer.toml"
+
+[agents.builder]
+description = "Implementation worker for one decision-complete, reversible coding ticket after scope and contracts are known."
+config_file = "agents/builder.toml"
+
+[agents.qa]
+description = "Bounded QA worker for targeted tests, parity checks, and reproducible failure evidence in an approved environment."
+config_file = "agents/qa.toml"
+
+[agents.researcher]
+description = "Low-cost read-only researcher for narrow documentation, inventory, and evidence questions."
+config_file = "agents/researcher.toml"
+
+[agents.documentation]
+description = "Cost-efficient documentation worker for bounded updates grounded in verified evidence."
+config_file = "agents/documentation.toml"
+
+[agents.reviewer]
+description = "Independent routine reviewer for correctness, regressions, maintainability, and missing tests."
+config_file = "agents/reviewer.toml"
+
+[agents.critical_reviewer]
+description = "Frontier reviewer for architecture, security, database atomicity, production risk, and exact-head release gates."
+config_file = "agents/critical-reviewer.toml"
+
+[agents.ops]
+description = "High-assurance operations agent for explicitly authorized release preparation and production actions."
+config_file = "agents/ops.toml"
+
+[agents.integration_builder]
+description = "Balanced fallback for cross-file integration work or when the Spark coding quota is unavailable."
+config_file = "agents/integration-builder.toml"
 interrupt_message = true

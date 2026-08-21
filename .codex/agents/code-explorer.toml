@@ -1,5 +1,3 @@
-name = "code_explorer"
-description = "Read-only codebase explorer for locating execution paths, contracts, and affected files before implementation."
 model = "gpt-5.3-codex-spark"
 model_reasoning_effort = "medium"
 model_verbosity = "low"

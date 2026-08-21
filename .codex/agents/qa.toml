@@ -1,5 +1,3 @@
-name = "qa"
-description = "Bounded QA worker for targeted tests, parity checks, and reproducible failure evidence in an approved environment."
 model = "gpt-5.3-codex-spark"
 model_reasoning_effort = "medium"
 model_verbosity = "low"

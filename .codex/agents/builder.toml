@@ -1,5 +1,3 @@
-name = "builder"
-description = "Implementation worker for one decision-complete, reversible coding ticket after scope and contracts are known."
 model = "gpt-5.3-codex-spark"
 model_reasoning_effort = "medium"
 model_verbosity = "low"

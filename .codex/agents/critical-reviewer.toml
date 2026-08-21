@@ -1,5 +1,3 @@
-name = "critical_reviewer"
-description = "Frontier read-only reviewer reserved for architecture, security, database atomicity, production risk, and exact-head release gates."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
