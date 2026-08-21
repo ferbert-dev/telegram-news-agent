@@ -52,6 +52,8 @@ rollback() {
 
 APP_IMAGE="$image" "${compose[@]}" pull db bot
 APP_IMAGE="$image" "${compose[@]}" up -d db
+APP_IMAGE="$image" "${compose[@]}" exec -T db \
+  /docker-entrypoint-initdb.d/00-create-app-role.sh
 APP_IMAGE="$image" "${compose[@]}" run --rm migrate
 APP_IMAGE="$image" "${compose[@]}" up -d --no-deps bot
 
