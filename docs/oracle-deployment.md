@@ -81,6 +81,13 @@ declaring the release healthy. Missing, empty, or placeholder runtime
 credentials and failed Telegram bot/channel probes trigger the existing atomic
 environment and image rollback.
 
+During the first SOPS cutover, the already-active legacy environment is treated
+only as a rollback base. That gate requires non-placeholder PostgreSQL
+credentials and Telegram bot token but may preserve pre-existing placeholders
+in other integrations so that a strict, complete SOPS candidate can replace the
+damaged file. Every candidate and every newly started container still pass the
+full placeholder and Telegram channel gates before success.
+
 `PRODUCTION_ENV_FILE` is retained temporarily as rollback-only evidence from the
 pre-SOPS deployment. The current workflow does not read it. Delete it only in a
 separate authorized cleanup after the SOPS-backed deployment and rollback path

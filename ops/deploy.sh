@@ -20,7 +20,7 @@ if [[ ! -f "$candidate_env" ]]; then
 fi
 
 chmod 600 "$active_env" "$candidate_env"
-ops/validate-production-env.sh --legacy-complete "$active_env"
+ops/validate-production-env.sh --rollback-base "$active_env"
 ops/validate-production-env.sh --complete "$candidate_env"
 
 compose=(
@@ -96,7 +96,7 @@ rollback() {
       -f compose.ssh-access.yaml
     )
 
-    if ! ops/validate-production-env.sh --legacy-complete "$active_env"; then
+    if ! ops/validate-production-env.sh --rollback-base "$active_env"; then
       rollback_failed=true
     fi
 

@@ -4,9 +4,10 @@ set -euo pipefail
 mode="${1:-}"
 env_file="${2:-}"
 
-if [[ "$mode" != "--base" && "$mode" != "--complete" && "$mode" != "--legacy-complete" ]] \
+if [[ "$mode" != "--base" && "$mode" != "--complete" && "$mode" != "--legacy-complete" \
+  && "$mode" != "--rollback-base" ]] \
   || [[ -z "$env_file" ]]; then
-  echo "Usage: validate-production-env.sh <--base|--complete|--legacy-complete> <env-file>" >&2
+  echo "Usage: validate-production-env.sh <--base|--complete|--legacy-complete|--rollback-base> <env-file>" >&2
   exit 2
 fi
 
@@ -40,6 +41,16 @@ required_variables=(
   POSTGRES_PASSWORD
   POSTGRES_APP_PASSWORD
   TELEGRAM_BOT_TOKEN
+)
+
+credential_variables=(
+  POSTGRES_PASSWORD
+  POSTGRES_APP_PASSWORD
+  TELEGRAM_BOT_TOKEN
+)
+
+if [[ "$mode" != "--rollback-base" ]]; then
+  required_variables+=(
   TELEGRAM_CHANNEL_ID
   TELEGRAM_UPDATE_MODE
   OPENAI_API_KEY
@@ -48,9 +59,20 @@ required_variables=(
   NOTION_API_KEY
   NOTION_AGENT_RUNS_DATA_SOURCE_ID
   NOTION_PIPELINE_AGENT_PAGE_ID
-)
+  )
 
-if [[ "$mode" != "--legacy-complete" ]]; then
+  credential_variables+=(
+    TELEGRAM_CHANNEL_ID
+    OPENAI_API_KEY
+    GEMINI_API_KEY
+    EXA_API_KEY
+    NOTION_API_KEY
+    NOTION_AGENT_RUNS_DATA_SOURCE_ID
+    NOTION_PIPELINE_AGENT_PAGE_ID
+  )
+fi
+
+if [[ "$mode" != "--legacy-complete" && "$mode" != "--rollback-base" ]]; then
   required_variables+=(
     POSTGRES_SSH_TUNNEL_PORT
     TELEGRAM_POLLING_MIGRATE_WEBHOOK
@@ -74,19 +96,6 @@ for variable in "${required_variables[@]}"; do
   fi
 done
 
-credential_variables=(
-  POSTGRES_PASSWORD
-  POSTGRES_APP_PASSWORD
-  TELEGRAM_BOT_TOKEN
-  TELEGRAM_CHANNEL_ID
-  OPENAI_API_KEY
-  GEMINI_API_KEY
-  EXA_API_KEY
-  NOTION_API_KEY
-  NOTION_AGENT_RUNS_DATA_SOURCE_ID
-  NOTION_PIPELINE_AGENT_PAGE_ID
-)
-
 for variable in "${credential_variables[@]}"; do
   value="$(sed -nE "s/^${variable}=//p" "$env_file")"
   if printf '%s' "$value" \
@@ -96,7 +105,7 @@ for variable in "${credential_variables[@]}"; do
   fi
 done
 
-if [[ "$mode" != "--legacy-complete" ]]; then
+if [[ "$mode" != "--legacy-complete" && "$mode" != "--rollback-base" ]]; then
   present_variables=(
     EXA_MODEL
     NOTION_PIPELINE_TICKET_PAGE_ID
