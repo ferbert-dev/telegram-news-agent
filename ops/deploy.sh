@@ -189,6 +189,11 @@ for _ in {1..6}; do
     && [[ "$(docker inspect --format '{{.RestartCount}}' "$container")" == "0" ]]; then
     healthy_checks=$((healthy_checks + 1))
     if [[ "$healthy_checks" -ge 3 ]]; then
+      if ! ops/verify-production-runtime.sh "$container"; then
+        "${compose[@]}" logs --tail=80 bot >&2 || true
+        echo "New bot container failed its runtime credential gate." >&2
+        false
+      fi
       trap - ERR
       echo "Deployment healthy: ${image}"
       "${compose[@]}" ps

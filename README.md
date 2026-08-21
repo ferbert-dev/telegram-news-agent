@@ -321,6 +321,10 @@ Production runtime configuration is committed only as the SOPS-encrypted
 and in the protected GitHub `production` environment. Edit and validate the
 encrypted file without creating persistent plaintext:
 
+The encrypted file is the single source for PostgreSQL, Telegram, OpenAI,
+Gemini, Exa, and Notion runtime credentials. Production validation rejects
+placeholder values before any deployment bundle is uploaded to Oracle.
+
 ```bash
 brew install sops age
 npm run secrets:edit:production

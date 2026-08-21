@@ -59,11 +59,27 @@ Secrets:
 - `ORACLE_KNOWN_HOSTS`: the verified SSH host-key line for Oracle.
 - `SOPS_AGE_KEY`: the complete private `age` identity used only by the deploy
   job to decrypt `secrets/production.env.sops`.
-- `OPENAI_API_KEY`: store this as an environment secret in the GitHub
-  `production` environment. Only the deploy job can read it.
-- `EXA_API_KEY`: optional Exa credential. Store it as an environment secret in
-  the GitHub `production` environment; never include it in the encrypted base
-  file while the provider-key boundary remains separate.
+- `SOPS_AGE_KEY`: the only GitHub secret that decrypts the complete encrypted
+  production environment. OpenAI, Gemini, Exa, Notion, Telegram, and PostgreSQL
+  credentials are all stored as encrypted values in
+  `secrets/production.env.sops`.
+
+Existing `OPENAI_API_KEY`, `EXA_API_KEY`, and `PRODUCTION_ENV_FILE` GitHub
+secrets are retained as rollback-only recovery material during the SOPS
+cutover. The active deployment workflow does not merge them into the decrypted
+environment, so they cannot silently override the reviewed SOPS source.
+
+Before deploying a changed encrypted environment, dispatch `CI and deploy` on
+the candidate branch with operation `verify-production-db`. The read-only job
+checks both PostgreSQL passwords over TCP on Oracle, prints only pass/fail, and
+uses an in-session trap plus an independent `always()` cleanup step for the
+run-specific remote plaintext. Runner plaintext is also removed in `always()`;
+any failed remote cleanup remains a visible workflow failure.
+
+The deployment health gate also runs `ops/verify-production-runtime.sh` before
+declaring the release healthy. Missing, empty, or placeholder runtime
+credentials and failed Telegram bot/channel probes trigger the existing atomic
+environment and image rollback.
 
 `PRODUCTION_ENV_FILE` is retained temporarily as rollback-only evidence from the
 pre-SOPS deployment. The current workflow does not read it. Delete it only in a
@@ -184,10 +200,10 @@ gh secret set SOPS_AGE_KEY \
 
 After a reviewed PR merges to `main`, GitHub Actions downloads the pinned SOPS
 binary and verifies its SHA-256, writes `SOPS_AGE_KEY` to a runner-temporary
-mode-`0600` file, decrypts the committed base, appends the provider keys,
-validates the complete environment, and only then uploads the deployment bundle
-to Oracle. A decryption or validation failure happens before upload, leaving the
-current Oracle environment and bot untouched. Runner plaintext is removed in an
+mode-`0600` file, decrypts and validates the complete committed environment,
+and only then uploads the deployment bundle to Oracle. A decryption, placeholder,
+or validation failure happens before upload, leaving the current Oracle
+environment and bot untouched. Runner plaintext is removed in an
 `always()` cleanup step; GitHub-hosted runners are also ephemeral.
 
 The bundle contains `.env.production.incoming`, not the active environment. Oracle

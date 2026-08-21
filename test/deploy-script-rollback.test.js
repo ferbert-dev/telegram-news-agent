@@ -55,7 +55,14 @@ function completeEnvironment(appPassword) {
   ].join("\n");
 }
 
-function runDeployment({ active, incoming, rollback, failRollbackInstall = false }) {
+function runDeployment({
+  active,
+  incoming,
+  rollback,
+  failRollbackInstall = false,
+  botRunning = false,
+  runtimePlaceholder = false,
+}) {
   const fixture = mkdtempSync(path.join(tmpdir(), "deploy-rollback-"));
   const ops = path.join(fixture, "ops");
   const bin = path.join(fixture, "bin");
@@ -64,6 +71,7 @@ function runDeployment({ active, incoming, rollback, failRollbackInstall = false
 
   cpSync("ops/deploy.sh", path.join(ops, "deploy.sh"));
   cpSync("ops/validate-production-env.sh", path.join(ops, "validate-production-env.sh"));
+  cpSync("ops/verify-production-runtime.sh", path.join(ops, "verify-production-runtime.sh"));
   writeFileSync(path.join(fixture, ".env.production"), active, { mode: 0o600 });
   writeFileSync(path.join(fixture, ".env.production.incoming"), incoming, { mode: 0o600 });
   if (rollback !== undefined) {
@@ -78,10 +86,26 @@ set -euo pipefail
 printf '%s|%s\\n' "\${APP_IMAGE:-}" "$*" >> "$MOCK_DOCKER_LOG"
 if [[ "$1" == "inspect" && "$*" == *"{{.Config.Image}}"* ]]; then
   printf 'old-image\\n'
+elif [[ "$1" == "inspect" && "$*" == *"{{range .Config.Env}}"* ]]; then
+  cat <<ENV
+DATABASE_URL=postgresql://configured
+TELEGRAM_BOT_TOKEN=telegram-secret
+TELEGRAM_CHANNEL_ID=\${MOCK_RUNTIME_CHANNEL_ID:-@channel}
+OPENAI_API_KEY=openai-secret
+GEMINI_API_KEY=gemini-secret
+EXA_API_KEY=exa-secret
+NOTION_API_KEY=notion-secret
+NOTION_AGENT_RUNS_DATA_SOURCE_ID=runs-id
+NOTION_PIPELINE_AGENT_PAGE_ID=agent-id
+ENV
 elif [[ "$1" == "inspect" && "$*" == *"db-id"* ]]; then
   printf 'healthy\\n'
 elif [[ "$1" == "inspect" && "$*" == *"{{.State.Running}}"* ]]; then
-  printf 'false\\n'
+  printf '%s\\n' "\${MOCK_BOT_RUNNING:-false}"
+elif [[ "$1" == "inspect" && "$*" == *"{{.RestartCount}}"* ]]; then
+  printf '0\n'
+elif [[ "$1" == "exec" ]]; then
+  cat >/dev/null
 elif [[ "$1" == "compose" && "$*" == *" ps -q bot"* ]]; then
   printf 'bot-id\\n'
 elif [[ "$1" == "compose" && "$*" == *" ps -q db"* ]]; then
@@ -122,6 +146,8 @@ exec /usr/bin/install "$@"
       PATH: `${bin}:${process.env.PATH}`,
       MOCK_DOCKER_LOG: dockerLog,
       MOCK_INSTALL_FAIL_ROLLBACK: String(failRollbackInstall),
+      MOCK_BOT_RUNNING: String(botRunning),
+      MOCK_RUNTIME_CHANNEL_ID: runtimePlaceholder ? "placeholder" : "@channel",
     },
   });
 
@@ -187,4 +213,20 @@ test("rollback-backup failure leaves active env and stale backup untouched", () 
   const log = readFileSync(dockerLog, "utf8");
   assert.doesNotMatch(log, / up -d db/);
   assert.doesNotMatch(log, /force-recreate/);
+});
+
+test("runtime credential failure restores the previous environment and image", () => {
+  const oldEnvironment = completeEnvironment("old-app-secret");
+  const newEnvironment = completeEnvironment("new-app-secret");
+  const { fixture, result } = runDeployment({
+    active: oldEnvironment,
+    incoming: newEnvironment,
+    botRunning: true,
+    runtimePlaceholder: true,
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /runtime credential gate/);
+  assert.equal(readFileSync(path.join(fixture, ".env.production"), "utf8"), oldEnvironment);
+  assert.equal(readFileSync(path.join(fixture, ".env.production.rollback"), "utf8"), oldEnvironment);
 });

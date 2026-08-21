@@ -165,9 +165,9 @@
     "semantic_hash": "78964a2f1c68dc58047cd9c064ac2953"
   },
   "ops/deploy.sh": {
-    "mtime": 1787309093.05886,
-    "ast_hash": "83455931dd37f409427819ab2e60f489",
-    "semantic_hash": "83455931dd37f409427819ab2e60f489"
+    "mtime": 1787314744.4912448,
+    "ast_hash": "793948613db008aafdf4267458746682",
+    "semantic_hash": "793948613db008aafdf4267458746682"
   },
   "ops/postgres/init/00-create-app-role.sh": {
     "mtime": 1786100151.0082161,
@@ -220,7 +220,7 @@
     "semantic_hash": "fc7e87f4857484d6fad07f8f683a201e"
   },
   "src/article-extractor.js": {
-    "mtime": 1787309726.7996733,
+    "mtime": 1787311038.5105026,
     "ast_hash": "4e6a1d979119861237bf2988d765ea88",
     "semantic_hash": "4e6a1d979119861237bf2988d765ea88"
   },
@@ -300,7 +300,7 @@
     "semantic_hash": "22093dbd6cffd55c1d546427a575594a"
   },
   "src/draft.js": {
-    "mtime": 1787309727.067635,
+    "mtime": 1787311038.5109992,
     "ast_hash": "f322c8d81400022f640fbab80c986548",
     "semantic_hash": "f322c8d81400022f640fbab80c986548"
   },
@@ -380,7 +380,7 @@
     "semantic_hash": "3e1a4d12b1c36b8fb22c07d5911802ae"
   },
   "src/pipeline.js": {
-    "mtime": 1787309726.981092,
+    "mtime": 1787311038.5117538,
     "ast_hash": "a4e481e246493cccc1b0161fcac0a4be",
     "semantic_hash": "a4e481e246493cccc1b0161fcac0a4be"
   },
@@ -410,7 +410,7 @@
     "semantic_hash": "6c2f696fc38746457d4262ff4160e243"
   },
   "src/research.js": {
-    "mtime": 1787309726.8910146,
+    "mtime": 1787311038.5122654,
     "ast_hash": "3d2a34ba892807cd771ef62ab3c6790f",
     "semantic_hash": "3d2a34ba892807cd771ef62ab3c6790f"
   },
@@ -500,7 +500,7 @@
     "semantic_hash": "1de96e326d70cbab11540acbf7a11267"
   },
   "test/article-extractor.test.js": {
-    "mtime": 1787309727.1524785,
+    "mtime": 1787311038.5127757,
     "ast_hash": "0308dcae0c61739219970c9fda39f405",
     "semantic_hash": "0308dcae0c61739219970c9fda39f405"
   },
@@ -1755,23 +1755,33 @@
     "semantic_hash": "1f7ee62247790948c216522104c9acbd"
   },
   "ops/validate-production-env.sh": {
-    "mtime": 1787309093.0595264,
-    "ast_hash": "194c586421d05f088c2ce7e7b5e15a59",
-    "semantic_hash": "194c586421d05f088c2ce7e7b5e15a59"
+    "mtime": 1787312378.9254398,
+    "ast_hash": "6bb06ad489ba4ae3631ca47a970b98d2",
+    "semantic_hash": "6bb06ad489ba4ae3631ca47a970b98d2"
   },
   "test/deploy-script-rollback.test.js": {
-    "mtime": 1787309093.0993052,
-    "ast_hash": "578b3260154bf712556b5e5ce73c41aa",
-    "semantic_hash": "578b3260154bf712556b5e5ce73c41aa"
+    "mtime": 1787314859.484065,
+    "ast_hash": "5c0e88ff50850fa6ac0424a9fafe58da",
+    "semantic_hash": "5c0e88ff50850fa6ac0424a9fafe58da"
   },
   "test/production-env-validator.test.js": {
-    "mtime": 1787309093.105052,
-    "ast_hash": "dbcd041862ab93bc18b7a521ce35f635",
-    "semantic_hash": "dbcd041862ab93bc18b7a521ce35f635"
+    "mtime": 1787312379.0858622,
+    "ast_hash": "71be841180a3ca79a6ff9ceb8d5ae31c",
+    "semantic_hash": "71be841180a3ca79a6ff9ceb8d5ae31c"
   },
   "test/sops-production-env.test.js": {
-    "mtime": 1787309093.1072433,
-    "ast_hash": "8a6e5dd117d54cb9baaeb1e0b3c04435",
-    "semantic_hash": "8a6e5dd117d54cb9baaeb1e0b3c04435"
+    "mtime": 1787315039.3778086,
+    "ast_hash": "a9cdd66a56bc2d069a6a638ba1004317",
+    "semantic_hash": "a9cdd66a56bc2d069a6a638ba1004317"
+  },
+  "ops/verify-production-runtime.sh": {
+    "mtime": 1787314744.4018726,
+    "ast_hash": "68ee895f64e51c42d55e5e262f7d1817",
+    "semantic_hash": "68ee895f64e51c42d55e5e262f7d1817"
+  },
+  "test/production-runtime-verifier.test.js": {
+    "mtime": 1787314744.8250196,
+    "ast_hash": "2e7dfab0670441332fdb838333520fb8",
+    "semantic_hash": "2e7dfab0670441332fdb838333520fb8"
   }
 }
