@@ -139,6 +139,18 @@ export function createFallbackAiProvider(
     }
   };
 
+  const testExaConnection = async () => {
+    const exa = available.find(
+      (candidate) =>
+        candidate.name === "exa" &&
+        typeof candidate.testConnection === "function",
+    );
+    if (!exa) {
+      throw new AiProvidersExhaustedError("testExaConnection", []);
+    }
+    return exa.testConnection();
+  };
+
   return {
     names: available.map((provider) => provider.name),
     generateStructured: (input) => execute("generateStructured", input),
@@ -146,6 +158,7 @@ export function createFallbackAiProvider(
     searchNews: (input) => execute("searchNews", input),
     searchFeeds: (input) => execute("searchFeeds", input),
     searchFact: executeFactSearch,
+    testExaConnection,
   };
 }
 

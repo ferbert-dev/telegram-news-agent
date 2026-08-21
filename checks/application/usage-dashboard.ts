@@ -39,6 +39,7 @@ const dashboard: DailyUsageDashboard = {
       estimated_cost_usd: "0.05550000",
     },
   ],
+  providers: [],
 };
 
 test("UsageDashboardService delegates the exact DST-safe read query and preserves typed DTO values", async () => {

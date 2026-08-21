@@ -69,6 +69,7 @@ services:
     environment:
       DATABASE_URL: postgresql://telegram_news_app:${POSTGRES_APP_PASSWORD}@db:5432/telegram_news
       DATABASE_POOL_MAX: 4
+      APP_VERSION: ${APP_VERSION:-local}
     command: ["node", "src/telegram-bot.js"]
     depends_on:
       db:

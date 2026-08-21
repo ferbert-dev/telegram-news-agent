@@ -626,6 +626,18 @@ test("AI usage ledger records provider metrics and returns a daily dashboard", a
           ],
         };
       }
+      if (text.includes("group by u.provider")) {
+        return {
+          rows: [
+            {
+              provider: "openai",
+              request_count: "1",
+              web_search_calls: "0",
+              last_success_at: "2026-08-07T14:00:00.000Z",
+            },
+          ],
+        };
+      }
       return {
         rows: [
           {
@@ -663,6 +675,7 @@ test("AI usage ledger records provider metrics and returns a daily dashboard", a
   assert.equal(calls[0][1][11], 1);
   assert.equal(dashboard.summary.request_count, "1");
   assert.equal(dashboard.posts[0].editor_name, "Михаил Онест");
+  assert.equal(dashboard.providers[0].provider, "openai");
   assert.deepEqual(calls[1][1], [
     "@channel",
     "2026-08-07T14:00:00.000Z",
@@ -673,5 +686,10 @@ test("AI usage ledger records provider metrics and returns a daily dashboard", a
     "2026-08-07T14:00:00.000Z",
     "Europe/Madrid",
     5,
+  ]);
+  assert.deepEqual(calls[3][1], [
+    "@channel",
+    "2026-08-07T14:00:00.000Z",
+    "Europe/Madrid",
   ]);
 });

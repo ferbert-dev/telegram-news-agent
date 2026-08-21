@@ -229,6 +229,14 @@ so the dashboard labels the amount as an estimate rather than the actual bill.
 The current source for the snapshot is the official
 [OpenAI API pricing page](https://developers.openai.com/api/docs/pricing).
 
+Send `/status` in the private admin chat for an operational panel. PostgreSQL
+and Telegram are green when the command itself completes. OpenAI, Gemini, and
+Exa are green after a successful recorded call today, yellow when configured
+but idle, and gray when disabled. Yellow does not mean broken. The `Test Exa`
+button is the only live provider probe in this panel; it consumes exactly one
+bounded Exa search, observes the shared daily cap, records a zero-token usage
+event, and has a five-minute per-admin cooldown.
+
 Send `/labs` in the private admin chat to control experimental features without
 redeploying the bot. Article tags have three versioned per-channel states:
 `Off` keeps the legacy pipeline path, `Collect only` stores up to three
@@ -315,6 +323,14 @@ sequence on every merge to `main`:
 4. connect to Oracle over SSH, run migrations, replace the bot, and verify that
    the new container remains stable;
 5. restore the previous bot image if the new container does not stay running.
+
+After every successful production health gate, the deploy script sends one
+private Telegram notice to the saved review chat with the package version and
+short immutable commit. It verifies that each destination is a private chat,
+never sends this notice to the public channel, and stores the notified image in
+`.deployment-notification-image` so rerunning the same image does not spam.
+Notification failure is visible in deploy logs but does not roll back an
+otherwise healthy release.
 
 Production runtime configuration is committed only as the SOPS-encrypted
 `secrets/production.env.sops` file. The private `age` key is stored outside Git

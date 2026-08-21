@@ -12,9 +12,11 @@ import {
   mapAiUsageEventRow,
   mapDailyPublicationCostRow,
   mapDailyUsageSummaryRow,
+  mapProviderUsageSummaryRow,
   type AiUsageEventDatabaseRow,
   type DailyPublicationCostDatabaseRow,
   type DailyUsageSummaryDatabaseRow,
+  type ProviderUsageSummaryDatabaseRow,
 } from "../../usage/usage-row-mappers.js";
 import { DRIZZLE_DB, PG_POOL } from "../database.tokens.js";
 import type { DrizzleDatabase } from "../drizzle-client.js";
@@ -186,6 +188,33 @@ export class UsageReportingRepository
           limit ${limit}
         `),
     );
+    const providersResult = await this.operation(
+      "Get AI provider usage summary",
+      () =>
+        this.database.execute(sql<ProviderUsageSummaryDatabaseRow>`
+          with bounds as (
+            select
+              date_trunc('day', ${currentTime}::timestamptz at time zone ${timeZone}) at time zone ${timeZone} as period_start,
+              (date_trunc('day', ${currentTime}::timestamptz at time zone ${timeZone}) + interval '1 day') at time zone ${timeZone} as period_end
+          )
+          select
+            u.provider,
+            count(*) filter (
+              where u.created_at >= bounds.period_start
+                and u.created_at < bounds.period_end
+            )::bigint as request_count,
+            coalesce(sum(u.web_search_calls) filter (
+              where u.created_at >= bounds.period_start
+                and u.created_at < bounds.period_end
+            ), 0)::bigint as web_search_calls,
+            max(u.created_at) as last_success_at
+          from bounds
+          join ${aiUsageEvents} u
+            on u.telegram_channel_id = ${channelId}
+          group by u.provider
+          order by u.provider
+        `),
+    );
 
     return {
       summary: mapDailyUsageSummaryRow(
@@ -197,6 +226,11 @@ export class UsageReportingRepository
       posts: postsResult.rows.map((row) =>
         mapDailyPublicationCostRow(
           row as DailyPublicationCostDatabaseRow,
+        ),
+      ),
+      providers: providersResult.rows.map((row) =>
+        mapProviderUsageSummaryRow(
+          row as ProviderUsageSummaryDatabaseRow,
         ),
       ),
     };

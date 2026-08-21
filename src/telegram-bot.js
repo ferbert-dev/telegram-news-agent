@@ -69,6 +69,10 @@ await callTelegram(token, "setMyCommands", {
       description: "Show today's AI usage and estimated cost",
     },
     {
+      command: "status",
+      description: "Show database, provider, and release status",
+    },
+    {
       command: "labs",
       description: "Configure experimental news features",
     },
@@ -180,6 +184,7 @@ async function handleUpdate(update, { classification } = {}) {
       callTelegram,
       runNews,
       durableNewsJobsEnabled: newsJobs.enabled,
+      appVersion: process.env.APP_VERSION ?? "local",
     });
     if (!result.handled) {
       const claimed = await repository.claimTelegramUpdate(

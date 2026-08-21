@@ -883,9 +883,31 @@ export class NewsRepository {
        limit $4`,
       [channelId, currentTime, timeZone, postLimit],
     );
+    const providersResult = await this.query(
+      "Get AI provider usage summary",
+      `with bounds as (${bounds})
+       select
+         u.provider,
+         count(*) filter (
+           where u.created_at >= bounds.period_start
+             and u.created_at < bounds.period_end
+         )::bigint as request_count,
+         coalesce(sum(u.web_search_calls) filter (
+           where u.created_at >= bounds.period_start
+             and u.created_at < bounds.period_end
+         ), 0)::bigint as web_search_calls,
+         max(u.created_at) as last_success_at
+       from bounds
+       join public.ai_usage_events u
+         on u.telegram_channel_id = $1
+       group by u.provider
+       order by u.provider`,
+      [channelId, currentTime, timeZone],
+    );
     return {
       summary: this.one(summaryResult, "Get daily AI usage summary"),
       posts: postsResult.rows,
+      providers: providersResult.rows,
     };
   }
 

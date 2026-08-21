@@ -7,6 +7,7 @@ import type {
   AiUsageEventRow,
   DailyPublicationCostRow,
   DailyUsageSummaryRow,
+  ProviderUsageSummaryRow,
 } from "./usage-persistence.contracts.js";
 
 type DatabaseBigint = number | string;
@@ -70,6 +71,15 @@ export type DailyPublicationCostDatabaseRow = Omit<
   published_at: DatabaseTimestamp;
   usage_request_count: DatabaseBigint;
   estimated_cost_usd: DatabaseNumeric;
+};
+
+export type ProviderUsageSummaryDatabaseRow = Omit<
+  ProviderUsageSummaryRow,
+  "request_count" | "web_search_calls" | "last_success_at"
+> & {
+  request_count: DatabaseBigint;
+  web_search_calls: DatabaseBigint;
+  last_success_at: DatabaseTimestamp;
 };
 
 function safeBigint(value: DatabaseBigint, field: string): number {
@@ -181,5 +191,16 @@ export function mapDailyPublicationCostRow(
       row.estimated_cost_usd,
       "estimated_cost_usd",
     ),
+  };
+}
+
+export function mapProviderUsageSummaryRow(
+  row: ProviderUsageSummaryDatabaseRow,
+): ProviderUsageSummaryRow {
+  return {
+    provider: row.provider,
+    request_count: safeBigint(row.request_count, "request_count"),
+    web_search_calls: safeBigint(row.web_search_calls, "web_search_calls"),
+    last_success_at: toIsoTimestamp(row.last_success_at),
   };
 }
