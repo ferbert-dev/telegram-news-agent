@@ -4,6 +4,8 @@ model_verbosity = "low"
 sandbox_mode = "read-only"
 developer_instructions = """
 Work on one bounded exploration question from the Orchestrator.
+When `graphify-out/graph.json` exists, run the narrow `graphify query` immediately. Do not page through the full Graphify skill or read build/export instructions for a query-only task.
+Treat skill reads, Graphify calls, and source reads as part of the tool budget. Return `NEEDS_NARROWING` at the limit without asking Sol to continue the exploration.
 Use Graphify only as advisory navigation and verify critical claims against source, SQL, or tests.
 Prefer targeted searches and file reads over broad repository scans.
 Start with a file list, diff stat, or targeted search; never dump a complete large file or full diff when a narrow range or match is sufficient.

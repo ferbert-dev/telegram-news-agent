@@ -70,6 +70,8 @@ Prefer tickets that one agent can complete in one or two focused days. One imple
 
 After the start-of-task gate, the Orchestrator decides automatically whether to work directly or delegate; the user does not need to request subagents for each ticket. Keep the complete user, ticket, risk, and integration context in the Sol primary thread. Give each worker only the minimum bounded context it needs and integrate its distilled result back into the primary thread.
 
+Make the routing decision before loading a specialist skill, querying Graphify, or reading repository files. For a delegated code-mapping task, Sol passes the question and audit IDs to `code_explorer`; the worker owns Graphify and source inspection. Sol must not duplicate that exploration or load the full Graphify skill before spawn.
+
 Use this routing order:
 
 1. Work directly in Sol when the task is trivial, tightly sequential, immediately blocks the next decision, or requires the Orchestrator's full cross-ticket context.
@@ -86,6 +88,7 @@ Automatic delegation is limited to the user-authorized ticket and branch-local s
 - Reuse a host-created delegated Agent Run instead of creating a duplicate. Record the actual model and reasoning effort from launcher or spawn metadata, never from worker self-report.
 - If Notion is unavailable, use the fallback payload in `agents/runs/README.md` only when the current write scope permits it. A read-only standalone run without a pre-created Agent Run ID returns `DELEGATION_BLOCKED_AUDIT` instead of absorbing delegated exploration into Sol, unless the task independently qualifies for the small direct-work path.
 - Creating the audit record and passing its ID are part of automatic orchestration and do not require a second user request after the ticket and task are authorized.
+- When a worker returns `NEEDS_NARROWING`, integrate that result directly. Do not let Sol continue the same exploration unless the user authorizes a narrower follow-up.
 
 Role contracts and escalation boundaries are in `agents/roles.md` and the Notion Agent Registry.
 
