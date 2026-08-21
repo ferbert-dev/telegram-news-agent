@@ -80,6 +80,13 @@ Use this routing order:
 
 Automatic delegation is limited to the user-authorized ticket and branch-local scope. It never grants authority to merge, deploy, rotate secrets, change production settings, expose networks, delete data, or make another external write. If Spark quota or model availability fails, record the failure and selected fallback in the Agent Run; do not silently reroute the task. Use at most two concurrent, disjoint workers and never create an idle pool.
 
+#### Automatic audit handoff
+
+- When the Orchestrator decides to delegate a bounded subtask, create the delegated Agent Run immediately before spawn and pass both the ticket ID and Agent Run ID in the worker handoff. This audit write is allowed within the already user-authorized ticket; it grants no additional product or release authority.
+- Reuse a host-created delegated Agent Run instead of creating a duplicate. Record the actual model and reasoning effort from launcher or spawn metadata, never from worker self-report.
+- If Notion is unavailable, use the fallback payload in `agents/runs/README.md` only when the current write scope permits it. A read-only standalone run without a pre-created Agent Run ID returns `DELEGATION_BLOCKED_AUDIT` instead of absorbing delegated exploration into Sol, unless the task independently qualifies for the small direct-work path.
+- Creating the audit record and passing its ID are part of automatic orchestration and do not require a second user request after the ticket and task are authorized.
+
 Role contracts and escalation boundaries are in `agents/roles.md` and the Notion Agent Registry.
 
 ## Closure review and retrospective
