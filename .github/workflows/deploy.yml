@@ -250,7 +250,7 @@ jobs:
           set -euo pipefail
           cd /opt/telegram-news-agent
 
-          container_id="$(docker compose ps -q bot)"
+          container_id="$(docker ps -q --filter 'name=^/telegram-news-agent-bot-1$')"
           if [[ -z "$container_id" ]]; then
             echo "Production bot container is missing."
             exit 1
@@ -280,7 +280,7 @@ jobs:
               }
             ' | sort
 
-          docker compose exec -T bot node --input-type=module <<'NODE'
+          docker exec -i "$container_id" node --input-type=module <<'NODE'
           const token = process.env.TELEGRAM_BOT_TOKEN;
           const channelId = process.env.TELEGRAM_CHANNEL_ID;
 
@@ -310,7 +310,7 @@ jobs:
           NODE
 
           echo "BotLogSummary"
-          docker compose logs --no-color --tail=300 bot 2>&1 |
+          docker logs --tail=300 "$container_id" 2>&1 |
             sed -E \
               -e 's#[0-9]{8,}:[A-Za-z0-9_-]{20,}#[REDACTED_TELEGRAM_TOKEN]#g' \
               -e 's#(sk|exa)[-_][A-Za-z0-9_-]{16,}#[REDACTED_API_KEY]#g' \
