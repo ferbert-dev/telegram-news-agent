@@ -80,8 +80,9 @@ export function buildDraftEvidence(selected) {
       : selected.source.is_primary
         ? "primary_source"
         : "web_source");
+  const evidenceUrl = selected.evidenceUrl ?? selected.canonicalUrl;
   const primaryEvidence = {
-    url: selected.canonicalUrl,
+    url: evidenceUrl,
     title: selected.title,
     publishedAt: selected.publishedAt,
     text: selected.evidenceText,
@@ -92,7 +93,7 @@ export function buildDraftEvidence(selected) {
   if (
     !selected.unverified ||
     !selected.discoveryUrl ||
-    selected.discoveryUrl === selected.canonicalUrl
+    selected.discoveryUrl === evidenceUrl
   ) {
     return [primaryEvidence];
   }
