@@ -97,6 +97,8 @@ test("deploy rollback restores environment, database credential, and image", () 
   assert.match(deploy, /candidate_hash="\$\(sha256sum "\$candidate_env"/);
   assert.match(deploy, /if \[\[ "\$active_hash" == "\$candidate_hash" \]\]/);
   assert.match(deploy, /environment_promoted=false/);
+  assert.match(deploy, /--rollback-base "\$active_env"/);
+  assert.match(deploy, /--complete "\$candidate_env"/);
   assert.match(deploy, /rollback_temp="\$\{rollback_env\}\.write\.\$\$"/);
   assert.match(deploy, /install -m 600 "\$active_env" "\$rollback_temp"/);
   assert.match(deploy, /mv -f "\$rollback_temp" "\$rollback_env"/);
