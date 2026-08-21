@@ -31,7 +31,11 @@
     "telegram:control": "node --env-file=.env src/telegram-bot.js",
     "telegram:control:container": "node src/telegram-bot.js",
     "telegram:send": "node --env-file=.env src/send-message.js",
-    "telegram:smoke": "node --env-file=.env src/telegram-smoke.js"
+    "telegram:smoke": "node --env-file=.env src/telegram-smoke.js",
+    "secrets:edit:production": "bash ops/sops-production-env.sh edit",
+    "secrets:decrypt:production": "bash ops/sops-production-env.sh decrypt",
+    "secrets:encrypt:production": "bash ops/sops-production-env.sh encrypt",
+    "secrets:validate:production": "bash ops/sops-production-env.sh validate"
   },
   "engines": {
     "node": ">=22"

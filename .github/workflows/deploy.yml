@@ -195,48 +195,81 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
 
+      - name: Install pinned SOPS
+        env:
+          SOPS_VERSION: 3.13.3
+          SOPS_SHA256: e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/bin"
+          curl --fail --silent --show-error --location \
+            "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" \
+            --output "$RUNNER_TEMP/bin/sops"
+          printf '%s  %s\n' "$SOPS_SHA256" "$RUNNER_TEMP/bin/sops" | sha256sum --check
+          chmod 755 "$RUNNER_TEMP/bin/sops"
+          printf '%s\n' "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Decrypt production environment
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          test -n "$SOPS_AGE_KEY"
+          install -d -m 700 "$RUNNER_TEMP/sops"
+          printf '%s\n' "$SOPS_AGE_KEY" > "$RUNNER_TEMP/sops/age-key.txt"
+          chmod 600 "$RUNNER_TEMP/sops/age-key.txt"
+          install -m 600 /dev/null "$RUNNER_TEMP/production.base.env"
+          SOPS_AGE_KEY_FILE="$RUNNER_TEMP/sops/age-key.txt" \
+            sops decrypt \
+              --input-type dotenv \
+              --output-type dotenv \
+              secrets/production.env.sops > "$RUNNER_TEMP/production.base.env"
+          ops/validate-production-env.sh --base "$RUNNER_TEMP/production.base.env"
+
       - name: Validate deployment configuration
         env:
           ORACLE_HOST: ${{ vars.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
-          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
         run: |
           test -n "$ORACLE_HOST"
           test -n "$ORACLE_USER"
-          test -n "$PRODUCTION_ENV_FILE"
           test -n "$OPENAI_API_KEY"
-          if printf '%s\n' "$PRODUCTION_ENV_FILE" | grep -Eqi '^EXA_ENABLED=(1|true|yes|on)$'; then
+          install -m 600 "$RUNNER_TEMP/production.base.env" "$RUNNER_TEMP/production.env"
+          printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> "$RUNNER_TEMP/production.env"
+          if [ -n "$EXA_API_KEY" ]; then
+            printf 'EXA_API_KEY=%s\n' "$EXA_API_KEY" >> "$RUNNER_TEMP/production.env"
+          fi
+          if grep -Eqi '^EXA_ENABLED=(1|true|yes|on)$' "$RUNNER_TEMP/production.env"; then
             test -n "$EXA_API_KEY"
           fi
+          ops/validate-production-env.sh --complete "$RUNNER_TEMP/production.env"
 
       - name: Upload deployment bundle
         env:
           ORACLE_HOST: ${{ vars.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
-          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
         run: |
+          umask 077
           install -d -m 700 deployment/ops/postgres/init
           install -m 644 compose.yaml deployment/compose.yaml
           install -m 644 compose.ssh-access.yaml deployment/compose.ssh-access.yaml
           install -m 755 ops/deploy.sh deployment/ops/deploy.sh
           install -m 755 ops/configure-db-observer.sh deployment/ops/configure-db-observer.sh
+          install -m 755 ops/validate-production-env.sh deployment/ops/validate-production-env.sh
           install -m 755 ops/postgres/init/00-create-app-role.sh deployment/ops/postgres/init/00-create-app-role.sh
-          printf '%s\n' "$PRODUCTION_ENV_FILE" > deployment/.env.production
-          awk -F= '$1 != "OPENAI_API_KEY" && $1 != "EXA_API_KEY"' deployment/.env.production > deployment/.env.production.next
-          mv deployment/.env.production.next deployment/.env.production
-          printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> deployment/.env.production
-          if [ -n "$EXA_API_KEY" ]; then
-            printf 'EXA_API_KEY=%s\n' "$EXA_API_KEY" >> deployment/.env.production
-          fi
-          chmod 600 deployment/.env.production
+          install -m 600 "$RUNNER_TEMP/production.env" deployment/.env.production.incoming
           tar -C deployment -czf deployment.tar.gz .
-          scp deployment.tar.gz "${ORACLE_USER}@${ORACLE_HOST}:/tmp/telegram-news-agent-deployment.tar.gz"
-          ssh "${ORACLE_USER}@${ORACLE_HOST}" \
-            'install -d -m 750 /opt/telegram-news-agent && tar -xzf /tmp/telegram-news-agent-deployment.tar.gz -C /opt/telegram-news-agent && rm /tmp/telegram-news-agent-deployment.tar.gz'
+          chmod 600 deployment.tar.gz
+          remote_archive="/tmp/telegram-news-agent-deployment-${GITHUB_SHA}.tar.gz"
+          scp deployment.tar.gz "${ORACLE_USER}@${ORACLE_HOST}:${remote_archive}"
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s -- "$remote_archive" <<'REMOTE'
+          set -Eeuo pipefail
+          archive="$1"
+          trap 'rm -f "$archive"' EXIT
+          chmod 600 "$archive"
+          install -d -m 750 /opt/telegram-news-agent
+          tar -xzf "$archive" -C /opt/telegram-news-agent
+          REMOTE
 
       - name: Log Oracle host in to GHCR
         env:
@@ -264,3 +297,13 @@ jobs:
           ORACLE_HOST: ${{ vars.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: ssh "${ORACLE_USER}@${ORACLE_HOST}" 'docker logout ghcr.io' || true
+
+      - name: Remove runner plaintext
+        if: always()
+        run: |
+          rm -rf \
+            "$RUNNER_TEMP/production.base.env" \
+            "$RUNNER_TEMP/production.env" \
+            "$RUNNER_TEMP/sops" \
+            deployment \
+            deployment.tar.gz

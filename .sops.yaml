@@ -1,0 +1,5 @@
+creation_rules:
+  - path_regex: ^secrets/production\.env\.sops$
+    input_type: dotenv
+    output_type: dotenv
+    age: age1hu8sepn3kau25tzy98nwlny9yr267k4xpnjlxhf9ek4lwlqpeumqlk5jkr
