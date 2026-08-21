@@ -1,253 +1,185 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1080" viewBox="0 0 1800 1080" role="img" aria-labelledby="title desc">
-  <title id="title">Telegram News Agent runtime dependency graph</title>
-  <desc id="desc">A curated high-level view of the Graphify code graph showing source ingestion, orchestration, editorial intelligence, AI providers, delivery, and PostgreSQL persistence.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Telegram News Agent production architecture</title>
+  <desc id="desc">Dependency map showing news sources, Exa research, OpenAI and Gemini generation, the grounded pipeline, PostgreSQL, Telegram controls, and Oracle deployment.</desc>
   <defs>
-    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f8f4e8"/>
-      <stop offset="0.55" stop-color="#f3efe3"/>
-      <stop offset="1" stop-color="#e8f0eb"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="0.55" stop-color="#0b1d2a"/>
+      <stop offset="1" stop-color="#102419"/>
     </linearGradient>
-    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
-      <circle cx="1.5" cy="1.5" r="1.5" fill="#17324d" opacity="0.08"/>
+    <linearGradient id="titleGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#53c7ff"/>
+      <stop offset="0.55" stop-color="#8de4d1"/>
+      <stop offset="1" stop-color="#f5d47a"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#9dd7c8" stroke-opacity="0.05" stroke-width="1"/>
     </pattern>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#18324b" flood-opacity="0.12"/>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity="0.28"/>
     </filter>
-    <marker id="arrow-runtime" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L10,5 L0,10 z" fill="#17324d"/>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#72cfd0"/>
     </marker>
-    <marker id="arrow-evidence" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L10,5 L0,10 z" fill="#e76f51"/>
-    </marker>
-    <marker id="arrow-ai" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L10,5 L0,10 z" fill="#21867a"/>
-    </marker>
-    <marker id="arrow-data" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L10,5 L0,10 z" fill="#3976a8"/>
+    <marker id="arrowGold" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e9c46a"/>
     </marker>
     <style>
-      .title { font: 700 38px 'Avenir Next', 'IBM Plex Sans', sans-serif; fill: #102a43; letter-spacing: -0.8px; }
-      .subtitle { font: 500 17px 'Avenir Next', 'IBM Plex Sans', sans-serif; fill: #526878; }
-      .eyebrow { font: 700 12px 'Avenir Next', 'IBM Plex Sans', sans-serif; fill: #e76f51; letter-spacing: 2.4px; }
-      .column { font: 700 12px 'Avenir Next', 'IBM Plex Sans', sans-serif; fill: #657985; letter-spacing: 1.8px; }
-      .node-title { font: 700 16px 'Avenir Next', 'IBM Plex Sans', sans-serif; fill: #17324d; }
-      .node-title-light { font: 700 16px 'Avenir Next', 'IBM Plex Sans', sans-serif; fill: #ffffff; }
-      .node-sub { font: 500 12px 'Avenir Next', 'IBM Plex Sans', sans-serif; fill: #687b86; }
-      .node-sub-light { font: 500 12px 'Avenir Next', 'IBM Plex Sans', sans-serif; fill: #d7e7e4; }
-      .edge-label { font: 700 10px 'Avenir Next', 'IBM Plex Sans', sans-serif; fill: #687b86; letter-spacing: 0.7px; }
-      .legend { font: 600 12px 'Avenir Next', 'IBM Plex Sans', sans-serif; fill: #526878; }
-      .edge-runtime { fill: none; stroke: #17324d; stroke-width: 2.4; marker-end: url(#arrow-runtime); }
-      .edge-evidence { fill: none; stroke: #e76f51; stroke-width: 2.8; marker-end: url(#arrow-evidence); }
-      .edge-ai { fill: none; stroke: #21867a; stroke-width: 2.6; marker-end: url(#arrow-ai); }
-      .edge-data { fill: none; stroke: #3976a8; stroke-width: 2.2; marker-end: url(#arrow-data); }
-      .edge-optional { stroke-dasharray: 8 7; }
+      .title { font: 700 52px 'Avenir Next', 'Trebuchet MS', sans-serif; fill: url(#titleGradient); }
+      .subtitle { font: 400 19px 'Avenir Next', 'Trebuchet MS', sans-serif; fill: #a8bdc9; }
+      .section { font: 700 15px 'Avenir Next', 'Trebuchet MS', sans-serif; letter-spacing: 2px; fill: #79d8d2; }
+      .node-title { font: 700 20px 'Avenir Next', 'Trebuchet MS', sans-serif; fill: #eef8f4; }
+      .node-copy { font: 400 14px 'Avenir Next', 'Trebuchet MS', sans-serif; fill: #a9c1c7; }
+      .small { font: 600 12px 'Avenir Next', 'Trebuchet MS', sans-serif; letter-spacing: 1px; }
+      .edge { fill: none; stroke: #72cfd0; stroke-width: 2.5; stroke-opacity: 0.78; marker-end: url(#arrow); }
+      .edge-gold { fill: none; stroke: #e9c46a; stroke-width: 2.5; stroke-opacity: 0.82; marker-end: url(#arrowGold); }
+      .edge-soft { fill: none; stroke: #6d91a0; stroke-width: 2; stroke-dasharray: 7 7; stroke-opacity: 0.65; marker-end: url(#arrow); }
+      .bus { fill: none; stroke: #4f8192; stroke-width: 2; stroke-opacity: 0.7; }
     </style>
   </defs>
 
-  <rect width="1800" height="1080" rx="30" fill="url(#background)"/>
-  <rect width="1800" height="1080" rx="30" fill="url(#grid)"/>
-  <path d="M0 0 H1800 V118 C1470 80 1280 168 980 120 C630 64 400 168 0 104 Z" fill="#17324d" opacity="0.035"/>
+  <rect width="1600" height="1000" rx="30" fill="url(#bg)"/>
+  <rect width="1600" height="1000" rx="30" fill="url(#grid)"/>
+  <circle cx="1430" cy="120" r="210" fill="#28b89c" opacity="0.07"/>
+  <circle cx="140" cy="900" r="240" fill="#3aa8ff" opacity="0.06"/>
 
-  <text x="70" y="48" class="eyebrow">GRAPHIFY / ARCHITECTURE</text>
-  <text x="70" y="92" class="title">Telegram News Agent · Runtime Dependency Graph</text>
-  <text x="70" y="122" class="subtitle">Curated production flow from the code graph · real modules, providers, evidence and persistence paths</text>
+  <text x="70" y="82" class="title">Telegram News Agent</text>
+  <text x="72" y="120" class="subtitle">Grounded news research, editorial control, and health-gated production delivery</text>
 
-  <g transform="translate(1330 48)">
-    <rect width="118" height="54" rx="18" fill="#ffffff" opacity="0.82" stroke="#cbd8d5"/>
-    <text x="59" y="24" text-anchor="middle" class="node-title">1,107</text>
-    <text x="59" y="42" text-anchor="middle" class="node-sub">nodes</text>
-  </g>
-  <g transform="translate(1462 48)">
-    <rect width="118" height="54" rx="18" fill="#ffffff" opacity="0.82" stroke="#cbd8d5"/>
-    <text x="59" y="24" text-anchor="middle" class="node-title">2,046</text>
-    <text x="59" y="42" text-anchor="middle" class="node-sub">edges</text>
-  </g>
-  <g transform="translate(1594 48)">
-    <rect width="136" height="54" rx="18" fill="#17324d"/>
-    <text x="68" y="24" text-anchor="middle" class="node-title-light">84</text>
-    <text x="68" y="42" text-anchor="middle" class="node-sub-light">communities</text>
+  <g transform="translate(1120 54)">
+    <rect width="132" height="34" rx="17" fill="#153e38" stroke="#4bd4ad"/>
+    <text x="66" y="22" text-anchor="middle" class="small" fill="#79f0c8">PRODUCTION</text>
+    <rect x="144" width="112" height="34" rx="17" fill="#142f48" stroke="#53bfff"/>
+    <text x="200" y="22" text-anchor="middle" class="small" fill="#82d7ff">f0afa2e</text>
+    <rect x="268" width="142" height="34" rx="17" fill="#49391c" stroke="#e9c46a"/>
+    <text x="339" y="22" text-anchor="middle" class="small" fill="#f5d47a">EXA ENABLED</text>
   </g>
 
-  <text x="70" y="178" class="column">01 · INPUTS</text>
-  <text x="380" y="178" class="column">02 · ORCHESTRATION</text>
-  <text x="710" y="178" class="column">03 · EDITORIAL INTELLIGENCE</text>
-  <text x="1060" y="178" class="column">04 · PROVIDERS</text>
-  <text x="1400" y="178" class="column">05 · DELIVERY</text>
+  <text x="70" y="182" class="section">DISCOVER</text>
+  <text x="360" y="182" class="section">RESEARCH AND GENERATE</text>
+  <text x="690" y="182" class="section">GROUND AND DECIDE</text>
+  <text x="1070" y="182" class="section">CONTROL AND PERSIST</text>
+  <text x="1370" y="182" class="section">DELIVER</text>
 
-  <!-- Dependency edges -->
-  <path class="edge-runtime" d="M320 255 C345 255 355 255 380 255"/>
-  <path class="edge-runtime" d="M320 415 C350 415 350 535 380 535"/>
-  <path class="edge-runtime" d="M320 575 C348 575 350 675 380 675"/>
-  <path class="edge-runtime" d="M510 300 L510 350"/>
-  <path class="edge-runtime" d="M530 300 C620 320 625 525 710 535"/>
-  <path class="edge-runtime" d="M510 440 L510 490"/>
-  <path class="edge-runtime" d="M640 535 C670 535 680 255 710 255"/>
-  <path class="edge-runtime" d="M640 675 C675 675 676 280 710 270"/>
-  <path class="edge-evidence" d="M850 300 L850 350"/>
-  <path class="edge-evidence" d="M850 440 L850 490"/>
-  <path class="edge-evidence" d="M850 580 L850 630"/>
-  <path class="edge-ai" d="M990 255 C1025 255 1028 285 1060 285"/>
-  <path class="edge-ai" d="M990 395 C1028 395 1025 285 1060 285"/>
-  <path class="edge-ai" d="M1185 330 L1185 410"/>
-  <path class="edge-ai" d="M1185 330 C1265 370 1265 625 1185 630"/>
-  <path class="edge-ai edge-optional" d="M1060 455 C1015 455 1018 395 990 395"/>
-  <path class="edge-ai edge-optional" d="M1060 625 C1015 625 1018 675 990 675"/>
-  <path class="edge-evidence" d="M990 675 C1160 675 1240 255 1400 255"/>
-  <path class="edge-runtime" d="M1530 300 L1530 350"/>
-  <path class="edge-runtime" d="M1530 440 L1530 490"/>
-  <path class="edge-runtime" d="M1530 580 L1530 630"/>
-  <path class="edge-data" d="M510 720 C510 790 530 835 570 875"/>
-  <path class="edge-data" d="M850 720 C850 790 780 835 735 875"/>
-  <path class="edge-data" d="M1530 580 C1530 760 1450 825 1340 875"/>
-  <path class="edge-data" d="M1530 720 C1530 805 1435 840 1340 875"/>
-
-  <text x="332" y="245" class="edge-label">UPDATES</text>
-  <text x="660" y="248" class="edge-label">RUN</text>
-  <text x="1008" y="274" class="edge-label">ROUTE</text>
-  <text x="1210" y="445" class="edge-label">FACTS</text>
-  <text x="1210" y="665" class="edge-label">DRAFT</text>
-  <text x="1290" y="492" class="edge-label">GROUNDED ARTICLE</text>
-
-  <!-- Inputs -->
-  <g filter="url(#shadow)" transform="translate(70 210)">
-    <rect width="250" height="90" rx="18" fill="#fffdf7" stroke="#d5ddd8"/>
-    <circle cx="28" cy="28" r="8" fill="#e76f51"/>
-    <text x="48" y="34" class="node-title">Telegram updates</text>
-    <text x="24" y="62" class="node-sub">/news · admin commands · review</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(70 370)">
-    <rect width="250" height="90" rx="18" fill="#fffdf7" stroke="#d5ddd8"/>
-    <circle cx="28" cy="28" r="8" fill="#f2b134"/>
-    <text x="48" y="34" class="node-title">Scheduler</text>
-    <text x="24" y="62" class="node-sub">quiet hours · checkpoints · retries</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(70 530)">
-    <rect width="250" height="90" rx="18" fill="#fffdf7" stroke="#d5ddd8"/>
-    <circle cx="28" cy="28" r="8" fill="#21867a"/>
-    <text x="48" y="34" class="node-title">RSS + Google News</text>
-    <text x="24" y="62" class="node-sub">fresh candidate stories and sources</text>
-  </g>
-
-  <!-- Orchestration -->
-  <g filter="url(#shadow)" transform="translate(380 210)">
-    <rect width="260" height="90" rx="18" fill="#17324d"/>
-    <text x="24" y="35" class="node-title-light">telegram-bot.js</text>
-    <text x="24" y="63" class="node-sub-light">production composition root</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(380 350)">
-    <rect width="260" height="90" rx="18" fill="#ffffff" stroke="#afc3c3"/>
-    <text x="24" y="35" class="node-title">telegram-control.js</text>
-    <text x="24" y="63" class="node-sub">commands · settings · review UI</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(380 490)">
-    <rect width="260" height="90" rx="18" fill="#ffffff" stroke="#afc3c3"/>
-    <text x="24" y="35" class="node-title">workflow.js</text>
-    <text x="24" y="63" class="node-sub">pipeline coordinator</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(380 630)">
-    <rect width="260" height="90" rx="18" fill="#ffffff" stroke="#afc3c3"/>
-    <text x="24" y="35" class="node-title">news-search.js</text>
-    <text x="24" y="63" class="node-sub">source discovery and collection</text>
-  </g>
-
-  <!-- Editorial intelligence -->
-  <g filter="url(#shadow)" transform="translate(710 210)">
-    <rect width="280" height="90" rx="18" fill="#fff7ef" stroke="#e9ad96"/>
-    <text x="24" y="35" class="node-title">research pipeline</text>
-    <text x="24" y="63" class="node-sub">deduplicate · rank · select story</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(710 350)">
-    <rect width="280" height="90" rx="18" fill="#fff0e7" stroke="#e76f51" stroke-width="2"/>
-    <text x="24" y="35" class="node-title">editorial-enrichment.js</text>
-    <text x="24" y="63" class="node-sub">up to 3 evidence-gated detail searches</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(710 490)">
-    <rect width="280" height="90" rx="18" fill="#fff7ef" stroke="#e9ad96"/>
-    <text x="24" y="35" class="node-title">evidence map</text>
-    <text x="24" y="63" class="node-sub">claim → excerpt → public source</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(710 630)">
-    <rect width="280" height="90" rx="18" fill="#fff7ef" stroke="#e9ad96"/>
-    <text x="24" y="35" class="node-title">draft.js + editor.js</text>
-    <text x="24" y="63" class="node-sub">hook · context · grounded rewrite</text>
-  </g>
-
-  <!-- Providers -->
-  <g filter="url(#shadow)" transform="translate(1060 240)">
-    <rect width="250" height="90" rx="18" fill="#153f3a"/>
-    <text x="24" y="35" class="node-title-light">ai-provider.js</text>
-    <text x="24" y="63" class="node-sub-light">routing · budgets · fail closed</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(1060 410)">
-    <rect width="250" height="90" rx="18" fill="#eaf6f2" stroke="#21867a" stroke-width="2"/>
-    <text x="24" y="35" class="node-title">exa-provider.js</text>
-    <text x="24" y="63" class="node-sub">web detail search · trusted URLs</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(1060 580)">
-    <rect width="250" height="90" rx="18" fill="#eaf6f2" stroke="#7fb8ae"/>
-    <text x="24" y="35" class="node-title">OpenAI / Gemini</text>
-    <text x="24" y="63" class="node-sub">generation and configured fallback</text>
-  </g>
-
-  <!-- Delivery -->
-  <g filter="url(#shadow)" transform="translate(1400 210)">
-    <rect width="260" height="90" rx="18" fill="#ffffff" stroke="#afc3c3"/>
-    <text x="24" y="35" class="node-title">human review</text>
-    <text x="24" y="63" class="node-sub">approve · reject · request changes</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(1400 350)">
-    <rect width="260" height="90" rx="18" fill="#ffffff" stroke="#afc3c3"/>
-    <text x="24" y="35" class="node-title">publish.js</text>
-    <text x="24" y="63" class="node-sub">atomic and idempotent publication</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(1400 490)">
-    <rect width="260" height="90" rx="18" fill="#17324d"/>
-    <text x="24" y="35" class="node-title-light">Telegram channel</text>
-    <text x="24" y="63" class="node-sub-light">reader-facing published story</text>
-  </g>
-  <g filter="url(#shadow)" transform="translate(1400 630)">
-    <rect width="260" height="90" rx="18" fill="#ffffff" stroke="#afc3c3"/>
-    <text x="24" y="35" class="node-title">notion-audit.js</text>
-    <text x="24" y="63" class="node-sub">durable audit mirror and outcomes</text>
-  </g>
-
-  <!-- Persistence rail -->
   <g filter="url(#shadow)">
-    <rect x="380" y="860" width="1280" height="128" rx="24" fill="#edf4f8" stroke="#8fb4ce" stroke-width="1.5"/>
-  </g>
-  <text x="412" y="892" class="column">06 · DURABLE STATE / ORACLE</text>
-  <g transform="translate(420 912)">
-    <rect width="250" height="52" rx="14" fill="#ffffff" stroke="#9db8c9"/>
-    <text x="125" y="32" text-anchor="middle" class="node-title">news-repository.js</text>
-  </g>
-  <path class="edge-data" d="M670 938 L730 938"/>
-  <g transform="translate(730 912)">
-    <rect width="220" height="52" rx="14" fill="#ffffff" stroke="#9db8c9"/>
-    <text x="110" y="32" text-anchor="middle" class="node-title">database.js</text>
-  </g>
-  <path class="edge-data" d="M950 938 L1010 938"/>
-  <g transform="translate(1010 912)">
-    <rect width="300" height="52" rx="14" fill="#3976a8"/>
-    <text x="150" y="32" text-anchor="middle" class="node-title-light">PostgreSQL on Oracle</text>
-  </g>
-  <path class="edge-data edge-optional" d="M1310 938 L1370 938"/>
-  <g transform="translate(1370 912)">
-    <rect width="250" height="52" rx="14" fill="#ffffff" stroke="#9db8c9"/>
-    <text x="125" y="32" text-anchor="middle" class="node-title">audit outbox</text>
+    <rect x="60" y="650" width="1490" height="220" rx="24" fill="#0d1824" stroke="#28465a"/>
+    <text x="90" y="690" class="section">SHIP AND OPERATE</text>
   </g>
 
-  <!-- Legend -->
-  <g transform="translate(70 1030)">
-    <line x1="0" y1="0" x2="34" y2="0" class="edge-runtime"/>
-    <text x="46" y="4" class="legend">runtime call</text>
-    <line x1="160" y1="0" x2="194" y2="0" class="edge-evidence"/>
-    <text x="206" y="4" class="legend">evidence flow</text>
-    <line x1="330" y1="0" x2="364" y2="0" class="edge-ai"/>
-    <text x="376" y="4" class="legend">provider request</text>
-    <line x1="520" y1="0" x2="554" y2="0" class="edge-data"/>
-    <text x="566" y="4" class="legend">persistent state</text>
-    <line x1="725" y1="0" x2="759" y2="0" class="edge-ai edge-optional"/>
-    <text x="771" y="4" class="legend">optional / response path</text>
+  <!-- Dependency connectors render above panel backgrounds and beneath opaque cards. -->
+  <g id="dependency-edges">
+    <path d="M290 256 H320" class="bus"/>
+    <path d="M290 372 H320" class="bus"/>
+    <path d="M290 488 H320" class="bus"/>
+    <path d="M320 256 V604 H655 V244 H680" class="edge"/>
+    <path d="M620 246 H680" class="edge-gold"/>
+    <path d="M620 286 H642 V472 H680" class="edge-gold"/>
+    <path d="M620 396 H650 V492 H680" class="edge"/>
+    <path d="M620 512 H680" class="edge"/>
+    <path d="M820 302 V326" class="edge"/>
+    <path d="M820 418 V442" class="edge"/>
+    <path d="M960 256 H1040" class="edge"/>
+    <path d="M960 372 H1000 V406 H1040" class="edge-soft"/>
+    <path d="M960 498 H1000 V536 H1040" class="edge-gold"/>
+    <path d="M1180 322 V350" class="edge-soft"/>
+    <path d="M1180 462 V490" class="edge"/>
+    <path d="M1320 536 H1340 V312 H1360" class="edge-gold"/>
+    <path d="M1320 406 H1340 V466 H1360" class="edge"/>
+    <path d="M320 769 H380" class="edge"/>
+    <path d="M610 769 H670" class="edge"/>
+    <path d="M900 769 H960" class="edge"/>
+    <path d="M1210 769 H1270" class="edge-gold"/>
+    <path d="M1085 722 V640 H1180 V582" class="edge-soft"/>
   </g>
-  <text x="1730" y="1034" text-anchor="end" class="subtitle">Generated from graphify-out/graph.json · 2026-08-20</text>
+
+  <g filter="url(#shadow)">
+    <rect x="60" y="210" width="230" height="92" rx="16" fill="#11283a" stroke="#407b98"/>
+    <text x="82" y="245" class="node-title">RSS / Atom</text>
+    <text x="82" y="270" class="node-copy">Configured publishers and feeds</text>
+
+    <rect x="60" y="326" width="230" height="92" rx="16" fill="#11283a" stroke="#407b98"/>
+    <text x="82" y="361" class="node-title">Google News</text>
+    <text x="82" y="386" class="node-copy">Topic discovery and URL resolution</text>
+
+    <rect x="60" y="442" width="230" height="92" rx="16" fill="#11283a" stroke="#407b98"/>
+    <text x="82" y="477" class="node-title">GDELT</text>
+    <text x="82" y="502" class="node-copy">Global event discovery</text>
+
+    <rect x="350" y="210" width="270" height="112" rx="18" fill="#15352f" stroke="#49d1a8" stroke-width="2"/>
+    <text x="374" y="248" class="node-title">Exa Search</text>
+    <text x="374" y="276" class="node-copy">Feeds, news, article detail, facts</text>
+    <text x="374" y="299" class="node-copy">Bounded to max 3 detail searches/article</text>
+
+    <rect x="350" y="350" width="270" height="92" rx="16" fill="#172d45" stroke="#4ba8e8"/>
+    <text x="374" y="385" class="node-title">OpenAI</text>
+    <text x="374" y="410" class="node-copy">Structured generation and curation</text>
+
+    <rect x="350" y="466" width="270" height="92" rx="16" fill="#172d45" stroke="#4ba8e8"/>
+    <text x="374" y="501" class="node-title">Gemini</text>
+    <text x="374" y="526" class="node-copy">Configured generation fallback</text>
+
+    <rect x="680" y="210" width="280" height="92" rx="16" fill="#172638" stroke="#557b9b"/>
+    <text x="704" y="245" class="node-title">Ingest and normalize</text>
+    <text x="704" y="270" class="node-copy">Canonical URLs, extraction, source policy</text>
+
+    <rect x="680" y="326" width="280" height="92" rx="16" fill="#172638" stroke="#557b9b"/>
+    <text x="704" y="361" class="node-title">Rank and deduplicate</text>
+    <text x="704" y="386" class="node-copy">History, semantic decisions, follow-ups</text>
+
+    <rect x="680" y="442" width="280" height="112" rx="16" fill="#2d2a1d" stroke="#d4ad50"/>
+    <text x="704" y="480" class="node-title">Grounded draft</text>
+    <text x="704" y="508" class="node-copy">Exact evidence map and source URLs</text>
+    <text x="704" y="531" class="node-copy">Baseline preserved during enrichment</text>
+
+    <rect x="1040" y="210" width="280" height="112" rx="18" fill="#192b27" stroke="#5dc0a6"/>
+    <text x="1064" y="248" class="node-title">PostgreSQL</text>
+    <text x="1064" y="276" class="node-copy">Authoritative state, usage, settings</text>
+    <text x="1064" y="299" class="node-copy">Atomic leases, review, publish, schedule</text>
+
+    <rect x="1040" y="350" width="280" height="112" rx="16" fill="#22283b" stroke="#7c91d9"/>
+    <text x="1064" y="388" class="node-title">Private Telegram UI</text>
+    <text x="1064" y="416" class="node-copy">/news  /settings  /labs  /stats</text>
+    <text x="1064" y="439" class="node-copy">/status and explicit Test Exa</text>
+
+    <rect x="1040" y="490" width="280" height="92" rx="16" fill="#2c2a21" stroke="#d4ad50"/>
+    <text x="1064" y="525" class="node-title">Review and publish</text>
+    <text x="1064" y="550" class="node-copy">Manual or policy-gated atomic claim</text>
+
+    <rect x="1360" y="266" width="190" height="92" rx="16" fill="#17352e" stroke="#52c99f"/>
+    <text x="1384" y="301" class="node-title">News channel</text>
+    <text x="1384" y="326" class="node-copy">Idempotent publication</text>
+
+    <rect x="1360" y="410" width="190" height="112" rx="16" fill="#263020" stroke="#d4ad50"/>
+    <text x="1384" y="448" class="node-title">Owner chat</text>
+    <text x="1384" y="476" class="node-copy">Review cards, status,</text>
+    <text x="1384" y="499" class="node-copy">release notifications</text>
+  </g>
+
+
+  <g filter="url(#shadow)">
+    <rect x="90" y="722" width="230" height="94" rx="16" fill="#172638" stroke="#557b9b"/>
+    <text x="114" y="758" class="node-title">GitHub Actions</text>
+    <text x="114" y="783" class="node-copy">Tests, migrations, integration</text>
+
+    <rect x="380" y="722" width="230" height="94" rx="16" fill="#172638" stroke="#557b9b"/>
+    <text x="404" y="758" class="node-title">Immutable GHCR</text>
+    <text x="404" y="783" class="node-copy">Commit-tagged ARM64 image</text>
+
+    <rect x="670" y="722" width="230" height="94" rx="16" fill="#17352e" stroke="#52c99f"/>
+    <text x="694" y="758" class="node-title">Oracle VM</text>
+    <text x="694" y="783" class="node-copy">Compose, bot, PostgreSQL</text>
+
+    <rect x="960" y="722" width="250" height="94" rx="16" fill="#263020" stroke="#d4ad50"/>
+    <text x="984" y="758" class="node-title">Health gates</text>
+    <text x="984" y="783" class="node-copy">DB, runtime, Telegram, channel</text>
+
+    <rect x="1270" y="722" width="250" height="94" rx="16" fill="#263020" stroke="#d4ad50"/>
+    <text x="1294" y="758" class="node-title">Version notification</text>
+    <text x="1294" y="783" class="node-copy">Private and same-image safe</text>
+  </g>
+
+
+  <rect x="60" y="910" width="1490" height="52" rx="16" fill="#162735" stroke="#36586c"/>
+  <text x="90" y="943" class="small" fill="#84d5ef">MIGRATION LANE</text>
+  <text x="250" y="943" class="node-copy">Typed NestJS and Drizzle slices coexist with the production Node entrypoint until clean-database parity, Docker smoke, shutdown, and rollback gates pass.</text>
 </svg>

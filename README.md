@@ -2,7 +2,10 @@
 
 <p align="center">
   <a href="docs/assets/graphify-architecture.svg">
-    <img src="docs/assets/graphify-architecture.svg" alt="Clickable Graphify runtime dependency graph of Telegram News Agent" width="1200">
+    <picture>
+      <source srcset="docs/assets/graphify-architecture.svg" type="image/svg+xml">
+      <img src="docs/assets/graphify-architecture.png" alt="Clickable production dependency graph of Telegram News Agent with Exa research" width="1200">
+    </picture>
   </a>
   <br>
   <sub>Click the graph to open the full-size dependency map.</sub>
@@ -12,6 +15,21 @@ A production-oriented pet project that researches, writes, reviews, schedules,
 and safely publishes grounded news articles to Telegram. It combines a durable
 PostgreSQL workflow, multiple AI providers, bounded Exa web research, Telegram
 operator controls, Oracle deployment, and auditable agent engineering.
+
+## Production Snapshot
+
+| Area | Current state |
+| --- | --- |
+| Runtime | Oracle-hosted Node.js service with PostgreSQL-backed polling and scheduling |
+| Release | [`f0afa2e`](https://github.com/ferbert-dev/telegram-news-agent/commit/f0afa2ecdb889024f454e6d1aa6fad15dd53faff), deployed and independently inspected on 2026-08-21 |
+| Research | RSS/Atom, Google News resolution, GDELT, and bounded Exa detail/fact search |
+| AI | OpenAI and Gemini structured generation with Exa as the retrieval-first research provider |
+| Control | Private Telegram `/news`, `/settings`, `/labs`, `/stats`, and `/status` workflows |
+| Safety | Grounded claims, atomic PostgreSQL publication, SOPS secrets, immutable images, and health-gated rollback |
+
+Exa is enabled in production. A yellow Exa state in `/status` means configured
+but idle, not broken; the explicit `Test Exa` action performs one bounded search
+and records it in the usage ledger.
 
 ## Portfolio Highlights
 
@@ -390,8 +408,9 @@ Inbox -> Ready -> In Progress -> Review -> Blocked / Done -> Archive
 
 ## Next Steps
 
-1. Configure the local PostgreSQL connection and at least one AI provider key.
-2. Complete five supervised research-to-publish runs.
-3. Configure `/settings`, leave review-required mode enabled, and exercise each
-   language/topic combination needed for the channel.
-4. Add deployment monitoring and alerts before enabling unattended publishing.
+1. Finish the remaining NestJS and Drizzle vertical slices while preserving PostgreSQL atomicity.
+2. Pass clean-database, emitted-build, Docker-smoke, shutdown, and rollback gates before entrypoint cutover.
+3. Add digest-level runtime attestation and complete a documented production rollback drill.
+4. Continue source-quality, editorial-quality, and provider-cost tuning from measured production data.
+
+For the verified snapshot and release evidence, see [docs/current-status.md](docs/current-status.md).
