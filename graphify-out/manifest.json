@@ -165,9 +165,9 @@
     "semantic_hash": "78964a2f1c68dc58047cd9c064ac2953"
   },
   "ops/deploy.sh": {
-    "mtime": 1787309093.05886,
-    "ast_hash": "83455931dd37f409427819ab2e60f489",
-    "semantic_hash": "83455931dd37f409427819ab2e60f489"
+    "mtime": 1787314744.4912448,
+    "ast_hash": "793948613db008aafdf4267458746682",
+    "semantic_hash": "793948613db008aafdf4267458746682"
   },
   "ops/postgres/init/00-create-app-role.sh": {
     "mtime": 1786100151.0082161,
@@ -1760,9 +1760,9 @@
     "semantic_hash": "6bb06ad489ba4ae3631ca47a970b98d2"
   },
   "test/deploy-script-rollback.test.js": {
-    "mtime": 1787309093.0993052,
-    "ast_hash": "578b3260154bf712556b5e5ce73c41aa",
-    "semantic_hash": "578b3260154bf712556b5e5ce73c41aa"
+    "mtime": 1787314859.484065,
+    "ast_hash": "5c0e88ff50850fa6ac0424a9fafe58da",
+    "semantic_hash": "5c0e88ff50850fa6ac0424a9fafe58da"
   },
   "test/production-env-validator.test.js": {
     "mtime": 1787312379.0858622,
@@ -1770,8 +1770,18 @@
     "semantic_hash": "71be841180a3ca79a6ff9ceb8d5ae31c"
   },
   "test/sops-production-env.test.js": {
-    "mtime": 1787314247.5795684,
-    "ast_hash": "b9a33b52bffa5b50d7afe6f76be982b1",
-    "semantic_hash": "b9a33b52bffa5b50d7afe6f76be982b1"
+    "mtime": 1787314744.7432609,
+    "ast_hash": "013d82e5fa00af877d6e9df254f62930",
+    "semantic_hash": "013d82e5fa00af877d6e9df254f62930"
+  },
+  "ops/verify-production-runtime.sh": {
+    "mtime": 1787314744.4018726,
+    "ast_hash": "68ee895f64e51c42d55e5e262f7d1817",
+    "semantic_hash": "68ee895f64e51c42d55e5e262f7d1817"
+  },
+  "test/production-runtime-verifier.test.js": {
+    "mtime": 1787314744.8250196,
+    "ast_hash": "2e7dfab0670441332fdb838333520fb8",
+    "semantic_hash": "2e7dfab0670441332fdb838333520fb8"
   }
 }

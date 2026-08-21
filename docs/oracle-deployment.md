@@ -72,7 +72,14 @@ environment, so they cannot silently override the reviewed SOPS source.
 Before deploying a changed encrypted environment, dispatch `CI and deploy` on
 the candidate branch with operation `verify-production-db`. The read-only job
 checks both PostgreSQL passwords over TCP on Oracle, prints only pass/fail, and
-removes runner and remote plaintext on every exit path.
+uses an in-session trap plus an independent `always()` cleanup step for the
+run-specific remote plaintext. Runner plaintext is also removed in `always()`;
+any failed remote cleanup remains a visible workflow failure.
+
+The deployment health gate also runs `ops/verify-production-runtime.sh` before
+declaring the release healthy. Missing, empty, or placeholder runtime
+credentials and failed Telegram bot/channel probes trigger the existing atomic
+environment and image rollback.
 
 `PRODUCTION_ENV_FILE` is retained temporarily as rollback-only evidence from the
 pre-SOPS deployment. The current workflow does not read it. Delete it only in a

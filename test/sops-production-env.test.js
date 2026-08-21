@@ -80,6 +80,10 @@ test("deployment consumes SOPS and no longer reads the multiline environment sec
   assert.match(workflow, /PostgreSQL superuser credential verified/);
   assert.match(workflow, /PostgreSQL application credential verified/);
   assert.match(workflow, /trap 'rm -f "\$candidate_env"' EXIT/);
+  assert.match(workflow, /Remove Oracle credential probe plaintext/);
+  assert.match(workflow, /rm -f -- '\$REMOTE_PROBE_ENV'/);
+  assert.match(workflow, /runtime_env_ok=true/);
+  assert.match(workflow, /telegram_ok=true/);
 });
 
 test("deploy rollback restores environment, database credential, and image", () => {
@@ -95,4 +99,9 @@ test("deploy rollback restores environment, database credential, and image", () 
   assert.match(deploy, /install -m 600 "\$rollback_env" "\$restore_temp"/);
   assert.match(deploy, /exec -T db[\s\\]+\/docker-entrypoint-initdb\.d\/00-create-app-role\.sh/);
   assert.match(deploy, /up -d --force-recreate --no-deps bot/);
+  assert.match(deploy, /ops\/verify-production-runtime\.sh "\$container"/);
+  assert.ok(
+    deploy.indexOf('ops/verify-production-runtime.sh "$container"') <
+      deploy.indexOf('echo "Deployment healthy: ${image}"'),
+  );
 });

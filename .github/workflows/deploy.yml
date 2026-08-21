@@ -145,6 +145,8 @@ jobs:
     environment: production
     permissions:
       contents: read
+    env:
+      REMOTE_PROBE_ENV: /tmp/telegram-news-db-credential-probe-${{ github.run_id }}.env
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -192,7 +194,7 @@ jobs:
           ORACLE_HOST: ${{ vars.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
-          remote_env="/tmp/telegram-news-db-credential-probe-${GITHUB_RUN_ID}.env"
+          remote_env="$REMOTE_PROBE_ENV"
           scp "$RUNNER_TEMP/production.env" "${ORACLE_USER}@${ORACLE_HOST}:${remote_env}"
           ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s -- "$remote_env" <<'REMOTE'
           set -Eeuo pipefail
@@ -222,7 +224,14 @@ jobs:
           echo "PostgreSQL application credential verified."
           REMOTE
 
-      - name: Remove credential probe plaintext
+      - name: Remove Oracle credential probe plaintext
+        if: always()
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: ssh "${ORACLE_USER}@${ORACLE_HOST}" "rm -f -- '$REMOTE_PROBE_ENV'"
+
+      - name: Remove runner credential probe plaintext
         if: always()
         run: rm -rf "$RUNNER_TEMP/production.env" "$RUNNER_TEMP/sops"
 
@@ -261,7 +270,8 @@ jobs:
             'BotState status={{.State.Status}} running={{.State.Running}} restart_count={{.RestartCount}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} started_at={{.State.StartedAt}}' \
             "$container_id"
 
-          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" |
+          runtime_env_ok=true
+          if ! docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" |
             awk -F= '
               BEGIN {
                 split("DATABASE_URL TELEGRAM_BOT_TOKEN TELEGRAM_CHANNEL_ID OPENAI_API_KEY GEMINI_API_KEY EXA_API_KEY NOTION_API_KEY NOTION_AGENT_RUNS_DATA_SOURCE_ID NOTION_PIPELINE_AGENT_PAGE_ID", required, " ")
@@ -277,11 +287,19 @@ jobs:
                 else state[key] = "present"
               }
               END {
-                for (i in required) print "RuntimeEnv " required[i] "=" state[required[i]]
+                failed = 0
+                for (i in required) {
+                  print "RuntimeEnv " required[i] "=" state[required[i]]
+                  if (state[required[i]] != "present") failed = 1
+                }
+                exit failed
               }
-            ' | sort
+            ' | sort; then
+            runtime_env_ok=false
+          fi
 
-          docker exec -i "$container_id" node --input-type=module <<'NODE'
+          telegram_ok=true
+          if ! docker exec -i "$container_id" node --input-type=module <<'NODE'
           const token = process.env.TELEGRAM_BOT_TOKEN;
           const channelId = process.env.TELEGRAM_CHANNEL_ID;
 
@@ -302,13 +320,17 @@ jobs:
             const webhook = await telegram('getWebhookInfo');
             console.log(`TelegramProbe webhook_ok=${Boolean(webhook.ok)} webhook_configured=${Boolean(webhook.ok && webhook.result.url)} pending_updates=${webhook.ok ? webhook.result.pending_update_count : 'unavailable'} last_error_present=${Boolean(webhook.ok && webhook.result.last_error_message)}`);
 
-            const chat = channelId ? await telegram('getChat', { chat_id: channelId }) : { ok: false };
-            console.log(`TelegramProbe channel_ok=${Boolean(chat.ok)} channel_type=${chat.ok ? chat.result.type : 'unavailable'}`);
-          } catch (error) {
+              const chat = channelId ? await telegram('getChat', { chat_id: channelId }) : { ok: false };
+              console.log(`TelegramProbe channel_ok=${Boolean(chat.ok)} channel_type=${chat.ok ? chat.result.type : 'unavailable'}`);
+              if (!me.ok || !webhook.ok || Boolean(webhook.result.url) || !chat.ok) process.exitCode = 1;
+            } catch (error) {
             console.log(`TelegramProbe network_ok=false error_type=${error?.name || 'Error'}`);
             process.exitCode = 1;
-          }
+            }
           NODE
+          then
+            telegram_ok=false
+          fi
 
           echo "BotLogSummary"
           docker logs --tail=300 "$container_id" 2>&1 |
@@ -318,6 +340,11 @@ jobs:
               -e 's#postgres(ql)?://[^/@:]+:[^/@]+@#postgresql://[REDACTED]@#g' |
             grep -Ei 'error|failed|fatal|warn|poll|telegram|unauthorized|forbidden|conflict|invalid|started|ready|scheduler' |
             tail -n 120 || true
+
+          if [[ "$runtime_env_ok" != "true" || "$telegram_ok" != "true" ]]; then
+            echo "Production runtime inspection failed."
+            exit 1
+          fi
           REMOTE
 
   package:
