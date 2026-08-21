@@ -1135,9 +1135,9 @@
     "semantic_hash": "a6fd8ec1cfaf525c10b6fec5f9ec348f"
   },
   "checks/persistence/usage-reporting.ts": {
-    "mtime": 1787316642.2274506,
-    "ast_hash": "cc82e631606ca9a76a812163db17a514",
-    "semantic_hash": "cc82e631606ca9a76a812163db17a514"
+    "mtime": 1787318532.4578116,
+    "ast_hash": "3e8aef1690b77ba7a3c472ac3a8c2ee3",
+    "semantic_hash": "3e8aef1690b77ba7a3c472ac3a8c2ee3"
   },
   "db/migrations/20260810103000_add_story_deduplication.sql": {
     "mtime": 1787316642.2385974,
@@ -1760,9 +1760,9 @@
     "semantic_hash": "a5c985073bbfd619e2706f7fdea168bd"
   },
   "test/deploy-script-rollback.test.js": {
-    "mtime": 1787316642.31715,
-    "ast_hash": "f3833b9f1505674599930f982985b9e2",
-    "semantic_hash": "f3833b9f1505674599930f982985b9e2"
+    "mtime": 1787318603.994039,
+    "ast_hash": "28a46aec32000087048e486f1dce75b0",
+    "semantic_hash": "28a46aec32000087048e486f1dce75b0"
   },
   "test/production-env-validator.test.js": {
     "mtime": 1787316642.3229191,

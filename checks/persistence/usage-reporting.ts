@@ -21,9 +21,11 @@ import {
   mapAiUsageEventRow,
   mapDailyPublicationCostRow,
   mapDailyUsageSummaryRow,
+  mapProviderUsageSummaryRow,
   type AiUsageEventDatabaseRow,
   type DailyPublicationCostDatabaseRow,
   type DailyUsageSummaryDatabaseRow,
+  type ProviderUsageSummaryDatabaseRow,
 } from "../../src/usage/usage-row-mappers.js";
 
 const postgresTimestamp = "2026-03-29 01:30:00+01";
@@ -71,6 +73,13 @@ const publicationRow: DailyPublicationCostDatabaseRow = {
   estimated_cost_usd: "0.01052750",
 };
 
+const providerRow: ProviderUsageSummaryDatabaseRow = {
+  provider: "exa",
+  request_count: "1",
+  web_search_calls: "1",
+  last_success_at: postgresTimestamp,
+};
+
 test("usage row mappers preserve safe bigint numbers, money strings, nulls, and ISO timestamps", () => {
   const usage = mapAiUsageEventRow(usageRow);
   assert.equal(usage.input_tokens, 100);
@@ -86,6 +95,12 @@ test("usage row mappers preserve safe bigint numbers, money strings, nulls, and 
   const post = mapDailyPublicationCostRow(publicationRow);
   assert.equal(post.telegram_message_id, 700_000_000_001);
   assert.equal(post.estimated_cost_usd, "0.01052750");
+
+  const provider = mapProviderUsageSummaryRow(providerRow);
+  assert.equal(provider.provider, "exa");
+  assert.equal(provider.request_count, 1);
+  assert.equal(provider.web_search_calls, 1);
+  assert.equal(provider.last_success_at, canonicalTimestamp);
 
   assert.throws(
     () =>
@@ -150,6 +165,9 @@ class UsagePool extends EventEmitter {
     if (text.includes("usage_request_count")) {
       return { rows: [publicationRow] } as QueryResult;
     }
+    if (text.includes("last_success_at")) {
+      return { rows: [providerRow] } as QueryResult;
+    }
     throw new Error(`Unexpected test query: ${text}`);
   }
 
@@ -158,7 +176,7 @@ class UsagePool extends EventEmitter {
   }
 }
 
-test("usage repository keeps idempotent insert and two-query DST-safe dashboard contract", async () => {
+test("usage repository keeps idempotent insert and three-query DST-safe dashboard contract", async () => {
   const pool = new UsagePool();
   const repository = new UsageReportingRepository(
     pool as unknown as Pool,
@@ -192,8 +210,10 @@ test("usage repository keeps idempotent insert and two-query DST-safe dashboard 
   });
   assert.equal(dashboard.summary.request_count, 2);
   assert.equal(dashboard.posts[0].telegram_message_id, 700_000_000_001);
+  assert.equal(dashboard.providers[0].provider, "exa");
+  assert.equal(dashboard.providers[0].last_success_at, canonicalTimestamp);
 
-  assert.equal(pool.calls.length, 3);
+  assert.equal(pool.calls.length, 4);
   assert.match(pool.calls[0].text, /on conflict \("provider","provider_response_id"\) do update/);
   assert.deepEqual(pool.calls[0].values.slice(0, 14), [
     "openai",
@@ -219,6 +239,7 @@ test("usage repository keeps idempotent insert and two-query DST-safe dashboard 
   }
   assert.ok(pool.calls[2].values.includes(5));
   assert.doesNotMatch(pool.calls[2].text, /UsageReportingRepository|EditorialRepository/);
+  assert.match(pool.calls[3].text, /group by u\.provider/);
 });
 
 test("UsagePersistenceModule exports only the narrow Symbol-token contract", async () => {
