@@ -12,9 +12,9 @@ on:
         required: true
         default: verify-production-db
         type: choice
-          options:
-            - verify-production-db
-            - inspect-production
+        options:
+          - verify-production-db
+          - inspect-production
 
 concurrency:
   group: production-${{ github.ref }}

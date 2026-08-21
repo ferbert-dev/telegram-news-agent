@@ -12166,9 +12166,9 @@
       "source_file": "test/sops-production-env.test.js",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "test_sops_production_env_test",
       "community": 50,
-      "norm_label": "sops-production-env.test.js"
+      "norm_label": "sops-production-env.test.js",
+      "id": "test_sops_production_env_test"
     },
     {
       "label": "requiredEncryptedKeys",
@@ -12176,9 +12176,9 @@
       "source_file": "test/sops-production-env.test.js",
       "source_location": "L6",
       "_origin": "ast",
-      "id": "test_sops_production_env_test_requiredencryptedkeys",
       "community": 50,
-      "norm_label": "requiredencryptedkeys"
+      "norm_label": "requiredencryptedkeys",
+      "id": "test_sops_production_env_test_requiredencryptedkeys"
     },
     {
       "label": "dotenvEntries()",
@@ -12186,9 +12186,9 @@
       "source_file": "test/sops-production-env.test.js",
       "source_location": "L32",
       "_origin": "ast",
-      "id": "test_sops_production_env_test_dotenventries",
       "community": 50,
-      "norm_label": "dotenventries()"
+      "norm_label": "dotenventries()",
+      "id": "test_sops_production_env_test_dotenventries"
     }
   ],
   "links": [
@@ -35497,9 +35497,9 @@
       "source_location": "L32",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_sops_production_env_test",
-      "target": "test_sops_production_env_test_dotenventries",
-      "confidence_score": 1.0
+      "target": "test_sops_production_env_test_dotenventries"
     },
     {
       "relation": "contains",
@@ -35508,11 +35508,11 @@
       "source_location": "L6",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_sops_production_env_test",
-      "target": "test_sops_production_env_test_requiredencryptedkeys",
-      "confidence_score": 1.0
+      "target": "test_sops_production_env_test_requiredencryptedkeys"
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "40a55ad1aae5e643efc5e661ed98d6baf0d48e13"
+  "built_at_commit": "674e9f7ab185675509d62664c9ce16931956007f"
 }
