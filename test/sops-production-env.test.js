@@ -73,6 +73,7 @@ test("deployment consumes SOPS and no longer reads the multiline environment sec
   assert.match(workflow, /trap 'rm -f "\$archive"' EXIT/);
   assert.match(workflow, /verify-production-db:/);
   assert.match(workflow, /inspect-production:/);
+  assert.match(workflow, /inputs\.operation == 'verify-production-db'/);
   assert.match(workflow, /RuntimeEnv/);
   assert.match(workflow, /TelegramProbe/);
   assert.match(workflow, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);

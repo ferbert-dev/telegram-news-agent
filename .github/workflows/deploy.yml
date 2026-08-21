@@ -28,6 +28,7 @@ env:
 
 jobs:
   test:
+    if: github.event_name != 'workflow_dispatch' || inputs.operation == 'verify-production-db'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -264,7 +265,7 @@ jobs:
             awk -F= '
               BEGIN {
                 split("DATABASE_URL TELEGRAM_BOT_TOKEN TELEGRAM_CHANNEL_ID OPENAI_API_KEY GEMINI_API_KEY EXA_API_KEY NOTION_API_KEY NOTION_AGENT_RUNS_DATA_SOURCE_ID NOTION_PIPELINE_AGENT_PAGE_ID", required, " ")
-                for (index in required) state[required[index]] = "missing"
+                for (i in required) state[required[i]] = "missing"
               }
               {
                 key = $1
@@ -276,7 +277,7 @@ jobs:
                 else state[key] = "present"
               }
               END {
-                for (index in required) print "RuntimeEnv " required[index] "=" state[required[index]]
+                for (i in required) print "RuntimeEnv " required[i] "=" state[required[i]]
               }
             ' | sort
 
