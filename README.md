@@ -410,9 +410,12 @@ criteria, and Notion ticket plus Agent Run IDs needed for its slice.
 
 The Orchestrator decides the route before loading specialist skills, querying
 Graphify, or reading implementation files. At most two disjoint workers run at
-once. Every delegated task is audited before spawn, actual model metadata comes
-from the launcher rather than worker self-report, and unavailable models or
-audit storage fail closed instead of silently widening cost or authority.
+once. Every delegated task is audited before spawn, and actual model metadata
+comes from the launcher rather than worker self-report. An unavailable Spark
+role can use the registered Terra fallback only after Sol records the reason and
+confirms the same scope, risk, and authority boundaries; otherwise the task
+stops. Delegation also stops unless either Notion or the documented local
+fallback has recorded its audit payload.
 
 This routing controls the engineering agents that maintain the repository. It
 does not change the production news pipeline, whose provider order and models

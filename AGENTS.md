@@ -60,7 +60,7 @@ Prefer tickets that one agent can complete in one or two focused days. One imple
 - Use `gpt-5.6-terra` with `high` reasoning for ordinary independent closure review and complex but non-critical integration analysis.
 - Reserve `gpt-5.6-sol` with `high` reasoning for architecture, security, data-loss, PostgreSQL atomicity, production operations, and exact-head release gates.
 - Work in one vertical scope with at most two concurrent, disjoint subagents. Do not create an idle agent pool or delegate a small sequential task when coordination would cost more than direct execution.
-- Record the selected model, reasoning effort, and cost/quality rationale in every delegated handoff and Agent Run. If a configured model is unavailable on the active Codex host, stop and escalate instead of silently substituting another model.
+- Record the selected model, reasoning effort, and cost/quality rationale in every delegated handoff and Agent Run. Never silently substitute an unavailable model. When Spark alone is unavailable or outside its documented ticket budget, the Orchestrator may explicitly select the registered Terra `integration_builder` after recording the failure and confirming that scope, risk, and authority remain bounded; otherwise stop and escalate.
 - Record runtime model evidence from the launcher or spawn request. Never ask a subagent to infer or self-report its model from `.codex/config.toml` or role documentation.
 - Every Spark handoff includes a file/tool/output budget. Defaults are 6 files, 8 tool calls, and 500 words for exploration; 8 files, 12 tool calls, and 700 words for implementation or QA. A worker returns `NEEDS_NARROWING` before exceeding the budget.
 - Spark agents use targeted searches, ranges, and concise failure excerpts. They must not dump complete large files, broad repository listings, full diffs, or full logs when narrower evidence is sufficient.
@@ -80,7 +80,7 @@ Use this routing order:
 4. Spawn `reviewer` for ordinary independent review. Spawn `integration_builder` only when Spark is unavailable or the implementation is too cross-file for the documented Spark budget but does not cross a Sol risk boundary.
 5. Keep architecture, security, data-loss, PostgreSQL atomicity, production operations, and exact-head release gates on Sol through `critical_reviewer` or `ops`.
 
-Automatic delegation is limited to the user-authorized ticket and branch-local scope. It never grants authority to merge, deploy, rotate secrets, change production settings, expose networks, delete data, or make another external write. If Spark quota or model availability fails, record the failure and selected fallback in the Agent Run; do not silently reroute the task. Use at most two concurrent, disjoint workers and never create an idle pool.
+Automatic delegation is limited to the user-authorized ticket and branch-local scope. It never grants authority to merge, deploy, rotate secrets, change production settings, expose networks, delete data, or make another external write. If Spark quota or availability fails, record the failure and either explicitly select the bounded Terra `integration_builder` fallback or stop and escalate; never silently reroute the task. Use at most two concurrent, disjoint workers and never create an idle pool.
 
 #### Automatic audit handoff
 
