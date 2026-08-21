@@ -952,7 +952,11 @@ export async function runResearch({
       if (!(await evidenceAllowed(candidate, extracted.text))) {
         continue;
       }
-      selected = { ...candidate, evidenceText: extracted.text };
+      selected = {
+        ...candidate,
+        evidenceText: extracted.text,
+        evidenceUrl: extracted.finalUrl ?? candidate.canonicalUrl,
+      };
       break;
     }
 
