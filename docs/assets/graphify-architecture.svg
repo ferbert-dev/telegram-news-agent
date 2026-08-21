@@ -61,7 +61,12 @@
   <text x="1070" y="182" class="section">CONTROL AND PERSIST</text>
   <text x="1370" y="182" class="section">DELIVER</text>
 
-  <!-- Dependency connectors render beneath opaque cards so labels stay clear. -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="650" width="1490" height="220" rx="24" fill="#0d1824" stroke="#28465a"/>
+    <text x="90" y="690" class="section">SHIP AND OPERATE</text>
+  </g>
+
+  <!-- Dependency connectors render above panel backgrounds and beneath opaque cards. -->
   <g id="dependency-edges">
     <path d="M290 256 H320" class="bus"/>
     <path d="M290 372 H320" class="bus"/>
@@ -152,9 +157,6 @@
 
 
   <g filter="url(#shadow)">
-    <rect x="60" y="650" width="1490" height="220" rx="24" fill="#0d1824" stroke="#28465a"/>
-    <text x="90" y="690" class="section">SHIP AND OPERATE</text>
-
     <rect x="90" y="722" width="230" height="94" rx="16" fill="#172638" stroke="#557b9b"/>
     <text x="114" y="758" class="node-title">GitHub Actions</text>
     <text x="114" y="783" class="node-copy">Tests, migrations, integration</text>
