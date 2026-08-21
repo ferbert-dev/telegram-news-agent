@@ -6,6 +6,14 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Safe manual operation
+        required: true
+        default: verify-production-db
+        type: choice
+        options:
+          - verify-production-db
 
 concurrency:
   group: production-${{ github.ref }}
@@ -127,8 +135,97 @@ jobs:
             -f compose.test.yaml \
             down -v --remove-orphans
 
+  verify-production-db:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'verify-production-db'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Install pinned SOPS
+        env:
+          SOPS_VERSION: 3.13.3
+          SOPS_SHA256: e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/bin"
+          curl --fail --silent --show-error --location \
+            "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" \
+            --output "$RUNNER_TEMP/bin/sops"
+          printf '%s  %s\n' "$SOPS_SHA256" "$RUNNER_TEMP/bin/sops" | sha256sum --check
+          chmod 755 "$RUNNER_TEMP/bin/sops"
+          printf '%s\n' "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Decrypt and validate candidate production environment
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/sops"
+          printf '%s\n' "$SOPS_AGE_KEY" > "$RUNNER_TEMP/sops/age-key.txt"
+          chmod 600 "$RUNNER_TEMP/sops/age-key.txt"
+          install -m 600 /dev/null "$RUNNER_TEMP/production.env"
+          SOPS_AGE_KEY_FILE="$RUNNER_TEMP/sops/age-key.txt" \
+            sops decrypt \
+              --input-type dotenv \
+              --output-type dotenv \
+              secrets/production.env.sops > "$RUNNER_TEMP/production.env"
+          ops/validate-production-env.sh --complete "$RUNNER_TEMP/production.env"
+
+      - name: Verify candidate PostgreSQL credentials on Oracle
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          remote_env="/tmp/telegram-news-db-credential-probe-${GITHUB_RUN_ID}.env"
+          scp "$RUNNER_TEMP/production.env" "${ORACLE_USER}@${ORACLE_HOST}:${remote_env}"
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s -- "$remote_env" <<'REMOTE'
+          set -Eeuo pipefail
+          candidate_env="$1"
+          trap 'rm -f "$candidate_env"' EXIT
+          chmod 600 "$candidate_env"
+          postgres_password="$(sed -nE 's/^POSTGRES_PASSWORD=//p' "$candidate_env")"
+          app_password="$(sed -nE 's/^POSTGRES_APP_PASSWORD=//p' "$candidate_env")"
+          test -n "$postgres_password"
+          test -n "$app_password"
+          cd /opt/telegram-news-agent
+          db_container="$(
+            docker compose \
+              --env-file .env.production \
+              -f compose.yaml \
+              -f compose.ssh-access.yaml \
+              ps -q db
+          )"
+          test -n "$db_container"
+          docker exec -e PGPASSWORD="$postgres_password" "$db_container" \
+            psql -h 127.0.0.1 -U postgres -d postgres \
+              -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null
+          echo "PostgreSQL superuser credential verified."
+          docker exec -e PGPASSWORD="$app_password" "$db_container" \
+            psql -h 127.0.0.1 -U telegram_news_app -d telegram_news \
+              -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null
+          echo "PostgreSQL application credential verified."
+          REMOTE
+
+      - name: Remove credential probe plaintext
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/production.env" "$RUNNER_TEMP/sops"
+
   package:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -173,7 +270,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: package
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -228,20 +325,10 @@ jobs:
         env:
           ORACLE_HOST: ${{ vars.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
         run: |
           test -n "$ORACLE_HOST"
           test -n "$ORACLE_USER"
-          test -n "$OPENAI_API_KEY"
           install -m 600 "$RUNNER_TEMP/production.base.env" "$RUNNER_TEMP/production.env"
-          printf 'OPENAI_API_KEY=%s\n' "$OPENAI_API_KEY" >> "$RUNNER_TEMP/production.env"
-          if [ -n "$EXA_API_KEY" ]; then
-            printf 'EXA_API_KEY=%s\n' "$EXA_API_KEY" >> "$RUNNER_TEMP/production.env"
-          fi
-          if grep -Eqi '^EXA_ENABLED=(1|true|yes|on)$' "$RUNNER_TEMP/production.env"; then
-            test -n "$EXA_API_KEY"
-          fi
           ops/validate-production-env.sh --complete "$RUNNER_TEMP/production.env"
 
       - name: Upload deployment bundle

@@ -25,6 +25,8 @@ function baseLines() {
     "EXA_MODEL=",
     "EXA_DAILY_SEARCH_CAP=20",
     "EXA_MAX_RESULTS=8",
+    "EXA_API_KEY=exa-secret",
+    "OPENAI_API_KEY=openai-secret",
     "OPENAI_MODEL=gpt-5.4-2026-03-05",
     "OPENAI_REASONING_EFFORT=medium",
     "GEMINI_API_KEY=gemini-secret",
@@ -43,18 +45,20 @@ function fixture(lines) {
   return file;
 }
 
-test("accepts a base file without separately managed provider keys", () => {
+test("accepts a complete encrypted production base", () => {
   const output = execFileSync(validator, ["--base", fixture(baseLines())], {
     encoding: "utf8",
   });
   assert.match(output, /validation passed \(base\)/);
 });
 
-test("requires provider keys in the complete deployment file", () => {
-  const file = fixture([...baseLines(), "OPENAI_API_KEY=openai-secret"]);
+test("requires every provider key in the encrypted production base", () => {
+  const file = fixture(
+    baseLines().filter((line) => !line.startsWith("EXA_API_KEY=")),
+  );
   const result = spawnSync(validator, ["--complete", file], { encoding: "utf8" });
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /EXA_API_KEY is required/);
+  assert.match(result.stderr, /EXA_API_KEY is missing/);
 });
 
 test("rejects duplicate variables without printing their values", () => {
@@ -65,12 +69,22 @@ test("rejects duplicate variables without printing their values", () => {
   assert.doesNotMatch(result.stderr, /@other/);
 });
 
-test("accepts the assembled provider credentials", () => {
-  const file = fixture([
-    ...baseLines(),
-    "OPENAI_API_KEY=openai-secret",
-    "EXA_API_KEY=exa-secret",
-  ]);
+test("rejects production placeholders without printing their values", () => {
+  const file = fixture(
+    baseLines().map((line) =>
+      line.startsWith("NOTION_API_KEY=")
+        ? "NOTION_API_KEY=local-integration-placeholder"
+        : line,
+    ),
+  );
+  const result = spawnSync(validator, ["--base", file], { encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /NOTION_API_KEY contains a forbidden production placeholder/);
+  assert.doesNotMatch(result.stderr, /local-integration-placeholder/);
+});
+
+test("accepts the same complete file at the deployment gate", () => {
+  const file = fixture(baseLines());
   const output = execFileSync(validator, ["--complete", file], {
     encoding: "utf8",
   });

@@ -42,7 +42,9 @@ required_variables=(
   TELEGRAM_BOT_TOKEN
   TELEGRAM_CHANNEL_ID
   TELEGRAM_UPDATE_MODE
+  OPENAI_API_KEY
   GEMINI_API_KEY
+  EXA_API_KEY
   NOTION_API_KEY
   NOTION_AGENT_RUNS_DATA_SOURCE_ID
   NOTION_PIPELINE_AGENT_PAGE_ID
@@ -65,13 +67,31 @@ if [[ "$mode" != "--legacy-complete" ]]; then
   )
 fi
 
-if [[ "$mode" == "--complete" || "$mode" == "--legacy-complete" ]]; then
-  required_variables+=(OPENAI_API_KEY)
-fi
-
 for variable in "${required_variables[@]}"; do
   if ! grep -Eq "^${variable}=.+" "$env_file"; then
     echo "${variable} is missing from production environment" >&2
+    exit 1
+  fi
+done
+
+credential_variables=(
+  POSTGRES_PASSWORD
+  POSTGRES_APP_PASSWORD
+  TELEGRAM_BOT_TOKEN
+  TELEGRAM_CHANNEL_ID
+  OPENAI_API_KEY
+  GEMINI_API_KEY
+  EXA_API_KEY
+  NOTION_API_KEY
+  NOTION_AGENT_RUNS_DATA_SOURCE_ID
+  NOTION_PIPELINE_AGENT_PAGE_ID
+)
+
+for variable in "${credential_variables[@]}"; do
+  value="$(sed -nE "s/^${variable}=//p" "$env_file")"
+  if printf '%s' "$value" \
+    | grep -Eqi 'placeholder|change-me|changeme|local-integration'; then
+    echo "${variable} contains a forbidden production placeholder" >&2
     exit 1
   fi
 done
@@ -85,15 +105,6 @@ if [[ "$mode" != "--legacy-complete" ]]; then
   for variable in "${present_variables[@]}"; do
     if ! grep -Eq "^${variable}=" "$env_file"; then
       echo "${variable} is missing from production environment" >&2
-      exit 1
-    fi
-  done
-fi
-
-if [[ "$mode" == "--base" ]]; then
-  for provider_key in OPENAI_API_KEY EXA_API_KEY; do
-    if grep -Eq "^${provider_key}=" "$env_file"; then
-      echo "${provider_key} must remain a separate GitHub Environment secret" >&2
       exit 1
     fi
   done

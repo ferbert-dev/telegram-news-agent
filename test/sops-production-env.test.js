@@ -18,6 +18,8 @@ const requiredEncryptedKeys = [
   "EXA_SEARCH_TYPE",
   "EXA_DAILY_SEARCH_CAP",
   "EXA_MAX_RESULTS",
+  "EXA_API_KEY",
+  "OPENAI_API_KEY",
   "OPENAI_MODEL",
   "OPENAI_REASONING_EFFORT",
   "GEMINI_API_KEY",
@@ -47,8 +49,6 @@ test("committed production values are SOPS encrypted for the configured recipien
     assert.match(entries[key] ?? "", /^ENC\[/, `${key} must be encrypted`);
   }
 
-  assert.equal(entries.OPENAI_API_KEY, undefined);
-  assert.equal(entries.EXA_API_KEY, undefined);
   assert.equal(entries.sops_age__list_0__map_recipient, recipient);
   assert.match(entries.sops_mac ?? "", /^ENC\[/);
 
@@ -61,10 +61,21 @@ test("deployment consumes SOPS and no longer reads the multiline environment sec
   assert.match(workflow, /secrets\.SOPS_AGE_KEY/);
   assert.match(workflow, /secrets\/production\.env\.sops/);
   assert.doesNotMatch(workflow, /secrets\.PRODUCTION_ENV_FILE/);
+  assert.doesNotMatch(workflow, /secrets\.OPENAI_API_KEY/);
+  assert.doesNotMatch(workflow, /secrets\.EXA_API_KEY/);
   assert.match(workflow, /install -m 600 \/dev\/null .*production\.base\.env/);
+  assert.match(
+    workflow,
+    /install -m 600 "\$RUNNER_TEMP\/production\.base\.env" "\$RUNNER_TEMP\/production\.env"/,
+  );
   assert.match(workflow, /deployment\/\.env\.production\.incoming/);
   assert.match(workflow, /chmod 600 deployment\.tar\.gz/);
   assert.match(workflow, /trap 'rm -f "\$archive"' EXIT/);
+  assert.match(workflow, /verify-production-db:/);
+  assert.match(workflow, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /PostgreSQL superuser credential verified/);
+  assert.match(workflow, /PostgreSQL application credential verified/);
+  assert.match(workflow, /trap 'rm -f "\$candidate_env"' EXIT/);
 });
 
 test("deploy rollback restores environment, database credential, and image", () => {

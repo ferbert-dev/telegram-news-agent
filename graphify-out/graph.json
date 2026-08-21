@@ -10716,9 +10716,9 @@
         "kind": "file"
       },
       "_origin": "ast",
-      "id": "ops_deploy",
       "community": 38,
-      "norm_label": "deploy.sh"
+      "norm_label": "deploy.sh",
+      "id": "ops_deploy"
     },
     {
       "label": "deploy.sh script",
@@ -10730,9 +10730,9 @@
         "kind": "bash_entrypoint"
       },
       "_origin": "ast",
-      "id": "ops_deploy_sh__entry",
       "community": 38,
-      "norm_label": "deploy.sh script"
+      "norm_label": "deploy.sh script",
+      "id": "ops_deploy_sh__entry"
     },
     {
       "label": "wait_for_db_healthy()",
@@ -10744,9 +10744,9 @@
         "kind": "bash_function"
       },
       "_origin": "ast",
-      "id": "ops_deploy_wait_for_db_healthy",
       "community": 38,
-      "norm_label": "wait_for_db_healthy()"
+      "norm_label": "wait_for_db_healthy()",
+      "id": "ops_deploy_wait_for_db_healthy"
     },
     {
       "label": "rollback()",
@@ -10758,9 +10758,9 @@
         "kind": "bash_function"
       },
       "_origin": "ast",
-      "id": "ops_deploy_rollback",
       "community": 38,
-      "norm_label": "rollback()"
+      "norm_label": "rollback()",
+      "id": "ops_deploy_rollback"
     },
     {
       "label": "rollback_on_error()",
@@ -10772,9 +10772,9 @@
         "kind": "bash_function"
       },
       "_origin": "ast",
-      "id": "ops_deploy_rollback_on_error",
       "community": 38,
-      "norm_label": "rollback_on_error()"
+      "norm_label": "rollback_on_error()",
+      "id": "ops_deploy_rollback_on_error"
     },
     {
       "label": "sops-production-env.sh",
@@ -10786,9 +10786,9 @@
         "kind": "file"
       },
       "_origin": "ast",
-      "id": "ops_sops_production_env",
       "community": 44,
-      "norm_label": "sops-production-env.sh"
+      "norm_label": "sops-production-env.sh",
+      "id": "ops_sops_production_env"
     },
     {
       "label": "sops-production-env.sh script",
@@ -10800,9 +10800,9 @@
         "kind": "bash_entrypoint"
       },
       "_origin": "ast",
-      "id": "ops_sops_production_env_sh__entry",
       "community": 44,
-      "norm_label": "sops-production-env.sh script"
+      "norm_label": "sops-production-env.sh script",
+      "id": "ops_sops_production_env_sh__entry"
     },
     {
       "label": "usage()",
@@ -10814,9 +10814,9 @@
         "kind": "bash_function"
       },
       "_origin": "ast",
-      "id": "ops_sops_production_env_usage",
       "community": 44,
-      "norm_label": "usage()"
+      "norm_label": "usage()",
+      "id": "ops_sops_production_env_usage"
     },
     {
       "label": "validate_encrypted()",
@@ -10828,9 +10828,1259 @@
         "kind": "bash_function"
       },
       "_origin": "ast",
-      "id": "ops_sops_production_env_validate_encrypted",
       "community": 44,
-      "norm_label": "validate_encrypted()"
+      "norm_label": "validate_encrypted()",
+      "id": "ops_sops_production_env_validate_encrypted"
+    },
+    {
+      "label": "package.json",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 33,
+      "norm_label": "package.json",
+      "id": "package"
+    },
+    {
+      "label": "name",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L2",
+      "_origin": "ast",
+      "community": 33,
+      "norm_label": "name",
+      "id": "package_name"
+    },
+    {
+      "label": "version",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L3",
+      "_origin": "ast",
+      "community": 33,
+      "norm_label": "version",
+      "id": "package_version"
+    },
+    {
+      "label": "private",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L4",
+      "_origin": "ast",
+      "community": 33,
+      "norm_label": "private",
+      "id": "package_private"
+    },
+    {
+      "label": "type",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L5",
+      "_origin": "ast",
+      "community": 33,
+      "norm_label": "type",
+      "id": "package_type"
+    },
+    {
+      "label": "scripts",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L6",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "scripts",
+      "id": "package_scripts"
+    },
+    {
+      "label": "build:nest",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L7",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "build:nest",
+      "id": "package_scripts_build_nest"
+    },
+    {
+      "label": "test",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L8",
+      "_origin": "ast",
+      "community": 11,
+      "norm_label": "test",
+      "id": "package_scripts_test"
+    },
+    {
+      "label": "test:drizzle",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L9",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "test:drizzle",
+      "id": "package_scripts_test_drizzle"
+    },
+    {
+      "label": "test:drizzle:sources",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L10",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "test:drizzle:sources",
+      "id": "package_scripts_test_drizzle_sources"
+    },
+    {
+      "label": "test:nest:build",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L11",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "test:nest:build",
+      "id": "package_scripts_test_nest_build"
+    },
+    {
+      "label": "test:persistence",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L12",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "test:persistence",
+      "id": "package_scripts_test_persistence"
+    },
+    {
+      "label": "test:application",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L13",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "test:application",
+      "id": "package_scripts_test_application"
+    },
+    {
+      "label": "test:architecture",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L14",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "test:architecture",
+      "id": "package_scripts_test_architecture"
+    },
+    {
+      "label": "test:integration:drizzle",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L15",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "test:integration:drizzle",
+      "id": "package_scripts_test_integration_drizzle"
+    },
+    {
+      "label": "test:integration",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L16",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "test:integration",
+      "id": "package_scripts_test_integration"
+    },
+    {
+      "label": "typecheck",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L17",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "typecheck",
+      "id": "package_scripts_typecheck"
+    },
+    {
+      "label": "database:migrate",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L18",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "database:migrate",
+      "id": "package_scripts_database_migrate"
+    },
+    {
+      "label": "database:new",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L19",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "database:new",
+      "id": "package_scripts_database_new"
+    },
+    {
+      "label": "database:status",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L20",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "database:status",
+      "id": "package_scripts_database_status"
+    },
+    {
+      "label": "database:drift",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L21",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "database:drift",
+      "id": "package_scripts_database_drift"
+    },
+    {
+      "label": "database:contract",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L22",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "database:contract",
+      "id": "package_scripts_database_contract"
+    },
+    {
+      "label": "database:check",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L23",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "database:check",
+      "id": "package_scripts_database_check"
+    },
+    {
+      "label": "audit:flush",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L24",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "audit:flush",
+      "id": "package_scripts_audit_flush"
+    },
+    {
+      "label": "drafts",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L25",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "drafts",
+      "id": "package_scripts_drafts"
+    },
+    {
+      "label": "pipeline:run",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L26",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "pipeline:run",
+      "id": "package_scripts_pipeline_run"
+    },
+    {
+      "label": "research",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L27",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "research",
+      "id": "package_scripts_research"
+    },
+    {
+      "label": "sources",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L28",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "sources",
+      "id": "package_scripts_sources"
+    },
+    {
+      "label": "usage:dashboard",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L29",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "usage:dashboard",
+      "id": "package_scripts_usage_dashboard"
+    },
+    {
+      "label": "telegram:check",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L30",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "telegram:check",
+      "id": "package_scripts_telegram_check"
+    },
+    {
+      "label": "telegram:control",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L31",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "telegram:control",
+      "id": "package_scripts_telegram_control"
+    },
+    {
+      "label": "telegram:control:container",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L32",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "telegram:control:container",
+      "id": "package_scripts_telegram_control_container"
+    },
+    {
+      "label": "telegram:send",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L33",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "telegram:send",
+      "id": "package_scripts_telegram_send"
+    },
+    {
+      "label": "telegram:smoke",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L34",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "telegram:smoke",
+      "id": "package_scripts_telegram_smoke"
+    },
+    {
+      "label": "secrets:edit:production",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L35",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "secrets:edit:production",
+      "id": "package_scripts_secrets_edit_production"
+    },
+    {
+      "label": "secrets:decrypt:production",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L36",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "secrets:decrypt:production",
+      "id": "package_scripts_secrets_decrypt_production"
+    },
+    {
+      "label": "secrets:encrypt:production",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L37",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "secrets:encrypt:production",
+      "id": "package_scripts_secrets_encrypt_production"
+    },
+    {
+      "label": "secrets:validate:production",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L38",
+      "_origin": "ast",
+      "community": 15,
+      "norm_label": "secrets:validate:production",
+      "id": "package_scripts_secrets_validate_production"
+    },
+    {
+      "label": "engines",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L40",
+      "_origin": "ast",
+      "community": 33,
+      "norm_label": "engines",
+      "id": "package_engines"
+    },
+    {
+      "label": "node",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L41",
+      "_origin": "ast",
+      "community": 33,
+      "norm_label": "node",
+      "id": "package_engines_node"
+    },
+    {
+      "label": "dependencies",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L43",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "dependencies",
+      "id": "package_dependencies"
+    },
+    {
+      "label": "@google/genai",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L44",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "@google/genai",
+      "id": "package_dependencies_google_genai"
+    },
+    {
+      "label": "@google/genai",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L44",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "@google/genai",
+      "id": "google_genai"
+    },
+    {
+      "label": "@nestjs/common",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L45",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "@nestjs/common",
+      "id": "package_dependencies_nestjs_common"
+    },
+    {
+      "label": "@nestjs/common",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L45",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "@nestjs/common",
+      "id": "nestjs_common"
+    },
+    {
+      "label": "@nestjs/core",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L46",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "@nestjs/core",
+      "id": "package_dependencies_nestjs_core"
+    },
+    {
+      "label": "@nestjs/core",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L46",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "@nestjs/core",
+      "id": "nestjs_core"
+    },
+    {
+      "label": "cheerio",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L47",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "cheerio",
+      "id": "package_dependencies_cheerio"
+    },
+    {
+      "label": "cheerio",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L47",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "cheerio",
+      "id": "cheerio"
+    },
+    {
+      "label": "drizzle-orm",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L48",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "drizzle-orm",
+      "id": "package_dependencies_drizzle_orm"
+    },
+    {
+      "label": "drizzle-orm",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L48",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "drizzle-orm",
+      "id": "drizzle_orm"
+    },
+    {
+      "label": "exa-js",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L49",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "exa-js",
+      "id": "package_dependencies_exa_js"
+    },
+    {
+      "label": "exa-js",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L49",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "exa-js",
+      "id": "exa_js"
+    },
+    {
+      "label": "fast-xml-parser",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L50",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "fast-xml-parser",
+      "id": "package_dependencies_fast_xml_parser"
+    },
+    {
+      "label": "fast-xml-parser",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L50",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "fast-xml-parser",
+      "id": "fast_xml_parser"
+    },
+    {
+      "label": "openai",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L51",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "openai",
+      "id": "package_dependencies_openai"
+    },
+    {
+      "label": "openai",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L51",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "openai",
+      "id": "openai"
+    },
+    {
+      "label": "pg",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L52",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "pg",
+      "id": "package_dependencies_pg"
+    },
+    {
+      "label": "pg",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L52",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "pg",
+      "id": "pg"
+    },
+    {
+      "label": "reflect-metadata",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L53",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "reflect-metadata",
+      "id": "package_dependencies_reflect_metadata"
+    },
+    {
+      "label": "reflect-metadata",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L53",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "reflect-metadata",
+      "id": "reflect_metadata"
+    },
+    {
+      "label": "rxjs",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L54",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "rxjs",
+      "id": "package_dependencies_rxjs"
+    },
+    {
+      "label": "rxjs",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L54",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "rxjs",
+      "id": "rxjs"
+    },
+    {
+      "label": "zod",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L55",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "zod",
+      "id": "package_dependencies_zod"
+    },
+    {
+      "label": "zod",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L55",
+      "_origin": "ast",
+      "community": 17,
+      "norm_label": "zod",
+      "id": "zod"
+    },
+    {
+      "label": "devDependencies",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L57",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "devdependencies",
+      "id": "package_devdependencies"
+    },
+    {
+      "label": "@nestjs/testing",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L58",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "@nestjs/testing",
+      "id": "package_devdependencies_nestjs_testing"
+    },
+    {
+      "label": "@nestjs/testing",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L58",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "@nestjs/testing",
+      "id": "nestjs_testing"
+    },
+    {
+      "label": "@types/node",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L59",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "@types/node",
+      "id": "package_devdependencies_types_node"
+    },
+    {
+      "label": "@types/node",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L59",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "@types/node",
+      "id": "types_node"
+    },
+    {
+      "label": "@types/pg",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L60",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "@types/pg",
+      "id": "package_devdependencies_types_pg"
+    },
+    {
+      "label": "@types/pg",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L60",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "@types/pg",
+      "id": "types_pg"
+    },
+    {
+      "label": "tsx",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L61",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "tsx",
+      "id": "package_devdependencies_tsx"
+    },
+    {
+      "label": "tsx",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L61",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "tsx",
+      "id": "tsx"
+    },
+    {
+      "label": "typescript",
+      "file_type": "code",
+      "source_file": "package.json",
+      "source_location": "L62",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "typescript",
+      "id": "package_devdependencies_typescript"
+    },
+    {
+      "label": "typescript",
+      "file_type": "concept",
+      "source_file": "package.json",
+      "source_location": "L62",
+      "_origin": "ast",
+      "community": 26,
+      "norm_label": "typescript",
+      "id": "typescript"
+    },
+    {
+      "label": "article-extractor.js",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "article-extractor.js",
+      "id": "src_article_extractor"
+    },
+    {
+      "label": "CONTENT_SELECTORS",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "content_selectors",
+      "id": "src_article_extractor_content_selectors"
+    },
+    {
+      "label": "REMOVE_SELECTOR",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L17",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "remove_selector",
+      "id": "src_article_extractor_remove_selector"
+    },
+    {
+      "label": "GOOGLE_NEWS_HOSTS",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L31",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "google_news_hosts",
+      "id": "src_article_extractor_google_news_hosts"
+    },
+    {
+      "label": "normalizedHost()",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L34",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "normalizedhost()",
+      "id": "src_article_extractor_normalizedhost"
+    },
+    {
+      "label": "isGoogleNewsUrl()",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L42",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "isgooglenewsurl()",
+      "id": "src_article_extractor_isgooglenewsurl"
+    },
+    {
+      "label": "parsePublicUrl()",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L47",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "parsepublicurl()",
+      "id": "src_article_extractor_parsepublicurl"
+    },
+    {
+      "label": "canonicalUrlCandidates()",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L56",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "canonicalurlcandidates()",
+      "id": "src_article_extractor_canonicalurlcandidates"
+    },
+    {
+      "label": "resolvePublisherUrl()",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L89",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "resolvepublisherurl()",
+      "id": "src_article_extractor_resolvepublisherurl"
+    },
+    {
+      "label": "fetchPageBody()",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L98",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "fetchpagebody()",
+      "id": "src_article_extractor_fetchpagebody"
+    },
+    {
+      "label": "normalizeText()",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L133",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "normalizetext()",
+      "id": "src_article_extractor_normalizetext"
+    },
+    {
+      "label": "extractArticleText()",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L137",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "extractarticletext()",
+      "id": "src_article_extractor_extractarticletext"
+    },
+    {
+      "label": "fetchArticle()",
+      "file_type": "code",
+      "source_file": "src/article-extractor.js",
+      "source_location": "L180",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "fetcharticle()",
+      "id": "src_article_extractor_fetcharticle"
+    },
+    {
+      "label": "draft.js",
+      "file_type": "code",
+      "source_file": "src/draft.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "draft.js",
+      "id": "src_draft"
+    },
+    {
+      "label": "SOURCE_HEADINGS",
+      "file_type": "code",
+      "source_file": "src/draft.js",
+      "source_location": "L72",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "source_headings",
+      "id": "src_draft_source_headings"
+    },
+    {
+      "label": "UNVERIFIED_PREFIXES",
+      "file_type": "code",
+      "source_file": "src/draft.js",
+      "source_location": "L78",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "unverified_prefixes",
+      "id": "src_draft_unverified_prefixes"
+    },
+    {
+      "label": "proseMetrics()",
+      "file_type": "code",
+      "source_file": "src/draft.js",
+      "source_location": "L84",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "prosemetrics()",
+      "id": "src_draft_prosemetrics"
+    },
+    {
+      "label": "editorialEnrichmentState()",
+      "file_type": "code",
+      "source_file": "src/draft.js",
+      "source_location": "L95",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "editorialenrichmentstate()",
+      "id": "src_draft_editorialenrichmentstate"
+    },
+    {
+      "label": "completeDraft()",
+      "file_type": "code",
+      "source_file": "src/draft.js",
+      "source_location": "L100",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "completedraft()",
+      "id": "src_draft_completedraft"
+    },
+    {
+      "label": "validateGroundedDraft()",
+      "file_type": "code",
+      "source_file": "src/draft.js",
+      "source_location": "L135",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "validategroundeddraft()",
+      "id": "src_draft_validategroundeddraft"
+    },
+    {
+      "label": "generateDraft()",
+      "file_type": "code",
+      "source_file": "src/draft.js",
+      "source_location": "L195",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "generatedraft()",
+      "id": "src_draft_generatedraft"
+    },
+    {
+      "label": "pipeline.js",
+      "file_type": "code",
+      "source_file": "src/pipeline.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "pipeline.js",
+      "id": "src_pipeline"
+    },
+    {
+      "label": "featureState()",
+      "file_type": "code",
+      "source_file": "src/pipeline.js",
+      "source_location": "L12",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "featurestate()",
+      "id": "src_pipeline_featurestate"
+    },
+    {
+      "label": "loadNewsFeatureFlags()",
+      "file_type": "code",
+      "source_file": "src/pipeline.js",
+      "source_location": "L18",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "loadnewsfeatureflags()",
+      "id": "src_pipeline_loadnewsfeatureflags"
+    },
+    {
+      "label": "loadArticleTagging()",
+      "file_type": "code",
+      "source_file": "src/pipeline.js",
+      "source_location": "L26",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "loadarticletagging()",
+      "id": "src_pipeline_loadarticletagging"
+    },
+    {
+      "label": "loadEditorialEnrichment()",
+      "file_type": "code",
+      "source_file": "src/pipeline.js",
+      "source_location": "L56",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "loadeditorialenrichment()",
+      "id": "src_pipeline_loadeditorialenrichment"
+    },
+    {
+      "label": "buildDraftEvidence()",
+      "file_type": "code",
+      "source_file": "src/pipeline.js",
+      "source_location": "L75",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "builddraftevidence()",
+      "id": "src_pipeline_builddraftevidence"
+    },
+    {
+      "label": "startPipelineLeaseHeartbeat()",
+      "file_type": "code",
+      "source_file": "src/pipeline.js",
+      "source_location": "L114",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "startpipelineleaseheartbeat()",
+      "id": "src_pipeline_startpipelineleaseheartbeat"
+    },
+    {
+      "label": "runPipeline()",
+      "file_type": "code",
+      "source_file": "src/pipeline.js",
+      "source_location": "L172",
+      "_origin": "ast",
+      "community": 12,
+      "norm_label": "runpipeline()",
+      "id": "src_pipeline_runpipeline"
+    },
+    {
+      "label": "research.js",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "research.js",
+      "id": "src_research"
+    },
+    {
+      "label": "NoResearchCandidatesError",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L37",
+      "_origin": "ast",
+      "community": 13,
+      "norm_label": "noresearchcandidateserror",
+      "id": "src_research_noresearchcandidateserror"
+    },
+    {
+      "label": ".constructor()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L38",
+      "_origin": "ast",
+      "community": 13,
+      "norm_label": ".constructor()",
+      "id": "src_research_noresearchcandidateserror_constructor"
+    },
+    {
+      "label": "keywordScore()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L44",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "keywordscore()",
+      "id": "src_research_keywordscore"
+    },
+    {
+      "label": "sourceHostname()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L57",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "sourcehostname()",
+      "id": "src_research_sourcehostname"
+    },
+    {
+      "label": "webSourceForUrl()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L70",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "websourceforurl()",
+      "id": "src_research_websourceforurl"
+    },
+    {
+      "label": "sourceMatchesSettings()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L84",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "sourcematchessettings()",
+      "id": "src_research_sourcematchessettings"
+    },
+    {
+      "label": "sourceUsesHost()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L116",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "sourceuseshost()",
+      "id": "src_research_sourceuseshost"
+    },
+    {
+      "label": "newestFeedEntries()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L124",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "newestfeedentries()",
+      "id": "src_research_newestfeedentries"
+    },
+    {
+      "label": "mapSettledWithConcurrency()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L134",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "mapsettledwithconcurrency()",
+      "id": "src_research_mapsettledwithconcurrency"
+    },
+    {
+      "label": "matchPrimarySource()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L161",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "matchprimarysource()",
+      "id": "src_research_matchprimarysource"
+    },
+    {
+      "label": "scoreCandidate()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L172",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "scorecandidate()",
+      "id": "src_research_scorecandidate"
+    },
+    {
+      "label": "rankCandidates()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L206",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "rankcandidates()",
+      "id": "src_research_rankcandidates"
+    },
+    {
+      "label": "runResearch()",
+      "file_type": "code",
+      "source_file": "src/research.js",
+      "source_location": "L241",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "runresearch()",
+      "id": "src_research_runresearch"
+    },
+    {
+      "label": "article-extractor.test.js",
+      "file_type": "code",
+      "source_file": "test/article-extractor.test.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "article-extractor.test.js",
+      "id": "test_article_extractor_test"
+    },
+    {
+      "label": "text()",
+      "file_type": "code",
+      "source_file": "test/article-extractor.test.js",
+      "source_location": "L45",
+      "_origin": "ast",
+      "community": 5,
+      "norm_label": "text()",
+      "id": "test_article_extractor_test_text"
+    },
+    {
+      "label": "deploy-script-rollback.test.js",
+      "file_type": "code",
+      "source_file": "test/deploy-script-rollback.test.js",
+      "source_location": "L1",
+      "_origin": "ast",
+      "community": 47,
+      "norm_label": "deploy-script-rollback.test.js",
+      "id": "test_deploy_script_rollback_test"
+    },
+    {
+      "label": "legacyEnvironment()",
+      "file_type": "code",
+      "source_file": "test/deploy-script-rollback.test.js",
+      "source_location": "L8",
+      "_origin": "ast",
+      "community": 47,
+      "norm_label": "legacyenvironment()",
+      "id": "test_deploy_script_rollback_test_legacyenvironment"
+    },
+    {
+      "label": "completeEnvironment()",
+      "file_type": "code",
+      "source_file": "test/deploy-script-rollback.test.js",
+      "source_location": "L27",
+      "_origin": "ast",
+      "community": 47,
+      "norm_label": "completeenvironment()",
+      "id": "test_deploy_script_rollback_test_completeenvironment"
+    },
+    {
+      "label": "runDeployment()",
+      "file_type": "code",
+      "source_file": "test/deploy-script-rollback.test.js",
+      "source_location": "L58",
+      "_origin": "ast",
+      "community": 47,
+      "norm_label": "rundeployment()",
+      "id": "test_deploy_script_rollback_test_rundeployment"
     },
     {
       "label": "validate-production-env.sh",
@@ -10859,1256 +12109,6 @@
       "id": "ops_validate_production_env_sh__entry",
       "community": 51,
       "norm_label": "validate-production-env.sh script"
-    },
-    {
-      "label": "package.json",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "package",
-      "community": 33,
-      "norm_label": "package.json"
-    },
-    {
-      "label": "name",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L2",
-      "_origin": "ast",
-      "id": "package_name",
-      "community": 33,
-      "norm_label": "name"
-    },
-    {
-      "label": "version",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L3",
-      "_origin": "ast",
-      "id": "package_version",
-      "community": 33,
-      "norm_label": "version"
-    },
-    {
-      "label": "private",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L4",
-      "_origin": "ast",
-      "id": "package_private",
-      "community": 33,
-      "norm_label": "private"
-    },
-    {
-      "label": "type",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L5",
-      "_origin": "ast",
-      "id": "package_type",
-      "community": 33,
-      "norm_label": "type"
-    },
-    {
-      "label": "scripts",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L6",
-      "_origin": "ast",
-      "id": "package_scripts",
-      "community": 15,
-      "norm_label": "scripts"
-    },
-    {
-      "label": "build:nest",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L7",
-      "_origin": "ast",
-      "id": "package_scripts_build_nest",
-      "community": 15,
-      "norm_label": "build:nest"
-    },
-    {
-      "label": "test",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L8",
-      "_origin": "ast",
-      "id": "package_scripts_test",
-      "community": 11,
-      "norm_label": "test"
-    },
-    {
-      "label": "test:drizzle",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L9",
-      "_origin": "ast",
-      "id": "package_scripts_test_drizzle",
-      "community": 15,
-      "norm_label": "test:drizzle"
-    },
-    {
-      "label": "test:drizzle:sources",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L10",
-      "_origin": "ast",
-      "id": "package_scripts_test_drizzle_sources",
-      "community": 15,
-      "norm_label": "test:drizzle:sources"
-    },
-    {
-      "label": "test:nest:build",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L11",
-      "_origin": "ast",
-      "id": "package_scripts_test_nest_build",
-      "community": 15,
-      "norm_label": "test:nest:build"
-    },
-    {
-      "label": "test:persistence",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L12",
-      "_origin": "ast",
-      "id": "package_scripts_test_persistence",
-      "community": 15,
-      "norm_label": "test:persistence"
-    },
-    {
-      "label": "test:application",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L13",
-      "_origin": "ast",
-      "id": "package_scripts_test_application",
-      "community": 15,
-      "norm_label": "test:application"
-    },
-    {
-      "label": "test:architecture",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L14",
-      "_origin": "ast",
-      "id": "package_scripts_test_architecture",
-      "community": 15,
-      "norm_label": "test:architecture"
-    },
-    {
-      "label": "test:integration:drizzle",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L15",
-      "_origin": "ast",
-      "id": "package_scripts_test_integration_drizzle",
-      "community": 15,
-      "norm_label": "test:integration:drizzle"
-    },
-    {
-      "label": "test:integration",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L16",
-      "_origin": "ast",
-      "id": "package_scripts_test_integration",
-      "community": 15,
-      "norm_label": "test:integration"
-    },
-    {
-      "label": "typecheck",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L17",
-      "_origin": "ast",
-      "id": "package_scripts_typecheck",
-      "community": 15,
-      "norm_label": "typecheck"
-    },
-    {
-      "label": "database:migrate",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L18",
-      "_origin": "ast",
-      "id": "package_scripts_database_migrate",
-      "community": 15,
-      "norm_label": "database:migrate"
-    },
-    {
-      "label": "database:new",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L19",
-      "_origin": "ast",
-      "id": "package_scripts_database_new",
-      "community": 15,
-      "norm_label": "database:new"
-    },
-    {
-      "label": "database:status",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L20",
-      "_origin": "ast",
-      "id": "package_scripts_database_status",
-      "community": 15,
-      "norm_label": "database:status"
-    },
-    {
-      "label": "database:drift",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L21",
-      "_origin": "ast",
-      "id": "package_scripts_database_drift",
-      "community": 15,
-      "norm_label": "database:drift"
-    },
-    {
-      "label": "database:contract",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L22",
-      "_origin": "ast",
-      "id": "package_scripts_database_contract",
-      "community": 15,
-      "norm_label": "database:contract"
-    },
-    {
-      "label": "database:check",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L23",
-      "_origin": "ast",
-      "id": "package_scripts_database_check",
-      "community": 15,
-      "norm_label": "database:check"
-    },
-    {
-      "label": "audit:flush",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L24",
-      "_origin": "ast",
-      "id": "package_scripts_audit_flush",
-      "community": 15,
-      "norm_label": "audit:flush"
-    },
-    {
-      "label": "drafts",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L25",
-      "_origin": "ast",
-      "id": "package_scripts_drafts",
-      "community": 15,
-      "norm_label": "drafts"
-    },
-    {
-      "label": "pipeline:run",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L26",
-      "_origin": "ast",
-      "id": "package_scripts_pipeline_run",
-      "community": 15,
-      "norm_label": "pipeline:run"
-    },
-    {
-      "label": "research",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L27",
-      "_origin": "ast",
-      "id": "package_scripts_research",
-      "community": 15,
-      "norm_label": "research"
-    },
-    {
-      "label": "sources",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L28",
-      "_origin": "ast",
-      "id": "package_scripts_sources",
-      "community": 15,
-      "norm_label": "sources"
-    },
-    {
-      "label": "usage:dashboard",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L29",
-      "_origin": "ast",
-      "id": "package_scripts_usage_dashboard",
-      "community": 15,
-      "norm_label": "usage:dashboard"
-    },
-    {
-      "label": "telegram:check",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L30",
-      "_origin": "ast",
-      "id": "package_scripts_telegram_check",
-      "community": 15,
-      "norm_label": "telegram:check"
-    },
-    {
-      "label": "telegram:control",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L31",
-      "_origin": "ast",
-      "id": "package_scripts_telegram_control",
-      "community": 15,
-      "norm_label": "telegram:control"
-    },
-    {
-      "label": "telegram:control:container",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L32",
-      "_origin": "ast",
-      "id": "package_scripts_telegram_control_container",
-      "community": 15,
-      "norm_label": "telegram:control:container"
-    },
-    {
-      "label": "telegram:send",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L33",
-      "_origin": "ast",
-      "id": "package_scripts_telegram_send",
-      "community": 15,
-      "norm_label": "telegram:send"
-    },
-    {
-      "label": "telegram:smoke",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L34",
-      "_origin": "ast",
-      "id": "package_scripts_telegram_smoke",
-      "community": 15,
-      "norm_label": "telegram:smoke"
-    },
-    {
-      "label": "secrets:edit:production",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L35",
-      "_origin": "ast",
-      "id": "package_scripts_secrets_edit_production",
-      "community": 15,
-      "norm_label": "secrets:edit:production"
-    },
-    {
-      "label": "secrets:decrypt:production",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L36",
-      "_origin": "ast",
-      "id": "package_scripts_secrets_decrypt_production",
-      "community": 15,
-      "norm_label": "secrets:decrypt:production"
-    },
-    {
-      "label": "secrets:encrypt:production",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L37",
-      "_origin": "ast",
-      "id": "package_scripts_secrets_encrypt_production",
-      "community": 15,
-      "norm_label": "secrets:encrypt:production"
-    },
-    {
-      "label": "secrets:validate:production",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L38",
-      "_origin": "ast",
-      "id": "package_scripts_secrets_validate_production",
-      "community": 15,
-      "norm_label": "secrets:validate:production"
-    },
-    {
-      "label": "engines",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L40",
-      "_origin": "ast",
-      "id": "package_engines",
-      "community": 33,
-      "norm_label": "engines"
-    },
-    {
-      "label": "node",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L41",
-      "_origin": "ast",
-      "id": "package_engines_node",
-      "community": 33,
-      "norm_label": "node"
-    },
-    {
-      "label": "dependencies",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L43",
-      "_origin": "ast",
-      "id": "package_dependencies",
-      "community": 17,
-      "norm_label": "dependencies"
-    },
-    {
-      "label": "@google/genai",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L44",
-      "_origin": "ast",
-      "id": "package_dependencies_google_genai",
-      "community": 17,
-      "norm_label": "@google/genai"
-    },
-    {
-      "label": "@google/genai",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L44",
-      "_origin": "ast",
-      "id": "google_genai",
-      "community": 17,
-      "norm_label": "@google/genai"
-    },
-    {
-      "label": "@nestjs/common",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L45",
-      "_origin": "ast",
-      "id": "package_dependencies_nestjs_common",
-      "community": 17,
-      "norm_label": "@nestjs/common"
-    },
-    {
-      "label": "@nestjs/common",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L45",
-      "_origin": "ast",
-      "id": "nestjs_common",
-      "community": 17,
-      "norm_label": "@nestjs/common"
-    },
-    {
-      "label": "@nestjs/core",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L46",
-      "_origin": "ast",
-      "id": "package_dependencies_nestjs_core",
-      "community": 17,
-      "norm_label": "@nestjs/core"
-    },
-    {
-      "label": "@nestjs/core",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L46",
-      "_origin": "ast",
-      "id": "nestjs_core",
-      "community": 17,
-      "norm_label": "@nestjs/core"
-    },
-    {
-      "label": "cheerio",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L47",
-      "_origin": "ast",
-      "id": "package_dependencies_cheerio",
-      "community": 17,
-      "norm_label": "cheerio"
-    },
-    {
-      "label": "cheerio",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L47",
-      "_origin": "ast",
-      "id": "cheerio",
-      "community": 17,
-      "norm_label": "cheerio"
-    },
-    {
-      "label": "drizzle-orm",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L48",
-      "_origin": "ast",
-      "id": "package_dependencies_drizzle_orm",
-      "community": 17,
-      "norm_label": "drizzle-orm"
-    },
-    {
-      "label": "drizzle-orm",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L48",
-      "_origin": "ast",
-      "id": "drizzle_orm",
-      "community": 17,
-      "norm_label": "drizzle-orm"
-    },
-    {
-      "label": "exa-js",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L49",
-      "_origin": "ast",
-      "id": "package_dependencies_exa_js",
-      "community": 17,
-      "norm_label": "exa-js"
-    },
-    {
-      "label": "exa-js",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L49",
-      "_origin": "ast",
-      "id": "exa_js",
-      "community": 17,
-      "norm_label": "exa-js"
-    },
-    {
-      "label": "fast-xml-parser",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L50",
-      "_origin": "ast",
-      "id": "package_dependencies_fast_xml_parser",
-      "community": 17,
-      "norm_label": "fast-xml-parser"
-    },
-    {
-      "label": "fast-xml-parser",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L50",
-      "_origin": "ast",
-      "id": "fast_xml_parser",
-      "community": 17,
-      "norm_label": "fast-xml-parser"
-    },
-    {
-      "label": "openai",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L51",
-      "_origin": "ast",
-      "id": "package_dependencies_openai",
-      "community": 17,
-      "norm_label": "openai"
-    },
-    {
-      "label": "openai",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L51",
-      "_origin": "ast",
-      "id": "openai",
-      "community": 17,
-      "norm_label": "openai"
-    },
-    {
-      "label": "pg",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L52",
-      "_origin": "ast",
-      "id": "package_dependencies_pg",
-      "community": 17,
-      "norm_label": "pg"
-    },
-    {
-      "label": "pg",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L52",
-      "_origin": "ast",
-      "id": "pg",
-      "community": 17,
-      "norm_label": "pg"
-    },
-    {
-      "label": "reflect-metadata",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L53",
-      "_origin": "ast",
-      "id": "package_dependencies_reflect_metadata",
-      "community": 17,
-      "norm_label": "reflect-metadata"
-    },
-    {
-      "label": "reflect-metadata",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L53",
-      "_origin": "ast",
-      "id": "reflect_metadata",
-      "community": 17,
-      "norm_label": "reflect-metadata"
-    },
-    {
-      "label": "rxjs",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L54",
-      "_origin": "ast",
-      "id": "package_dependencies_rxjs",
-      "community": 17,
-      "norm_label": "rxjs"
-    },
-    {
-      "label": "rxjs",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L54",
-      "_origin": "ast",
-      "id": "rxjs",
-      "community": 17,
-      "norm_label": "rxjs"
-    },
-    {
-      "label": "zod",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L55",
-      "_origin": "ast",
-      "id": "package_dependencies_zod",
-      "community": 17,
-      "norm_label": "zod"
-    },
-    {
-      "label": "zod",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L55",
-      "_origin": "ast",
-      "id": "zod",
-      "community": 17,
-      "norm_label": "zod"
-    },
-    {
-      "label": "devDependencies",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L57",
-      "_origin": "ast",
-      "id": "package_devdependencies",
-      "community": 26,
-      "norm_label": "devdependencies"
-    },
-    {
-      "label": "@nestjs/testing",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L58",
-      "_origin": "ast",
-      "id": "package_devdependencies_nestjs_testing",
-      "community": 26,
-      "norm_label": "@nestjs/testing"
-    },
-    {
-      "label": "@nestjs/testing",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L58",
-      "_origin": "ast",
-      "id": "nestjs_testing",
-      "community": 26,
-      "norm_label": "@nestjs/testing"
-    },
-    {
-      "label": "@types/node",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L59",
-      "_origin": "ast",
-      "id": "package_devdependencies_types_node",
-      "community": 26,
-      "norm_label": "@types/node"
-    },
-    {
-      "label": "@types/node",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L59",
-      "_origin": "ast",
-      "id": "types_node",
-      "community": 26,
-      "norm_label": "@types/node"
-    },
-    {
-      "label": "@types/pg",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L60",
-      "_origin": "ast",
-      "id": "package_devdependencies_types_pg",
-      "community": 26,
-      "norm_label": "@types/pg"
-    },
-    {
-      "label": "@types/pg",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L60",
-      "_origin": "ast",
-      "id": "types_pg",
-      "community": 26,
-      "norm_label": "@types/pg"
-    },
-    {
-      "label": "tsx",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L61",
-      "_origin": "ast",
-      "id": "package_devdependencies_tsx",
-      "community": 26,
-      "norm_label": "tsx"
-    },
-    {
-      "label": "tsx",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L61",
-      "_origin": "ast",
-      "id": "tsx",
-      "community": 26,
-      "norm_label": "tsx"
-    },
-    {
-      "label": "typescript",
-      "file_type": "code",
-      "source_file": "package.json",
-      "source_location": "L62",
-      "_origin": "ast",
-      "id": "package_devdependencies_typescript",
-      "community": 26,
-      "norm_label": "typescript"
-    },
-    {
-      "label": "typescript",
-      "file_type": "concept",
-      "source_file": "package.json",
-      "source_location": "L62",
-      "_origin": "ast",
-      "id": "typescript",
-      "community": 26,
-      "norm_label": "typescript"
-    },
-    {
-      "label": "article-extractor.js",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "src_article_extractor",
-      "community": 5,
-      "norm_label": "article-extractor.js"
-    },
-    {
-      "label": "CONTENT_SELECTORS",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L8",
-      "_origin": "ast",
-      "id": "src_article_extractor_content_selectors",
-      "community": 5,
-      "norm_label": "content_selectors"
-    },
-    {
-      "label": "REMOVE_SELECTOR",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L17",
-      "_origin": "ast",
-      "id": "src_article_extractor_remove_selector",
-      "community": 5,
-      "norm_label": "remove_selector"
-    },
-    {
-      "label": "GOOGLE_NEWS_HOSTS",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L31",
-      "_origin": "ast",
-      "id": "src_article_extractor_google_news_hosts",
-      "community": 5,
-      "norm_label": "google_news_hosts"
-    },
-    {
-      "label": "normalizedHost()",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L34",
-      "_origin": "ast",
-      "id": "src_article_extractor_normalizedhost",
-      "community": 5,
-      "norm_label": "normalizedhost()"
-    },
-    {
-      "label": "isGoogleNewsUrl()",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L42",
-      "_origin": "ast",
-      "id": "src_article_extractor_isgooglenewsurl",
-      "community": 5,
-      "norm_label": "isgooglenewsurl()"
-    },
-    {
-      "label": "parsePublicUrl()",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L47",
-      "_origin": "ast",
-      "id": "src_article_extractor_parsepublicurl",
-      "community": 5,
-      "norm_label": "parsepublicurl()"
-    },
-    {
-      "label": "canonicalUrlCandidates()",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L56",
-      "_origin": "ast",
-      "id": "src_article_extractor_canonicalurlcandidates",
-      "community": 5,
-      "norm_label": "canonicalurlcandidates()"
-    },
-    {
-      "label": "resolvePublisherUrl()",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L89",
-      "_origin": "ast",
-      "id": "src_article_extractor_resolvepublisherurl",
-      "community": 5,
-      "norm_label": "resolvepublisherurl()"
-    },
-    {
-      "label": "fetchPageBody()",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L98",
-      "_origin": "ast",
-      "id": "src_article_extractor_fetchpagebody",
-      "community": 5,
-      "norm_label": "fetchpagebody()"
-    },
-    {
-      "label": "normalizeText()",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L133",
-      "_origin": "ast",
-      "id": "src_article_extractor_normalizetext",
-      "community": 5,
-      "norm_label": "normalizetext()"
-    },
-    {
-      "label": "extractArticleText()",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L137",
-      "_origin": "ast",
-      "id": "src_article_extractor_extractarticletext",
-      "community": 5,
-      "norm_label": "extractarticletext()"
-    },
-    {
-      "label": "fetchArticle()",
-      "file_type": "code",
-      "source_file": "src/article-extractor.js",
-      "source_location": "L180",
-      "_origin": "ast",
-      "id": "src_article_extractor_fetcharticle",
-      "community": 5,
-      "norm_label": "fetcharticle()"
-    },
-    {
-      "label": "draft.js",
-      "file_type": "code",
-      "source_file": "src/draft.js",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "src_draft",
-      "community": 12,
-      "norm_label": "draft.js"
-    },
-    {
-      "label": "SOURCE_HEADINGS",
-      "file_type": "code",
-      "source_file": "src/draft.js",
-      "source_location": "L72",
-      "_origin": "ast",
-      "id": "src_draft_source_headings",
-      "community": 12,
-      "norm_label": "source_headings"
-    },
-    {
-      "label": "UNVERIFIED_PREFIXES",
-      "file_type": "code",
-      "source_file": "src/draft.js",
-      "source_location": "L78",
-      "_origin": "ast",
-      "id": "src_draft_unverified_prefixes",
-      "community": 12,
-      "norm_label": "unverified_prefixes"
-    },
-    {
-      "label": "proseMetrics()",
-      "file_type": "code",
-      "source_file": "src/draft.js",
-      "source_location": "L84",
-      "_origin": "ast",
-      "id": "src_draft_prosemetrics",
-      "community": 12,
-      "norm_label": "prosemetrics()"
-    },
-    {
-      "label": "editorialEnrichmentState()",
-      "file_type": "code",
-      "source_file": "src/draft.js",
-      "source_location": "L95",
-      "_origin": "ast",
-      "id": "src_draft_editorialenrichmentstate",
-      "community": 12,
-      "norm_label": "editorialenrichmentstate()"
-    },
-    {
-      "label": "completeDraft()",
-      "file_type": "code",
-      "source_file": "src/draft.js",
-      "source_location": "L100",
-      "_origin": "ast",
-      "id": "src_draft_completedraft",
-      "community": 12,
-      "norm_label": "completedraft()"
-    },
-    {
-      "label": "validateGroundedDraft()",
-      "file_type": "code",
-      "source_file": "src/draft.js",
-      "source_location": "L135",
-      "_origin": "ast",
-      "id": "src_draft_validategroundeddraft",
-      "community": 12,
-      "norm_label": "validategroundeddraft()"
-    },
-    {
-      "label": "generateDraft()",
-      "file_type": "code",
-      "source_file": "src/draft.js",
-      "source_location": "L195",
-      "_origin": "ast",
-      "id": "src_draft_generatedraft",
-      "community": 12,
-      "norm_label": "generatedraft()"
-    },
-    {
-      "label": "pipeline.js",
-      "file_type": "code",
-      "source_file": "src/pipeline.js",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "src_pipeline",
-      "community": 12,
-      "norm_label": "pipeline.js"
-    },
-    {
-      "label": "featureState()",
-      "file_type": "code",
-      "source_file": "src/pipeline.js",
-      "source_location": "L12",
-      "_origin": "ast",
-      "id": "src_pipeline_featurestate",
-      "community": 12,
-      "norm_label": "featurestate()"
-    },
-    {
-      "label": "loadNewsFeatureFlags()",
-      "file_type": "code",
-      "source_file": "src/pipeline.js",
-      "source_location": "L18",
-      "_origin": "ast",
-      "id": "src_pipeline_loadnewsfeatureflags",
-      "community": 12,
-      "norm_label": "loadnewsfeatureflags()"
-    },
-    {
-      "label": "loadArticleTagging()",
-      "file_type": "code",
-      "source_file": "src/pipeline.js",
-      "source_location": "L26",
-      "_origin": "ast",
-      "id": "src_pipeline_loadarticletagging",
-      "community": 12,
-      "norm_label": "loadarticletagging()"
-    },
-    {
-      "label": "loadEditorialEnrichment()",
-      "file_type": "code",
-      "source_file": "src/pipeline.js",
-      "source_location": "L56",
-      "_origin": "ast",
-      "id": "src_pipeline_loadeditorialenrichment",
-      "community": 12,
-      "norm_label": "loadeditorialenrichment()"
-    },
-    {
-      "label": "buildDraftEvidence()",
-      "file_type": "code",
-      "source_file": "src/pipeline.js",
-      "source_location": "L75",
-      "_origin": "ast",
-      "id": "src_pipeline_builddraftevidence",
-      "community": 12,
-      "norm_label": "builddraftevidence()"
-    },
-    {
-      "label": "startPipelineLeaseHeartbeat()",
-      "file_type": "code",
-      "source_file": "src/pipeline.js",
-      "source_location": "L114",
-      "_origin": "ast",
-      "id": "src_pipeline_startpipelineleaseheartbeat",
-      "community": 12,
-      "norm_label": "startpipelineleaseheartbeat()"
-    },
-    {
-      "label": "runPipeline()",
-      "file_type": "code",
-      "source_file": "src/pipeline.js",
-      "source_location": "L172",
-      "_origin": "ast",
-      "id": "src_pipeline_runpipeline",
-      "community": 12,
-      "norm_label": "runpipeline()"
-    },
-    {
-      "label": "research.js",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "src_research",
-      "community": 5,
-      "norm_label": "research.js"
-    },
-    {
-      "label": "NoResearchCandidatesError",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L37",
-      "_origin": "ast",
-      "id": "src_research_noresearchcandidateserror",
-      "community": 13,
-      "norm_label": "noresearchcandidateserror"
-    },
-    {
-      "label": ".constructor()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L38",
-      "_origin": "ast",
-      "id": "src_research_noresearchcandidateserror_constructor",
-      "community": 13,
-      "norm_label": ".constructor()"
-    },
-    {
-      "label": "keywordScore()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L44",
-      "_origin": "ast",
-      "id": "src_research_keywordscore",
-      "community": 5,
-      "norm_label": "keywordscore()"
-    },
-    {
-      "label": "sourceHostname()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L57",
-      "_origin": "ast",
-      "id": "src_research_sourcehostname",
-      "community": 5,
-      "norm_label": "sourcehostname()"
-    },
-    {
-      "label": "webSourceForUrl()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L70",
-      "_origin": "ast",
-      "id": "src_research_websourceforurl",
-      "community": 5,
-      "norm_label": "websourceforurl()"
-    },
-    {
-      "label": "sourceMatchesSettings()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L84",
-      "_origin": "ast",
-      "id": "src_research_sourcematchessettings",
-      "community": 5,
-      "norm_label": "sourcematchessettings()"
-    },
-    {
-      "label": "sourceUsesHost()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L116",
-      "_origin": "ast",
-      "id": "src_research_sourceuseshost",
-      "community": 5,
-      "norm_label": "sourceuseshost()"
-    },
-    {
-      "label": "newestFeedEntries()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L124",
-      "_origin": "ast",
-      "id": "src_research_newestfeedentries",
-      "community": 5,
-      "norm_label": "newestfeedentries()"
-    },
-    {
-      "label": "mapSettledWithConcurrency()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L134",
-      "_origin": "ast",
-      "id": "src_research_mapsettledwithconcurrency",
-      "community": 5,
-      "norm_label": "mapsettledwithconcurrency()"
-    },
-    {
-      "label": "matchPrimarySource()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L161",
-      "_origin": "ast",
-      "id": "src_research_matchprimarysource",
-      "community": 5,
-      "norm_label": "matchprimarysource()"
-    },
-    {
-      "label": "scoreCandidate()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L172",
-      "_origin": "ast",
-      "id": "src_research_scorecandidate",
-      "community": 5,
-      "norm_label": "scorecandidate()"
-    },
-    {
-      "label": "rankCandidates()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L206",
-      "_origin": "ast",
-      "id": "src_research_rankcandidates",
-      "community": 5,
-      "norm_label": "rankcandidates()"
-    },
-    {
-      "label": "runResearch()",
-      "file_type": "code",
-      "source_file": "src/research.js",
-      "source_location": "L241",
-      "_origin": "ast",
-      "id": "src_research_runresearch",
-      "community": 5,
-      "norm_label": "runresearch()"
-    },
-    {
-      "label": "article-extractor.test.js",
-      "file_type": "code",
-      "source_file": "test/article-extractor.test.js",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "test_article_extractor_test",
-      "community": 5,
-      "norm_label": "article-extractor.test.js"
-    },
-    {
-      "label": "text()",
-      "file_type": "code",
-      "source_file": "test/article-extractor.test.js",
-      "source_location": "L45",
-      "_origin": "ast",
-      "id": "test_article_extractor_test_text",
-      "community": 5,
-      "norm_label": "text()"
-    },
-    {
-      "label": "deploy-script-rollback.test.js",
-      "file_type": "code",
-      "source_file": "test/deploy-script-rollback.test.js",
-      "source_location": "L1",
-      "_origin": "ast",
-      "id": "test_deploy_script_rollback_test",
-      "community": 47,
-      "norm_label": "deploy-script-rollback.test.js"
-    },
-    {
-      "label": "legacyEnvironment()",
-      "file_type": "code",
-      "source_file": "test/deploy-script-rollback.test.js",
-      "source_location": "L8",
-      "_origin": "ast",
-      "id": "test_deploy_script_rollback_test_legacyenvironment",
-      "community": 47,
-      "norm_label": "legacyenvironment()"
-    },
-    {
-      "label": "completeEnvironment()",
-      "file_type": "code",
-      "source_file": "test/deploy-script-rollback.test.js",
-      "source_location": "L27",
-      "_origin": "ast",
-      "id": "test_deploy_script_rollback_test_completeenvironment",
-      "community": 47,
-      "norm_label": "completeenvironment()"
-    },
-    {
-      "label": "runDeployment()",
-      "file_type": "code",
-      "source_file": "test/deploy-script-rollback.test.js",
-      "source_location": "L58",
-      "_origin": "ast",
-      "id": "test_deploy_script_rollback_test_rundeployment",
-      "community": 47,
-      "norm_label": "rundeployment()"
     },
     {
       "label": "production-env-validator.test.js",
@@ -12154,7 +12154,7 @@
       "label": "fixture()",
       "file_type": "code",
       "source_file": "test/production-env-validator.test.js",
-      "source_location": "L39",
+      "source_location": "L41",
       "_origin": "ast",
       "id": "test_production_env_validator_test_fixture",
       "community": 42,
@@ -12184,7 +12184,7 @@
       "label": "dotenvEntries()",
       "file_type": "code",
       "source_file": "test/sops-production-env.test.js",
-      "source_location": "L30",
+      "source_location": "L32",
       "_origin": "ast",
       "id": "test_sops_production_env_test_dotenventries",
       "community": 50,
@@ -33438,9 +33438,9 @@
       "source_location": "L69",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy",
-      "target": "ops_deploy_rollback",
-      "confidence_score": 1.0
+      "target": "ops_deploy_rollback"
     },
     {
       "relation": "defines",
@@ -33449,9 +33449,9 @@
       "source_location": "L132",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy",
-      "target": "ops_deploy_rollback_on_error",
-      "confidence_score": 1.0
+      "target": "ops_deploy_rollback_on_error"
     },
     {
       "relation": "contains",
@@ -33460,9 +33460,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy",
-      "target": "ops_deploy_sh__entry",
-      "confidence_score": 1.0
+      "target": "ops_deploy_sh__entry"
     },
     {
       "relation": "defines",
@@ -33471,9 +33471,9 @@
       "source_location": "L48",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy",
-      "target": "ops_deploy_wait_for_db_healthy",
-      "confidence_score": 1.0
+      "target": "ops_deploy_wait_for_db_healthy"
     },
     {
       "relation": "calls",
@@ -33483,9 +33483,9 @@
       "weight": 1.0,
       "context": "call",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy_sh__entry",
-      "target": "ops_deploy_wait_for_db_healthy",
-      "confidence_score": 1.0
+      "target": "ops_deploy_wait_for_db_healthy"
     },
     {
       "relation": "calls",
@@ -33495,9 +33495,9 @@
       "weight": 1.0,
       "context": "call",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy_rollback",
-      "target": "ops_deploy_wait_for_db_healthy",
-      "confidence_score": 1.0
+      "target": "ops_deploy_wait_for_db_healthy"
     },
     {
       "relation": "calls",
@@ -33507,9 +33507,9 @@
       "weight": 1.0,
       "context": "call",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy_rollback_on_error",
-      "target": "ops_deploy_rollback",
-      "confidence_score": 1.0
+      "target": "ops_deploy_rollback"
     },
     {
       "relation": "contains",
@@ -33518,9 +33518,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_sops_production_env",
-      "target": "ops_sops_production_env_sh__entry",
-      "confidence_score": 1.0
+      "target": "ops_sops_production_env_sh__entry"
     },
     {
       "relation": "defines",
@@ -33529,9 +33529,9 @@
       "source_location": "L9",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_sops_production_env",
-      "target": "ops_sops_production_env_usage",
-      "confidence_score": 1.0
+      "target": "ops_sops_production_env_usage"
     },
     {
       "relation": "defines",
@@ -33540,9 +33540,9 @@
       "source_location": "L32",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_sops_production_env",
-      "target": "ops_sops_production_env_validate_encrypted",
-      "confidence_score": 1.0
+      "target": "ops_sops_production_env_validate_encrypted"
     },
     {
       "relation": "calls",
@@ -33552,9 +33552,9 @@
       "weight": 1.0,
       "context": "call",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_sops_production_env_sh__entry",
-      "target": "ops_sops_production_env_usage",
-      "confidence_score": 1.0
+      "target": "ops_sops_production_env_usage"
     },
     {
       "relation": "calls",
@@ -33564,20 +33564,9 @@
       "weight": 1.0,
       "context": "call",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_sops_production_env_sh__entry",
-      "target": "ops_sops_production_env_validate_encrypted",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "contains",
-      "confidence": "EXTRACTED",
-      "source_file": "ops/validate-production-env.sh",
-      "source_location": "L1",
-      "weight": 1.0,
-      "_origin": "ast",
-      "source": "ops_validate_production_env",
-      "target": "ops_validate_production_env_sh__entry",
-      "confidence_score": 1.0
+      "target": "ops_sops_production_env_validate_encrypted"
     },
     {
       "relation": "contains",
@@ -33586,9 +33575,9 @@
       "source_location": "L43",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package",
-      "target": "package_dependencies",
-      "confidence_score": 1.0
+      "target": "package_dependencies"
     },
     {
       "relation": "contains",
@@ -33597,9 +33586,9 @@
       "source_location": "L57",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package",
-      "target": "package_devdependencies",
-      "confidence_score": 1.0
+      "target": "package_devdependencies"
     },
     {
       "relation": "contains",
@@ -33608,9 +33597,9 @@
       "source_location": "L40",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package",
-      "target": "package_engines",
-      "confidence_score": 1.0
+      "target": "package_engines"
     },
     {
       "relation": "contains",
@@ -33619,9 +33608,9 @@
       "source_location": "L2",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package",
-      "target": "package_name",
-      "confidence_score": 1.0
+      "target": "package_name"
     },
     {
       "relation": "contains",
@@ -33630,9 +33619,9 @@
       "source_location": "L4",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package",
-      "target": "package_private",
-      "confidence_score": 1.0
+      "target": "package_private"
     },
     {
       "relation": "contains",
@@ -33641,9 +33630,9 @@
       "source_location": "L6",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package",
-      "target": "package_scripts",
-      "confidence_score": 1.0
+      "target": "package_scripts"
     },
     {
       "relation": "contains",
@@ -33652,9 +33641,9 @@
       "source_location": "L5",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package",
-      "target": "package_type",
-      "confidence_score": 1.0
+      "target": "package_type"
     },
     {
       "relation": "contains",
@@ -33663,9 +33652,9 @@
       "source_location": "L3",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package",
-      "target": "package_version",
-      "confidence_score": 1.0
+      "target": "package_version"
     },
     {
       "relation": "contains",
@@ -33674,9 +33663,9 @@
       "source_location": "L24",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_audit_flush",
-      "confidence_score": 1.0
+      "target": "package_scripts_audit_flush"
     },
     {
       "relation": "contains",
@@ -33685,9 +33674,9 @@
       "source_location": "L7",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_build_nest",
-      "confidence_score": 1.0
+      "target": "package_scripts_build_nest"
     },
     {
       "relation": "contains",
@@ -33696,9 +33685,9 @@
       "source_location": "L23",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_database_check",
-      "confidence_score": 1.0
+      "target": "package_scripts_database_check"
     },
     {
       "relation": "contains",
@@ -33707,9 +33696,9 @@
       "source_location": "L22",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_database_contract",
-      "confidence_score": 1.0
+      "target": "package_scripts_database_contract"
     },
     {
       "relation": "contains",
@@ -33718,9 +33707,9 @@
       "source_location": "L21",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_database_drift",
-      "confidence_score": 1.0
+      "target": "package_scripts_database_drift"
     },
     {
       "relation": "contains",
@@ -33729,9 +33718,9 @@
       "source_location": "L18",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_database_migrate",
-      "confidence_score": 1.0
+      "target": "package_scripts_database_migrate"
     },
     {
       "relation": "contains",
@@ -33740,9 +33729,9 @@
       "source_location": "L19",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_database_new",
-      "confidence_score": 1.0
+      "target": "package_scripts_database_new"
     },
     {
       "relation": "contains",
@@ -33751,9 +33740,9 @@
       "source_location": "L20",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_database_status",
-      "confidence_score": 1.0
+      "target": "package_scripts_database_status"
     },
     {
       "relation": "contains",
@@ -33762,9 +33751,9 @@
       "source_location": "L25",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_drafts",
-      "confidence_score": 1.0
+      "target": "package_scripts_drafts"
     },
     {
       "relation": "contains",
@@ -33773,9 +33762,9 @@
       "source_location": "L26",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_pipeline_run",
-      "confidence_score": 1.0
+      "target": "package_scripts_pipeline_run"
     },
     {
       "relation": "contains",
@@ -33784,9 +33773,9 @@
       "source_location": "L27",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_research",
-      "confidence_score": 1.0
+      "target": "package_scripts_research"
     },
     {
       "relation": "contains",
@@ -33795,9 +33784,9 @@
       "source_location": "L36",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_secrets_decrypt_production",
-      "confidence_score": 1.0
+      "target": "package_scripts_secrets_decrypt_production"
     },
     {
       "relation": "contains",
@@ -33806,9 +33795,9 @@
       "source_location": "L35",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_secrets_edit_production",
-      "confidence_score": 1.0
+      "target": "package_scripts_secrets_edit_production"
     },
     {
       "relation": "contains",
@@ -33817,9 +33806,9 @@
       "source_location": "L37",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_secrets_encrypt_production",
-      "confidence_score": 1.0
+      "target": "package_scripts_secrets_encrypt_production"
     },
     {
       "relation": "contains",
@@ -33828,9 +33817,9 @@
       "source_location": "L38",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_secrets_validate_production",
-      "confidence_score": 1.0
+      "target": "package_scripts_secrets_validate_production"
     },
     {
       "relation": "contains",
@@ -33839,9 +33828,9 @@
       "source_location": "L28",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_sources",
-      "confidence_score": 1.0
+      "target": "package_scripts_sources"
     },
     {
       "relation": "contains",
@@ -33850,9 +33839,9 @@
       "source_location": "L30",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_telegram_check",
-      "confidence_score": 1.0
+      "target": "package_scripts_telegram_check"
     },
     {
       "relation": "contains",
@@ -33861,9 +33850,9 @@
       "source_location": "L31",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_telegram_control",
-      "confidence_score": 1.0
+      "target": "package_scripts_telegram_control"
     },
     {
       "relation": "contains",
@@ -33872,9 +33861,9 @@
       "source_location": "L32",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_telegram_control_container",
-      "confidence_score": 1.0
+      "target": "package_scripts_telegram_control_container"
     },
     {
       "relation": "contains",
@@ -33883,9 +33872,9 @@
       "source_location": "L33",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_telegram_send",
-      "confidence_score": 1.0
+      "target": "package_scripts_telegram_send"
     },
     {
       "relation": "contains",
@@ -33894,9 +33883,9 @@
       "source_location": "L34",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_telegram_smoke",
-      "confidence_score": 1.0
+      "target": "package_scripts_telegram_smoke"
     },
     {
       "relation": "contains",
@@ -33905,9 +33894,9 @@
       "source_location": "L8",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_test",
-      "confidence_score": 1.0
+      "target": "package_scripts_test"
     },
     {
       "relation": "contains",
@@ -33916,9 +33905,9 @@
       "source_location": "L13",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_test_application",
-      "confidence_score": 1.0
+      "target": "package_scripts_test_application"
     },
     {
       "relation": "contains",
@@ -33927,9 +33916,9 @@
       "source_location": "L14",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_test_architecture",
-      "confidence_score": 1.0
+      "target": "package_scripts_test_architecture"
     },
     {
       "relation": "contains",
@@ -33938,9 +33927,9 @@
       "source_location": "L9",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_test_drizzle",
-      "confidence_score": 1.0
+      "target": "package_scripts_test_drizzle"
     },
     {
       "relation": "contains",
@@ -33949,9 +33938,9 @@
       "source_location": "L10",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_test_drizzle_sources",
-      "confidence_score": 1.0
+      "target": "package_scripts_test_drizzle_sources"
     },
     {
       "relation": "contains",
@@ -33960,9 +33949,9 @@
       "source_location": "L16",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_test_integration",
-      "confidence_score": 1.0
+      "target": "package_scripts_test_integration"
     },
     {
       "relation": "contains",
@@ -33971,9 +33960,9 @@
       "source_location": "L15",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_test_integration_drizzle",
-      "confidence_score": 1.0
+      "target": "package_scripts_test_integration_drizzle"
     },
     {
       "relation": "contains",
@@ -33982,9 +33971,9 @@
       "source_location": "L11",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_test_nest_build",
-      "confidence_score": 1.0
+      "target": "package_scripts_test_nest_build"
     },
     {
       "relation": "contains",
@@ -33993,9 +33982,9 @@
       "source_location": "L12",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_test_persistence",
-      "confidence_score": 1.0
+      "target": "package_scripts_test_persistence"
     },
     {
       "relation": "contains",
@@ -34004,9 +33993,9 @@
       "source_location": "L17",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_typecheck",
-      "confidence_score": 1.0
+      "target": "package_scripts_typecheck"
     },
     {
       "relation": "contains",
@@ -34015,9 +34004,9 @@
       "source_location": "L29",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_scripts",
-      "target": "package_scripts_usage_dashboard",
-      "confidence_score": 1.0
+      "target": "package_scripts_usage_dashboard"
     },
     {
       "relation": "contains",
@@ -34026,9 +34015,9 @@
       "source_location": "L41",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_engines",
-      "target": "package_engines_node",
-      "confidence_score": 1.0
+      "target": "package_engines_node"
     },
     {
       "relation": "contains",
@@ -34037,9 +34026,9 @@
       "source_location": "L47",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_cheerio",
-      "confidence_score": 1.0
+      "target": "package_dependencies_cheerio"
     },
     {
       "relation": "contains",
@@ -34048,9 +34037,9 @@
       "source_location": "L48",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_drizzle_orm",
-      "confidence_score": 1.0
+      "target": "package_dependencies_drizzle_orm"
     },
     {
       "relation": "contains",
@@ -34059,9 +34048,9 @@
       "source_location": "L49",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_exa_js",
-      "confidence_score": 1.0
+      "target": "package_dependencies_exa_js"
     },
     {
       "relation": "contains",
@@ -34070,9 +34059,9 @@
       "source_location": "L50",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_fast_xml_parser",
-      "confidence_score": 1.0
+      "target": "package_dependencies_fast_xml_parser"
     },
     {
       "relation": "contains",
@@ -34081,9 +34070,9 @@
       "source_location": "L44",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_google_genai",
-      "confidence_score": 1.0
+      "target": "package_dependencies_google_genai"
     },
     {
       "relation": "contains",
@@ -34092,9 +34081,9 @@
       "source_location": "L45",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_nestjs_common",
-      "confidence_score": 1.0
+      "target": "package_dependencies_nestjs_common"
     },
     {
       "relation": "contains",
@@ -34103,9 +34092,9 @@
       "source_location": "L46",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_nestjs_core",
-      "confidence_score": 1.0
+      "target": "package_dependencies_nestjs_core"
     },
     {
       "relation": "contains",
@@ -34114,9 +34103,9 @@
       "source_location": "L51",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_openai",
-      "confidence_score": 1.0
+      "target": "package_dependencies_openai"
     },
     {
       "relation": "contains",
@@ -34125,9 +34114,9 @@
       "source_location": "L52",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_pg",
-      "confidence_score": 1.0
+      "target": "package_dependencies_pg"
     },
     {
       "relation": "contains",
@@ -34136,9 +34125,9 @@
       "source_location": "L53",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_reflect_metadata",
-      "confidence_score": 1.0
+      "target": "package_dependencies_reflect_metadata"
     },
     {
       "relation": "contains",
@@ -34147,9 +34136,9 @@
       "source_location": "L54",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_rxjs",
-      "confidence_score": 1.0
+      "target": "package_dependencies_rxjs"
     },
     {
       "relation": "contains",
@@ -34158,9 +34147,9 @@
       "source_location": "L55",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies",
-      "target": "package_dependencies_zod",
-      "confidence_score": 1.0
+      "target": "package_dependencies_zod"
     },
     {
       "relation": "imports",
@@ -34170,9 +34159,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_google_genai",
-      "target": "google_genai",
-      "confidence_score": 1.0
+      "target": "google_genai"
     },
     {
       "relation": "imports",
@@ -34182,9 +34171,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_nestjs_common",
-      "target": "nestjs_common",
-      "confidence_score": 1.0
+      "target": "nestjs_common"
     },
     {
       "relation": "imports",
@@ -34194,9 +34183,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_nestjs_core",
-      "target": "nestjs_core",
-      "confidence_score": 1.0
+      "target": "nestjs_core"
     },
     {
       "relation": "imports",
@@ -34206,9 +34195,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_cheerio",
-      "target": "cheerio",
-      "confidence_score": 1.0
+      "target": "cheerio"
     },
     {
       "relation": "imports",
@@ -34218,9 +34207,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_drizzle_orm",
-      "target": "drizzle_orm",
-      "confidence_score": 1.0
+      "target": "drizzle_orm"
     },
     {
       "relation": "imports",
@@ -34230,9 +34219,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_exa_js",
-      "target": "exa_js",
-      "confidence_score": 1.0
+      "target": "exa_js"
     },
     {
       "relation": "imports",
@@ -34242,9 +34231,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_fast_xml_parser",
-      "target": "fast_xml_parser",
-      "confidence_score": 1.0
+      "target": "fast_xml_parser"
     },
     {
       "relation": "imports",
@@ -34254,9 +34243,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_openai",
-      "target": "openai",
-      "confidence_score": 1.0
+      "target": "openai"
     },
     {
       "relation": "imports",
@@ -34266,9 +34255,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_pg",
-      "target": "pg",
-      "confidence_score": 1.0
+      "target": "pg"
     },
     {
       "relation": "imports",
@@ -34278,9 +34267,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_reflect_metadata",
-      "target": "reflect_metadata",
-      "confidence_score": 1.0
+      "target": "reflect_metadata"
     },
     {
       "relation": "imports",
@@ -34290,9 +34279,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_rxjs",
-      "target": "rxjs",
-      "confidence_score": 1.0
+      "target": "rxjs"
     },
     {
       "relation": "imports",
@@ -34302,9 +34291,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_dependencies_zod",
-      "target": "zod",
-      "confidence_score": 1.0
+      "target": "zod"
     },
     {
       "relation": "contains",
@@ -34313,9 +34302,9 @@
       "source_location": "L58",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_devdependencies",
-      "target": "package_devdependencies_nestjs_testing",
-      "confidence_score": 1.0
+      "target": "package_devdependencies_nestjs_testing"
     },
     {
       "relation": "contains",
@@ -34324,9 +34313,9 @@
       "source_location": "L61",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_devdependencies",
-      "target": "package_devdependencies_tsx",
-      "confidence_score": 1.0
+      "target": "package_devdependencies_tsx"
     },
     {
       "relation": "contains",
@@ -34335,9 +34324,9 @@
       "source_location": "L59",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_devdependencies",
-      "target": "package_devdependencies_types_node",
-      "confidence_score": 1.0
+      "target": "package_devdependencies_types_node"
     },
     {
       "relation": "contains",
@@ -34346,9 +34335,9 @@
       "source_location": "L60",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_devdependencies",
-      "target": "package_devdependencies_types_pg",
-      "confidence_score": 1.0
+      "target": "package_devdependencies_types_pg"
     },
     {
       "relation": "contains",
@@ -34357,9 +34346,9 @@
       "source_location": "L62",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_devdependencies",
-      "target": "package_devdependencies_typescript",
-      "confidence_score": 1.0
+      "target": "package_devdependencies_typescript"
     },
     {
       "relation": "imports",
@@ -34369,9 +34358,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_devdependencies_nestjs_testing",
-      "target": "nestjs_testing",
-      "confidence_score": 1.0
+      "target": "nestjs_testing"
     },
     {
       "relation": "imports",
@@ -34381,9 +34370,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_devdependencies_types_node",
-      "target": "types_node",
-      "confidence_score": 1.0
+      "target": "types_node"
     },
     {
       "relation": "imports",
@@ -34393,9 +34382,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_devdependencies_types_pg",
-      "target": "types_pg",
-      "confidence_score": 1.0
+      "target": "types_pg"
     },
     {
       "relation": "imports",
@@ -34405,9 +34394,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_devdependencies_tsx",
-      "target": "tsx",
-      "confidence_score": 1.0
+      "target": "tsx"
     },
     {
       "relation": "imports",
@@ -34417,9 +34406,9 @@
       "weight": 1.0,
       "context": "import",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "package_devdependencies_typescript",
-      "target": "typescript",
-      "confidence_score": 1.0
+      "target": "typescript"
     },
     {
       "relation": "contains",
@@ -34428,9 +34417,9 @@
       "source_location": "L56",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_canonicalurlcandidates",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_canonicalurlcandidates"
     },
     {
       "relation": "contains",
@@ -34439,9 +34428,9 @@
       "source_location": "L8",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_content_selectors",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_content_selectors"
     },
     {
       "relation": "contains",
@@ -34450,9 +34439,9 @@
       "source_location": "L137",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_extractarticletext",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_extractarticletext"
     },
     {
       "relation": "contains",
@@ -34461,9 +34450,9 @@
       "source_location": "L180",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_fetcharticle",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_fetcharticle"
     },
     {
       "relation": "contains",
@@ -34472,9 +34461,9 @@
       "source_location": "L98",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_fetchpagebody",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_fetchpagebody"
     },
     {
       "relation": "contains",
@@ -34483,9 +34472,9 @@
       "source_location": "L31",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_google_news_hosts",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_google_news_hosts"
     },
     {
       "relation": "contains",
@@ -34494,9 +34483,9 @@
       "source_location": "L42",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_isgooglenewsurl",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_isgooglenewsurl"
     },
     {
       "relation": "contains",
@@ -34505,9 +34494,9 @@
       "source_location": "L34",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_normalizedhost",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_normalizedhost"
     },
     {
       "relation": "contains",
@@ -34516,9 +34505,9 @@
       "source_location": "L133",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_normalizetext",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_normalizetext"
     },
     {
       "relation": "contains",
@@ -34527,9 +34516,9 @@
       "source_location": "L47",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_parsepublicurl",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_parsepublicurl"
     },
     {
       "relation": "contains",
@@ -34538,9 +34527,9 @@
       "source_location": "L17",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_remove_selector",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_remove_selector"
     },
     {
       "relation": "contains",
@@ -34549,9 +34538,9 @@
       "source_location": "L89",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor",
-      "target": "src_article_extractor_resolvepublisherurl",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_resolvepublisherurl"
     },
     {
       "relation": "imports_from",
@@ -34561,9 +34550,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_article_extractor",
-      "confidence_score": 1.0
+      "target": "src_article_extractor"
     },
     {
       "relation": "imports_from",
@@ -34573,9 +34562,9 @@
       "source_location": "L3",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_article_extractor_test",
-      "target": "src_article_extractor",
-      "confidence_score": 1.0
+      "target": "src_article_extractor"
     },
     {
       "relation": "references",
@@ -34597,9 +34586,9 @@
       "source_location": "L43",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor_isgooglenewsurl",
-      "target": "src_article_extractor_normalizedhost",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_normalizedhost"
     },
     {
       "relation": "calls",
@@ -34609,9 +34598,9 @@
       "source_location": "L90",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor_resolvepublisherurl",
-      "target": "src_article_extractor_normalizedhost",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_normalizedhost"
     },
     {
       "relation": "calls",
@@ -34621,9 +34610,9 @@
       "source_location": "L86",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor_canonicalurlcandidates",
-      "target": "src_article_extractor_isgooglenewsurl",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_isgooglenewsurl"
     },
     {
       "relation": "calls",
@@ -34633,9 +34622,9 @@
       "source_location": "L218",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor_fetcharticle",
-      "target": "src_article_extractor_isgooglenewsurl",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_isgooglenewsurl"
     },
     {
       "relation": "calls",
@@ -34645,9 +34634,9 @@
       "source_location": "L84",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor_canonicalurlcandidates",
-      "target": "src_article_extractor_parsepublicurl",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_parsepublicurl"
     },
     {
       "relation": "calls",
@@ -34657,9 +34646,9 @@
       "source_location": "L92",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor_resolvepublisherurl",
-      "target": "src_article_extractor_canonicalurlcandidates",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_canonicalurlcandidates"
     },
     {
       "relation": "calls",
@@ -34669,9 +34658,9 @@
       "source_location": "L223",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor_fetcharticle",
-      "target": "src_article_extractor_resolvepublisherurl",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_resolvepublisherurl"
     },
     {
       "relation": "calls",
@@ -34681,9 +34670,9 @@
       "source_location": "L198",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor_fetcharticle",
-      "target": "src_article_extractor_fetchpagebody",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_fetchpagebody"
     },
     {
       "relation": "calls",
@@ -34693,9 +34682,9 @@
       "source_location": "L149",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor_extractarticletext",
-      "target": "src_article_extractor_normalizetext",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_normalizetext"
     },
     {
       "relation": "indirect_call",
@@ -34717,9 +34706,9 @@
       "source_location": "L208",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_article_extractor_fetcharticle",
-      "target": "src_article_extractor_extractarticletext",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_extractarticletext"
     },
     {
       "relation": "imports",
@@ -34729,9 +34718,9 @@
       "source_location": "L3",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_article_extractor_test",
-      "target": "src_article_extractor_extractarticletext",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_extractarticletext"
     },
     {
       "relation": "imports",
@@ -34741,9 +34730,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_article_extractor_fetcharticle",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_fetcharticle"
     },
     {
       "relation": "imports",
@@ -34753,9 +34742,9 @@
       "source_location": "L3",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_article_extractor_test",
-      "target": "src_article_extractor_fetcharticle",
-      "confidence_score": 1.0
+      "target": "src_article_extractor_fetcharticle"
     },
     {
       "relation": "contains",
@@ -34764,9 +34753,9 @@
       "source_location": "L100",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft",
-      "target": "src_draft_completedraft",
-      "confidence_score": 1.0
+      "target": "src_draft_completedraft"
     },
     {
       "relation": "contains",
@@ -34775,9 +34764,9 @@
       "source_location": "L95",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft",
-      "target": "src_draft_editorialenrichmentstate",
-      "confidence_score": 1.0
+      "target": "src_draft_editorialenrichmentstate"
     },
     {
       "relation": "contains",
@@ -34786,9 +34775,9 @@
       "source_location": "L195",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft",
-      "target": "src_draft_generatedraft",
-      "confidence_score": 1.0
+      "target": "src_draft_generatedraft"
     },
     {
       "relation": "contains",
@@ -34797,9 +34786,9 @@
       "source_location": "L84",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft",
-      "target": "src_draft_prosemetrics",
-      "confidence_score": 1.0
+      "target": "src_draft_prosemetrics"
     },
     {
       "relation": "contains",
@@ -34808,9 +34797,9 @@
       "source_location": "L72",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft",
-      "target": "src_draft_source_headings",
-      "confidence_score": 1.0
+      "target": "src_draft_source_headings"
     },
     {
       "relation": "contains",
@@ -34819,9 +34808,9 @@
       "source_location": "L78",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft",
-      "target": "src_draft_unverified_prefixes",
-      "confidence_score": 1.0
+      "target": "src_draft_unverified_prefixes"
     },
     {
       "relation": "contains",
@@ -34830,9 +34819,9 @@
       "source_location": "L135",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft",
-      "target": "src_draft_validategroundeddraft",
-      "confidence_score": 1.0
+      "target": "src_draft_validategroundeddraft"
     },
     {
       "relation": "imports_from",
@@ -34842,9 +34831,9 @@
       "source_location": "L2",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_draft",
-      "confidence_score": 1.0
+      "target": "src_draft"
     },
     {
       "relation": "calls",
@@ -34854,9 +34843,9 @@
       "source_location": "L180",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft_validategroundeddraft",
-      "target": "src_draft_prosemetrics",
-      "confidence_score": 1.0
+      "target": "src_draft_prosemetrics"
     },
     {
       "relation": "calls",
@@ -34866,9 +34855,9 @@
       "source_location": "L345",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft_generatedraft",
-      "target": "src_draft_editorialenrichmentstate",
-      "confidence_score": 1.0
+      "target": "src_draft_editorialenrichmentstate"
     },
     {
       "relation": "calls",
@@ -34878,9 +34867,9 @@
       "source_location": "L336",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft_generatedraft",
-      "target": "src_draft_completedraft",
-      "confidence_score": 1.0
+      "target": "src_draft_completedraft"
     },
     {
       "relation": "calls",
@@ -34890,9 +34879,9 @@
       "source_location": "L323",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_draft_generatedraft",
-      "target": "src_draft_validategroundeddraft",
-      "confidence_score": 1.0
+      "target": "src_draft_validategroundeddraft"
     },
     {
       "relation": "imports",
@@ -34902,9 +34891,9 @@
       "source_location": "L2",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_draft_generatedraft",
-      "confidence_score": 1.0
+      "target": "src_draft_generatedraft"
     },
     {
       "relation": "calls",
@@ -34925,9 +34914,9 @@
       "source_location": "L75",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_pipeline_builddraftevidence",
-      "confidence_score": 1.0
+      "target": "src_pipeline_builddraftevidence"
     },
     {
       "relation": "contains",
@@ -34936,9 +34925,9 @@
       "source_location": "L12",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_pipeline_featurestate",
-      "confidence_score": 1.0
+      "target": "src_pipeline_featurestate"
     },
     {
       "relation": "contains",
@@ -34947,9 +34936,9 @@
       "source_location": "L26",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_pipeline_loadarticletagging",
-      "confidence_score": 1.0
+      "target": "src_pipeline_loadarticletagging"
     },
     {
       "relation": "contains",
@@ -34958,9 +34947,9 @@
       "source_location": "L56",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_pipeline_loadeditorialenrichment",
-      "confidence_score": 1.0
+      "target": "src_pipeline_loadeditorialenrichment"
     },
     {
       "relation": "contains",
@@ -34969,9 +34958,9 @@
       "source_location": "L18",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_pipeline_loadnewsfeatureflags",
-      "confidence_score": 1.0
+      "target": "src_pipeline_loadnewsfeatureflags"
     },
     {
       "relation": "contains",
@@ -34980,9 +34969,9 @@
       "source_location": "L172",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_pipeline_runpipeline",
-      "confidence_score": 1.0
+      "target": "src_pipeline_runpipeline"
     },
     {
       "relation": "contains",
@@ -34991,9 +34980,9 @@
       "source_location": "L114",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_pipeline_startpipelineleaseheartbeat",
-      "confidence_score": 1.0
+      "target": "src_pipeline_startpipelineleaseheartbeat"
     },
     {
       "relation": "imports_from",
@@ -35003,9 +34992,9 @@
       "source_location": "L7",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_research",
-      "confidence_score": 1.0
+      "target": "src_research"
     },
     {
       "relation": "imports",
@@ -35015,9 +35004,9 @@
       "source_location": "L7",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline",
-      "target": "src_research_runresearch",
-      "confidence_score": 1.0
+      "target": "src_research_runresearch"
     },
     {
       "relation": "calls",
@@ -35027,9 +35016,9 @@
       "source_location": "L37",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline_loadarticletagging",
-      "target": "src_pipeline_featurestate",
-      "confidence_score": 1.0
+      "target": "src_pipeline_featurestate"
     },
     {
       "relation": "calls",
@@ -35039,9 +35028,9 @@
       "source_location": "L67",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline_loadeditorialenrichment",
-      "target": "src_pipeline_featurestate",
-      "confidence_score": 1.0
+      "target": "src_pipeline_featurestate"
     },
     {
       "relation": "calls",
@@ -35051,9 +35040,9 @@
       "source_location": "L36",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline_loadarticletagging",
-      "target": "src_pipeline_loadnewsfeatureflags",
-      "confidence_score": 1.0
+      "target": "src_pipeline_loadnewsfeatureflags"
     },
     {
       "relation": "calls",
@@ -35063,9 +35052,9 @@
       "source_location": "L65",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline_loadeditorialenrichment",
-      "target": "src_pipeline_loadnewsfeatureflags",
-      "confidence_score": 1.0
+      "target": "src_pipeline_loadnewsfeatureflags"
     },
     {
       "relation": "calls",
@@ -35075,9 +35064,9 @@
       "source_location": "L214",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline_runpipeline",
-      "target": "src_pipeline_loadnewsfeatureflags",
-      "confidence_score": 1.0
+      "target": "src_pipeline_loadnewsfeatureflags"
     },
     {
       "relation": "calls",
@@ -35087,9 +35076,9 @@
       "source_location": "L218",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline_runpipeline",
-      "target": "src_pipeline_loadarticletagging",
-      "confidence_score": 1.0
+      "target": "src_pipeline_loadarticletagging"
     },
     {
       "relation": "calls",
@@ -35099,9 +35088,9 @@
       "source_location": "L223",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline_runpipeline",
-      "target": "src_pipeline_loadeditorialenrichment",
-      "confidence_score": 1.0
+      "target": "src_pipeline_loadeditorialenrichment"
     },
     {
       "relation": "calls",
@@ -35111,9 +35100,9 @@
       "source_location": "L247",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline_runpipeline",
-      "target": "src_pipeline_builddraftevidence",
-      "confidence_score": 1.0
+      "target": "src_pipeline_builddraftevidence"
     },
     {
       "relation": "calls",
@@ -35123,9 +35112,9 @@
       "source_location": "L203",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_pipeline_runpipeline",
-      "target": "src_pipeline_startpipelineleaseheartbeat",
-      "confidence_score": 1.0
+      "target": "src_pipeline_startpipelineleaseheartbeat"
     },
     {
       "relation": "calls",
@@ -35146,9 +35135,9 @@
       "source_location": "L44",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_keywordscore",
-      "confidence_score": 1.0
+      "target": "src_research_keywordscore"
     },
     {
       "relation": "contains",
@@ -35157,9 +35146,9 @@
       "source_location": "L134",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_mapsettledwithconcurrency",
-      "confidence_score": 1.0
+      "target": "src_research_mapsettledwithconcurrency"
     },
     {
       "relation": "contains",
@@ -35168,9 +35157,9 @@
       "source_location": "L161",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_matchprimarysource",
-      "confidence_score": 1.0
+      "target": "src_research_matchprimarysource"
     },
     {
       "relation": "contains",
@@ -35179,9 +35168,9 @@
       "source_location": "L124",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_newestfeedentries",
-      "confidence_score": 1.0
+      "target": "src_research_newestfeedentries"
     },
     {
       "relation": "contains",
@@ -35190,9 +35179,9 @@
       "source_location": "L37",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_noresearchcandidateserror",
-      "confidence_score": 1.0
+      "target": "src_research_noresearchcandidateserror"
     },
     {
       "relation": "contains",
@@ -35201,9 +35190,9 @@
       "source_location": "L206",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_rankcandidates",
-      "confidence_score": 1.0
+      "target": "src_research_rankcandidates"
     },
     {
       "relation": "contains",
@@ -35212,9 +35201,9 @@
       "source_location": "L241",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_runresearch",
-      "confidence_score": 1.0
+      "target": "src_research_runresearch"
     },
     {
       "relation": "contains",
@@ -35223,9 +35212,9 @@
       "source_location": "L172",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_scorecandidate",
-      "confidence_score": 1.0
+      "target": "src_research_scorecandidate"
     },
     {
       "relation": "contains",
@@ -35234,9 +35223,9 @@
       "source_location": "L57",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_sourcehostname",
-      "confidence_score": 1.0
+      "target": "src_research_sourcehostname"
     },
     {
       "relation": "contains",
@@ -35245,9 +35234,9 @@
       "source_location": "L84",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_sourcematchessettings",
-      "confidence_score": 1.0
+      "target": "src_research_sourcematchessettings"
     },
     {
       "relation": "contains",
@@ -35256,9 +35245,9 @@
       "source_location": "L116",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_sourceuseshost",
-      "confidence_score": 1.0
+      "target": "src_research_sourceuseshost"
     },
     {
       "relation": "contains",
@@ -35267,9 +35256,9 @@
       "source_location": "L70",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research",
-      "target": "src_research_websourceforurl",
-      "confidence_score": 1.0
+      "target": "src_research_websourceforurl"
     },
     {
       "relation": "method",
@@ -35278,9 +35267,9 @@
       "source_location": "L38",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_noresearchcandidateserror",
-      "target": "src_research_noresearchcandidateserror_constructor",
-      "confidence_score": 1.0
+      "target": "src_research_noresearchcandidateserror_constructor"
     },
     {
       "relation": "calls",
@@ -35290,9 +35279,9 @@
       "source_location": "L200",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_scorecandidate",
-      "target": "src_research_keywordscore",
-      "confidence_score": 1.0
+      "target": "src_research_keywordscore"
     },
     {
       "relation": "calls",
@@ -35302,9 +35291,9 @@
       "source_location": "L164",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_matchprimarysource",
-      "target": "src_research_sourcehostname",
-      "confidence_score": 1.0
+      "target": "src_research_sourcehostname"
     },
     {
       "relation": "calls",
@@ -35314,9 +35303,9 @@
       "source_location": "L478",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_runresearch",
-      "target": "src_research_websourceforurl",
-      "confidence_score": 1.0
+      "target": "src_research_websourceforurl"
     },
     {
       "relation": "calls",
@@ -35326,9 +35315,9 @@
       "source_location": "L387",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_runresearch",
-      "target": "src_research_sourcematchessettings",
-      "confidence_score": 1.0
+      "target": "src_research_sourcematchessettings"
     },
     {
       "relation": "calls",
@@ -35338,9 +35327,9 @@
       "source_location": "L404",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_runresearch",
-      "target": "src_research_sourceuseshost",
-      "confidence_score": 1.0
+      "target": "src_research_sourceuseshost"
     },
     {
       "relation": "calls",
@@ -35350,9 +35339,9 @@
       "source_location": "L425",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_runresearch",
-      "target": "src_research_newestfeedentries",
-      "confidence_score": 1.0
+      "target": "src_research_newestfeedentries"
     },
     {
       "relation": "calls",
@@ -35362,9 +35351,9 @@
       "source_location": "L416",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_runresearch",
-      "target": "src_research_mapsettledwithconcurrency",
-      "confidence_score": 1.0
+      "target": "src_research_mapsettledwithconcurrency"
     },
     {
       "relation": "calls",
@@ -35374,9 +35363,9 @@
       "source_location": "L444",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_runresearch",
-      "target": "src_research_matchprimarysource",
-      "confidence_score": 1.0
+      "target": "src_research_matchprimarysource"
     },
     {
       "relation": "calls",
@@ -35386,9 +35375,9 @@
       "source_location": "L225",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_rankcandidates",
-      "target": "src_research_scorecandidate",
-      "confidence_score": 1.0
+      "target": "src_research_scorecandidate"
     },
     {
       "relation": "calls",
@@ -35398,9 +35387,9 @@
       "source_location": "L568",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "src_research_runresearch",
-      "target": "src_research_rankcandidates",
-      "confidence_score": 1.0
+      "target": "src_research_rankcandidates"
     },
     {
       "relation": "contains",
@@ -35409,9 +35398,9 @@
       "source_location": "L90",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_article_extractor_test",
-      "target": "test_article_extractor_test_text",
-      "confidence_score": 1.0
+      "target": "test_article_extractor_test_text"
     },
     {
       "relation": "contains",
@@ -35420,9 +35409,9 @@
       "source_location": "L27",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_deploy_script_rollback_test",
-      "target": "test_deploy_script_rollback_test_completeenvironment",
-      "confidence_score": 1.0
+      "target": "test_deploy_script_rollback_test_completeenvironment"
     },
     {
       "relation": "contains",
@@ -35431,9 +35420,9 @@
       "source_location": "L8",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_deploy_script_rollback_test",
-      "target": "test_deploy_script_rollback_test_legacyenvironment",
-      "confidence_score": 1.0
+      "target": "test_deploy_script_rollback_test_legacyenvironment"
     },
     {
       "relation": "contains",
@@ -35442,8 +35431,19 @@
       "source_location": "L58",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_deploy_script_rollback_test",
-      "target": "test_deploy_script_rollback_test_rundeployment",
+      "target": "test_deploy_script_rollback_test_rundeployment"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "ops/validate-production-env.sh",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "ops_validate_production_env",
+      "target": "ops_validate_production_env_sh__entry",
       "confidence_score": 1.0
     },
     {
@@ -35461,7 +35461,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "test/production-env-validator.test.js",
-      "source_location": "L39",
+      "source_location": "L41",
       "weight": 1.0,
       "_origin": "ast",
       "source": "test_production_env_validator_test",
@@ -35494,7 +35494,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "test/sops-production-env.test.js",
-      "source_location": "L30",
+      "source_location": "L32",
       "weight": 1.0,
       "_origin": "ast",
       "source": "test_sops_production_env_test",
@@ -35514,5 +35514,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "bf67fadfd1d75fac33ea6f2b04d20b814198e06e"
+  "built_at_commit": "7babdce1d6c5b4f6c90d75ce99b91857ca303aab"
 }
