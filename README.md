@@ -316,6 +316,23 @@ sequence on every merge to `main`:
    the new container remains stable;
 5. restore the previous bot image if the new container does not stay running.
 
+Production runtime configuration is committed only as the SOPS-encrypted
+`secrets/production.env.sops` file. The private `age` key is stored outside Git
+and in the protected GitHub `production` environment. Edit and validate the
+encrypted file without creating persistent plaintext:
+
+```bash
+brew install sops age
+npm run secrets:edit:production
+npm run secrets:validate:production
+```
+
+Commit the encrypted file through a normal pull request. After merge, GitHub
+Actions decrypts it in runner-temporary storage, appends the separately stored
+OpenAI and Exa keys, validates the assembled environment, and deploys it to
+Oracle. See [`docs/oracle-deployment.md`](docs/oracle-deployment.md) for key
+backup, explicit decrypt/re-encrypt commands, rollback, and the full lifecycle.
+
 Server bootstrap and GitHub configuration are documented in
 [`docs/oracle-deployment.md`](docs/oracle-deployment.md). Do not open a public
 port for PostgreSQL or the polling bot.

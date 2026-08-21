@@ -57,18 +57,43 @@ Secrets:
 
 - `ORACLE_SSH_PRIVATE_KEY`: a dedicated private deployment key.
 - `ORACLE_KNOWN_HOSTS`: the verified SSH host-key line for Oracle.
-- `PRODUCTION_ENV_FILE`: the complete runtime environment file described below.
+- `SOPS_AGE_KEY`: the complete private `age` identity used only by the deploy
+  job to decrypt `secrets/production.env.sops`.
 - `OPENAI_API_KEY`: store this as an environment secret in the GitHub
   `production` environment. Only the deploy job can read it.
 - `EXA_API_KEY`: optional Exa credential. Store it as an environment secret in
-  the GitHub `production` environment; never include it in the multiline file.
+  the GitHub `production` environment; never include it in the encrypted base
+  file while the provider-key boundary remains separate.
+
+`PRODUCTION_ENV_FILE` is retained temporarily as rollback-only evidence from the
+pre-SOPS deployment. The current workflow does not read it. Delete it only in a
+separate authorized cleanup after the SOPS-backed deployment and rollback path
+have been proven.
 
 Use a dedicated deployment key rather than a personal interactive SSH key. Add
 only its public half to the Oracle user's `~/.ssh/authorized_keys`.
 
-## Production environment file
+## SOPS production environment
 
-Store this complete file as the multiline `PRODUCTION_ENV_FILE` GitHub secret:
+The repository contains `secrets/production.env.sops`. Its variable names and
+SOPS metadata are visible, but every production value is authenticated and
+encrypted for this public `age` recipient:
+
+```text
+age1hu8sepn3kau25tzy98nwlny9yr267k4xpnjlxhf9ek4lwlqpeumqlk5jkr
+```
+
+The matching private identity is not committed. The primary local copy is:
+
+```text
+~/.config/sops/age/telegram-news-agent-production.txt
+```
+
+Store a second copy in a password manager or encrypted offline backup. Without
+that private identity, a new machine cannot decrypt or rotate the production
+configuration. The public recipient in `.sops.yaml` is not a recovery key.
+
+The decrypted base has this shape:
 
 ```dotenv
 POSTGRES_PASSWORD=<random-hex-value>
@@ -78,9 +103,10 @@ TELEGRAM_BOT_TOKEN=<secret>
 TELEGRAM_CHANNEL_ID=<channel-id-or-handle>
 TELEGRAM_UPDATE_MODE=polling
 TELEGRAM_POLLING_MIGRATE_WEBHOOK=false
+TELEGRAM_NEWS_JOB_MODE=off
 APPROVAL_POLICY=manual
-AI_PROVIDER_ORDER=openai,gemini
-EXA_ENABLED=false
+AI_PROVIDER_ORDER=exa,openai,gemini
+EXA_ENABLED=true
 EXA_SEARCH_TYPE=auto
 EXA_MODEL=
 EXA_DAILY_SEARCH_CAP=20
@@ -96,15 +122,92 @@ NOTION_PIPELINE_TICKET_PAGE_ID=
 ```
 
 The deploy job appends separately stored `OPENAI_API_KEY` and, when present,
-`EXA_API_KEY` environment secrets immediately before uploading the deployment
-bundle. To enable Exa later, set `EXA_ENABLED=true` and
-`AI_PROVIDER_ORDER=exa,openai,gemini` in `PRODUCTION_ENV_FILE`. Keep provider
-keys only in GitHub secrets, never in the repository.
+`EXA_API_KEY` environment secrets immediately before validation and upload.
+Provider keys are therefore absent even from the encrypted base file.
 
 Generate both database passwords independently. Hex values avoid URL-encoding
 ambiguity in the internal PostgreSQL connection string. `DATABASE_URL` is not
 needed here because Compose supplies the private `db:5432` connection directly
 to the bot and migration containers.
+
+## Local edit, commit, and deployment flow
+
+Install the tools once:
+
+```bash
+brew install sops age
+```
+
+The recommended edit path never leaves a named plaintext file in the project:
+
+```bash
+npm run secrets:edit:production
+npm run secrets:validate:production
+git diff -- secrets/production.env.sops
+```
+
+SOPS opens decrypted dotenv content in `$EDITOR`, verifies its MAC, and
+re-encrypts the file when the editor closes. Commit only
+`secrets/production.env.sops` and related reviewed code or documentation. Open a
+normal pull request; PR CI checks that required values remain encrypted but does
+not receive the production private key.
+
+If a separate plaintext file is explicitly needed for bulk editing:
+
+```bash
+npm run secrets:decrypt:production -- .env.production.local
+# edit .env.production.local
+npm run secrets:encrypt:production -- .env.production.local
+npm run secrets:validate:production
+rm .env.production.local
+```
+
+`.env.production.local` is ignored by Git and created with mode `0600`, but it
+still contains real credentials. Delete it immediately after re-encryption.
+
+On a new workstation, restore the private identity from the password manager to
+the path above, set mode `0600`, and validate:
+
+```bash
+chmod 600 ~/.config/sops/age/telegram-news-agent-production.txt
+npm run secrets:validate:production
+```
+
+To restore the GitHub copy of the same identity:
+
+```bash
+gh secret set SOPS_AGE_KEY \
+  --repo ferbert-dev/telegram-news-agent \
+  --env production \
+  < ~/.config/sops/age/telegram-news-agent-production.txt
+```
+
+After a reviewed PR merges to `main`, GitHub Actions downloads the pinned SOPS
+binary and verifies its SHA-256, writes `SOPS_AGE_KEY` to a runner-temporary
+mode-`0600` file, decrypts the committed base, appends the provider keys,
+validates the complete environment, and only then uploads the deployment bundle
+to Oracle. A decryption or validation failure happens before upload, leaving the
+current Oracle environment and bot untouched. Runner plaintext is removed in an
+`always()` cleanup step; GitHub-hosted runners are also ephemeral.
+
+The bundle contains `.env.production.incoming`, not the active environment. Oracle
+removes the mode-`0600` plaintext archive through a remote `EXIT` trap even if
+extraction fails. The deploy script validates both environments and compares
+their SHA-256 digests without logging them. If they match, it removes the
+incoming file and does not rewrite the active environment. If they differ, it
+saves the active file as `.env.production.rollback` and atomically promotes the
+incoming file.
+If migration or bot health fails, rollback restores the previous environment,
+recreates PostgreSQL with that environment, reapplies the previous application
+role password, and force-recreates the previous immutable bot image. The Docker
+volume is never removed.
+
+For the first SOPS migration, the incoming file is checked against the strict
+new contract while the already-running legacy environment is accepted through a
+smaller backward-compatible rollback contract. The rollback backup is written
+through a temporary mode-`0600` file and atomic rename before promotion. A
+promotion flag prevents an older backup from being restored if backup creation
+or candidate activation fails before the active environment changes.
 
 ## Normal deployment and verification
 
