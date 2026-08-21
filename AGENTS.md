@@ -52,6 +52,44 @@ Prefer tickets that one agent can complete in one or two focused days. One imple
 - The Orchestrator owns integration, status transitions, Notion writes, and final authority checks.
 - Finalize every Agent Run with status, timestamps, duration, result, evidence links, and error/blocker details. If Notion is unavailable, use the fallback payload format in `agents/runs/README.md` and backfill before `Done`.
 
+### Cost-aware model routing
+
+- Keep the primary Orchestrator on `gpt-5.6-sol` with `high` reasoning for requirements, decomposition, integration, and final decisions.
+- Use `gpt-5.3-codex-spark` with `medium` reasoning by default for bounded code exploration, implementation, and targeted QA.
+- Use `gpt-5.6-luna` with `medium` reasoning for narrow research, inventory, repetitive processing, and grounded documentation work.
+- Use `gpt-5.6-terra` with `high` reasoning for ordinary independent closure review and complex but non-critical integration analysis.
+- Reserve `gpt-5.6-sol` with `high` reasoning for architecture, security, data-loss, PostgreSQL atomicity, production operations, and exact-head release gates.
+- Work in one vertical scope with at most two concurrent, disjoint subagents. Do not create an idle agent pool or delegate a small sequential task when coordination would cost more than direct execution.
+- Record the selected model, reasoning effort, and cost/quality rationale in every delegated handoff and Agent Run. Never silently substitute an unavailable model. When Spark alone is unavailable or outside its documented ticket budget, the Orchestrator may explicitly select the registered Terra `integration_builder` after recording the failure and confirming that scope, risk, and authority remain bounded; otherwise stop and escalate.
+- Record runtime model evidence from the launcher or spawn request. Never ask a subagent to infer or self-report its model from `.codex/config.toml` or role documentation.
+- Every Spark handoff includes a file/tool/output budget. Defaults are 6 files, 8 tool calls, and 500 words for exploration; 8 files, 12 tool calls, and 700 words for implementation or QA. A worker returns `NEEDS_NARROWING` before exceeding the budget.
+- Spark agents use targeted searches, ranges, and concise failure excerpts. They must not dump complete large files, broad repository listings, full diffs, or full logs when narrower evidence is sufficient.
+- Custom role profiles live in `.codex/agents/`; `.codex/config.toml` defines project defaults. Explicit spawn overrides are allowed only when the handoff explains why the default is insufficient.
+
+### Automatic orchestration decision
+
+After the start-of-task gate, the Orchestrator decides automatically whether to work directly or delegate; the user does not need to request subagents for each ticket. Keep the complete user, ticket, risk, and integration context in the Sol primary thread. Give each worker only the minimum bounded context it needs and integrate its distilled result back into the primary thread.
+
+Make the routing decision before loading a specialist skill, querying Graphify, or reading repository files. For a delegated code-mapping task, Sol passes the question and audit IDs to `code_explorer`; the worker owns Graphify and source inspection. Sol must not duplicate that exploration or load the full Graphify skill before spawn.
+
+Use this routing order:
+
+1. Work directly in Sol when the task is trivial, tightly sequential, immediately blocks the next decision, or requires the Orchestrator's full cross-ticket context.
+2. Spawn `code_explorer` for bounded read-only code mapping, `builder` for a clear routine implementation, or `qa` for targeted verification. These Spark roles are the first choice while the active host exposes Spark and quota is available.
+3. Spawn `researcher` or `documentation` for narrow evidence or grounded documentation work that fits Luna.
+4. Spawn `reviewer` for ordinary independent review. Spawn `integration_builder` only when Spark is unavailable or the implementation is too cross-file for the documented Spark budget but does not cross a Sol risk boundary.
+5. Keep architecture, security, data-loss, PostgreSQL atomicity, production operations, and exact-head release gates on Sol through `critical_reviewer` or `ops`.
+
+Automatic delegation is limited to the user-authorized ticket and branch-local scope. It never grants authority to merge, deploy, rotate secrets, change production settings, expose networks, delete data, or make another external write. If Spark quota or availability fails, record the failure and either explicitly select the bounded Terra `integration_builder` fallback or stop and escalate; never silently reroute the task. Use at most two concurrent, disjoint workers and never create an idle pool.
+
+#### Automatic audit handoff
+
+- When the Orchestrator decides to delegate a bounded subtask, create the delegated Agent Run immediately before spawn and pass both the ticket ID and Agent Run ID in the worker handoff. This audit write is allowed within the already user-authorized ticket; it grants no additional product or release authority.
+- Reuse a host-created delegated Agent Run instead of creating a duplicate. Record the actual model and reasoning effort from launcher or spawn metadata, never from worker self-report.
+- If Notion is unavailable, use the fallback payload in `agents/runs/README.md` only when the current write scope permits it. A read-only standalone run without a pre-created Agent Run ID returns `DELEGATION_BLOCKED_AUDIT` instead of absorbing delegated exploration into Sol, unless the task independently qualifies for the small direct-work path.
+- Creating the audit record and passing its ID are part of automatic orchestration and do not require a second user request after the ticket and task are authorized.
+- When a worker returns `NEEDS_NARROWING`, integrate that result directly. Do not let Sol continue the same exploration unless the user authorizes a narrower follow-up.
+
 Role contracts and escalation boundaries are in `agents/roles.md` and the Notion Agent Registry.
 
 ## Closure review and retrospective
@@ -105,6 +143,12 @@ This project has a persistent code-only knowledge graph in `graphify-out/`. It i
 - Re-evaluate Graphify at Epic closure. Remove it in a reviewed change if measured navigation value no longer justifies repository churn or maintenance time.
 
 The project-scoped skill is at `.codex/skills/graphify/SKILL.md`; `.codex/hooks.json` runs the lightweight pre-tool freshness check.
+
+## README synchronization
+
+- Update `README.md` in the same change when verified work materially changes project capabilities, architecture, setup, operation, deployment, safety boundaries, or the contributor/agent workflow.
+- Keep README statements concise and current. Link detailed runbooks or specifications instead of duplicating them, and clearly separate shipped behavior from plans or assumptions.
+- Do not create README churn for internal refactors with no externally relevant effect. The Orchestrator records the README decision in the ticket or PR, and the closure reviewer checks it.
 
 ## Documentation links
 
