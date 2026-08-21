@@ -72,6 +72,9 @@ test("deployment consumes SOPS and no longer reads the multiline environment sec
   assert.match(workflow, /chmod 600 deployment\.tar\.gz/);
   assert.match(workflow, /trap 'rm -f "\$archive"' EXIT/);
   assert.match(workflow, /verify-production-db:/);
+  assert.match(workflow, /inspect-production:/);
+  assert.match(workflow, /RuntimeEnv/);
+  assert.match(workflow, /TelegramProbe/);
   assert.match(workflow, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /PostgreSQL superuser credential verified/);
   assert.match(workflow, /PostgreSQL application credential verified/);

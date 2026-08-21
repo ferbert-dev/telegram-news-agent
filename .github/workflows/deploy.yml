@@ -12,8 +12,9 @@ on:
         required: true
         default: verify-production-db
         type: choice
-        options:
-          - verify-production-db
+          options:
+            - verify-production-db
+            - inspect-production
 
 concurrency:
   group: production-${{ github.ref }}
@@ -223,6 +224,100 @@ jobs:
       - name: Remove credential probe plaintext
         if: always()
         run: rm -rf "$RUNNER_TEMP/production.env" "$RUNNER_TEMP/sops"
+
+  inspect-production:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect-production'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure SSH
+        env:
+          ORACLE_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+          ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$ORACLE_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Inspect production bot without changing it
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/telegram-news-agent
+
+          container_id="$(docker compose ps -q bot)"
+          if [[ -z "$container_id" ]]; then
+            echo "Production bot container is missing."
+            exit 1
+          fi
+
+          docker inspect --format \
+            'BotState status={{.State.Status}} running={{.State.Running}} restart_count={{.RestartCount}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} started_at={{.State.StartedAt}}' \
+            "$container_id"
+
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" |
+            awk -F= '
+              BEGIN {
+                split("DATABASE_URL TELEGRAM_BOT_TOKEN TELEGRAM_CHANNEL_ID OPENAI_API_KEY GEMINI_API_KEY EXA_API_KEY NOTION_API_KEY NOTION_AGENT_RUNS_DATA_SOURCE_ID NOTION_PIPELINE_AGENT_PAGE_ID", required, " ")
+                for (index in required) state[required[index]] = "missing"
+              }
+              {
+                key = $1
+                if (!(key in state)) next
+                value = substr($0, length(key) + 2)
+                normalized = tolower(value)
+                if (value == "") state[key] = "empty"
+                else if (normalized ~ /placeholder|change-me|changeme|local-integration/) state[key] = "placeholder"
+                else state[key] = "present"
+              }
+              END {
+                for (index in required) print "RuntimeEnv " required[index] "=" state[required[index]]
+              }
+            ' | sort
+
+          docker compose exec -T bot node --input-type=module <<'NODE'
+          const token = process.env.TELEGRAM_BOT_TOKEN;
+          const channelId = process.env.TELEGRAM_CHANNEL_ID;
+
+          async function telegram(method, body) {
+            if (!token) return { ok: false, description: 'token missing' };
+            const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+              method: body ? 'POST' : 'GET',
+              headers: body ? { 'content-type': 'application/json' } : undefined,
+              body: body ? JSON.stringify(body) : undefined,
+            });
+            return response.json();
+          }
+
+          try {
+            const me = await telegram('getMe');
+            console.log(`TelegramProbe getMe_ok=${Boolean(me.ok)} username=${me.ok ? me.result.username : 'unavailable'}`);
+
+            const webhook = await telegram('getWebhookInfo');
+            console.log(`TelegramProbe webhook_ok=${Boolean(webhook.ok)} webhook_configured=${Boolean(webhook.ok && webhook.result.url)} pending_updates=${webhook.ok ? webhook.result.pending_update_count : 'unavailable'} last_error_present=${Boolean(webhook.ok && webhook.result.last_error_message)}`);
+
+            const chat = channelId ? await telegram('getChat', { chat_id: channelId }) : { ok: false };
+            console.log(`TelegramProbe channel_ok=${Boolean(chat.ok)} channel_type=${chat.ok ? chat.result.type : 'unavailable'}`);
+          } catch (error) {
+            console.log(`TelegramProbe network_ok=false error_type=${error?.name || 'Error'}`);
+            process.exitCode = 1;
+          }
+          NODE
+
+          echo "BotLogSummary"
+          docker compose logs --no-color --tail=300 bot 2>&1 |
+            sed -E \
+              -e 's#[0-9]{8,}:[A-Za-z0-9_-]{20,}#[REDACTED_TELEGRAM_TOKEN]#g' \
+              -e 's#(sk|exa)[-_][A-Za-z0-9_-]{16,}#[REDACTED_API_KEY]#g' \
+              -e 's#postgres(ql)?://[^/@:]+:[^/@]+@#postgresql://[REDACTED]@#g' |
+            grep -Ei 'error|failed|fatal|warn|poll|telegram|unauthorized|forbidden|conflict|invalid|started|ready|scheduler' |
+            tail -n 120 || true
+          REMOTE
 
   package:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

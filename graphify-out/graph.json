@@ -12092,9 +12092,9 @@
         "kind": "file"
       },
       "_origin": "ast",
-      "id": "ops_validate_production_env",
       "community": 51,
-      "norm_label": "validate-production-env.sh"
+      "norm_label": "validate-production-env.sh",
+      "id": "ops_validate_production_env"
     },
     {
       "label": "validate-production-env.sh script",
@@ -12106,9 +12106,9 @@
         "kind": "bash_entrypoint"
       },
       "_origin": "ast",
-      "id": "ops_validate_production_env_sh__entry",
       "community": 51,
-      "norm_label": "validate-production-env.sh script"
+      "norm_label": "validate-production-env.sh script",
+      "id": "ops_validate_production_env_sh__entry"
     },
     {
       "label": "production-env-validator.test.js",
@@ -12116,9 +12116,9 @@
       "source_file": "test/production-env-validator.test.js",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "test_production_env_validator_test",
       "community": 42,
-      "norm_label": "production-env-validator.test.js"
+      "norm_label": "production-env-validator.test.js",
+      "id": "test_production_env_validator_test"
     },
     {
       "label": "root",
@@ -12126,9 +12126,9 @@
       "source_file": "test/production-env-validator.test.js",
       "source_location": "L8",
       "_origin": "ast",
-      "id": "test_production_env_validator_test_root",
       "community": 42,
-      "norm_label": "root"
+      "norm_label": "root",
+      "id": "test_production_env_validator_test_root"
     },
     {
       "label": "validator",
@@ -12136,9 +12136,9 @@
       "source_file": "test/production-env-validator.test.js",
       "source_location": "L9",
       "_origin": "ast",
-      "id": "test_production_env_validator_test_validator",
       "community": 42,
-      "norm_label": "validator"
+      "norm_label": "validator",
+      "id": "test_production_env_validator_test_validator"
     },
     {
       "label": "baseLines()",
@@ -12146,9 +12146,9 @@
       "source_file": "test/production-env-validator.test.js",
       "source_location": "L11",
       "_origin": "ast",
-      "id": "test_production_env_validator_test_baselines",
       "community": 42,
-      "norm_label": "baselines()"
+      "norm_label": "baselines()",
+      "id": "test_production_env_validator_test_baselines"
     },
     {
       "label": "fixture()",
@@ -12156,9 +12156,9 @@
       "source_file": "test/production-env-validator.test.js",
       "source_location": "L41",
       "_origin": "ast",
-      "id": "test_production_env_validator_test_fixture",
       "community": 42,
-      "norm_label": "fixture()"
+      "norm_label": "fixture()",
+      "id": "test_production_env_validator_test_fixture"
     },
     {
       "label": "sops-production-env.test.js",
@@ -35442,9 +35442,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_validate_production_env",
-      "target": "ops_validate_production_env_sh__entry",
-      "confidence_score": 1.0
+      "target": "ops_validate_production_env_sh__entry"
     },
     {
       "relation": "contains",
@@ -35453,9 +35453,9 @@
       "source_location": "L11",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_production_env_validator_test",
-      "target": "test_production_env_validator_test_baselines",
-      "confidence_score": 1.0
+      "target": "test_production_env_validator_test_baselines"
     },
     {
       "relation": "contains",
@@ -35464,9 +35464,9 @@
       "source_location": "L41",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_production_env_validator_test",
-      "target": "test_production_env_validator_test_fixture",
-      "confidence_score": 1.0
+      "target": "test_production_env_validator_test_fixture"
     },
     {
       "relation": "contains",
@@ -35475,9 +35475,9 @@
       "source_location": "L8",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_production_env_validator_test",
-      "target": "test_production_env_validator_test_root",
-      "confidence_score": 1.0
+      "target": "test_production_env_validator_test_root"
     },
     {
       "relation": "contains",
@@ -35486,9 +35486,9 @@
       "source_location": "L9",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_production_env_validator_test",
-      "target": "test_production_env_validator_test_validator",
-      "confidence_score": 1.0
+      "target": "test_production_env_validator_test_validator"
     },
     {
       "relation": "contains",
@@ -35514,5 +35514,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "7babdce1d6c5b4f6c90d75ce99b91857ca303aab"
+  "built_at_commit": "40a55ad1aae5e643efc5e661ed98d6baf0d48e13"
 }
