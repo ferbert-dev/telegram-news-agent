@@ -2,7 +2,10 @@
 
 <p align="center">
   <a href="docs/assets/graphify-architecture.svg">
-    <img src="docs/assets/graphify-architecture.svg" alt="Clickable Graphify runtime dependency graph of Telegram News Agent" width="1200">
+    <picture>
+      <source srcset="docs/assets/graphify-architecture.svg" type="image/svg+xml">
+      <img src="docs/assets/graphify-architecture.png" alt="Clickable production dependency graph of Telegram News Agent with Exa research" width="1200">
+    </picture>
   </a>
   <br>
   <sub>Click the graph to open the full-size dependency map.</sub>

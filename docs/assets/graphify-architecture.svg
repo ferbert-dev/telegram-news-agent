@@ -34,6 +34,7 @@
       .edge { fill: none; stroke: #72cfd0; stroke-width: 2.5; stroke-opacity: 0.78; marker-end: url(#arrow); }
       .edge-gold { fill: none; stroke: #e9c46a; stroke-width: 2.5; stroke-opacity: 0.82; marker-end: url(#arrowGold); }
       .edge-soft { fill: none; stroke: #6d91a0; stroke-width: 2; stroke-dasharray: 7 7; stroke-opacity: 0.65; marker-end: url(#arrow); }
+      .bus { fill: none; stroke: #4f8192; stroke-width: 2; stroke-opacity: 0.7; }
     </style>
   </defs>
 
@@ -59,6 +60,32 @@
   <text x="690" y="182" class="section">GROUND AND DECIDE</text>
   <text x="1070" y="182" class="section">CONTROL AND PERSIST</text>
   <text x="1370" y="182" class="section">DELIVER</text>
+
+  <!-- Dependency connectors render beneath opaque cards so labels stay clear. -->
+  <g id="dependency-edges">
+    <path d="M290 256 H320" class="bus"/>
+    <path d="M290 372 H320" class="bus"/>
+    <path d="M290 488 H320" class="bus"/>
+    <path d="M320 256 V604 H655 V244 H680" class="edge"/>
+    <path d="M620 246 H680" class="edge-gold"/>
+    <path d="M620 286 H642 V472 H680" class="edge-gold"/>
+    <path d="M620 396 H650 V492 H680" class="edge"/>
+    <path d="M620 512 H680" class="edge"/>
+    <path d="M820 302 V326" class="edge"/>
+    <path d="M820 418 V442" class="edge"/>
+    <path d="M960 256 H1040" class="edge"/>
+    <path d="M960 372 H1000 V406 H1040" class="edge-soft"/>
+    <path d="M960 498 H1000 V536 H1040" class="edge-gold"/>
+    <path d="M1180 322 V350" class="edge-soft"/>
+    <path d="M1180 462 V490" class="edge"/>
+    <path d="M1320 536 H1340 V312 H1360" class="edge-gold"/>
+    <path d="M1320 406 H1340 V466 H1360" class="edge"/>
+    <path d="M320 769 H380" class="edge"/>
+    <path d="M610 769 H670" class="edge"/>
+    <path d="M900 769 H960" class="edge"/>
+    <path d="M1210 769 H1270" class="edge-gold"/>
+    <path d="M1085 722 V640 H1180 V582" class="edge-soft"/>
+  </g>
 
   <g filter="url(#shadow)">
     <rect x="60" y="210" width="230" height="92" rx="16" fill="#11283a" stroke="#407b98"/>
@@ -123,21 +150,6 @@
     <text x="1384" y="499" class="node-copy">release notifications</text>
   </g>
 
-  <path d="M290 256 C430 256 540 256 680 256" class="edge"/>
-  <path d="M290 372 C450 372 520 300 680 275" class="edge"/>
-  <path d="M290 488 C450 488 530 400 680 380" class="edge"/>
-  <path d="M620 266 C650 266 655 266 680 266" class="edge-gold"/>
-  <path d="M620 396 C650 396 655 470 680 480" class="edge"/>
-  <path d="M620 512 C650 512 655 512 680 512" class="edge"/>
-  <path d="M820 302 L820 326" class="edge"/>
-  <path d="M820 418 L820 442" class="edge"/>
-  <path d="M960 256 C995 256 1010 266 1040 266" class="edge"/>
-  <path d="M960 372 C1005 372 1005 406 1040 406" class="edge-soft"/>
-  <path d="M960 498 C1000 498 1005 536 1040 536" class="edge-gold"/>
-  <path d="M1180 322 L1180 350" class="edge-soft"/>
-  <path d="M1180 462 L1180 490" class="edge"/>
-  <path d="M1320 536 C1350 536 1340 312 1360 312" class="edge-gold"/>
-  <path d="M1320 406 C1340 406 1340 466 1360 466" class="edge"/>
 
   <g filter="url(#shadow)">
     <rect x="60" y="650" width="1490" height="220" rx="24" fill="#0d1824" stroke="#28465a"/>
@@ -164,11 +176,6 @@
     <text x="1294" y="783" class="node-copy">Private and same-image safe</text>
   </g>
 
-  <path d="M320 769 L380 769" class="edge"/>
-  <path d="M610 769 L670 769" class="edge"/>
-  <path d="M900 769 L960 769" class="edge"/>
-  <path d="M1210 769 L1270 769" class="edge-gold"/>
-  <path d="M1085 722 C1085 640 1180 640 1180 582" class="edge-soft"/>
 
   <rect x="60" y="910" width="1490" height="52" rx="16" fill="#162735" stroke="#36586c"/>
   <text x="90" y="943" class="small" fill="#84d5ef">MIGRATION LANE</text>
