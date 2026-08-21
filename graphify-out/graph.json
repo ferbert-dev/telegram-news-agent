@@ -12060,9 +12060,9 @@
         "kind": "file"
       },
       "_origin": "ast",
-      "id": "ops_deploy",
       "community": 42,
-      "norm_label": "deploy.sh"
+      "norm_label": "deploy.sh",
+      "id": "ops_deploy"
     },
     {
       "label": "deploy.sh script",
@@ -12074,9 +12074,9 @@
         "kind": "bash_entrypoint"
       },
       "_origin": "ast",
-      "id": "ops_deploy_sh__entry",
       "community": 42,
-      "norm_label": "deploy.sh script"
+      "norm_label": "deploy.sh script",
+      "id": "ops_deploy_sh__entry"
     },
     {
       "label": "wait_for_db_healthy()",
@@ -12088,9 +12088,9 @@
         "kind": "bash_function"
       },
       "_origin": "ast",
-      "id": "ops_deploy_wait_for_db_healthy",
       "community": 42,
-      "norm_label": "wait_for_db_healthy()"
+      "norm_label": "wait_for_db_healthy()",
+      "id": "ops_deploy_wait_for_db_healthy"
     },
     {
       "label": "rollback()",
@@ -12102,9 +12102,9 @@
         "kind": "bash_function"
       },
       "_origin": "ast",
-      "id": "ops_deploy_rollback",
       "community": 42,
-      "norm_label": "rollback()"
+      "norm_label": "rollback()",
+      "id": "ops_deploy_rollback"
     },
     {
       "label": "rollback_on_error()",
@@ -12116,9 +12116,9 @@
         "kind": "bash_function"
       },
       "_origin": "ast",
-      "id": "ops_deploy_rollback_on_error",
       "community": 42,
-      "norm_label": "rollback_on_error()"
+      "norm_label": "rollback_on_error()",
+      "id": "ops_deploy_rollback_on_error"
     },
     {
       "label": "verify-production-runtime.sh",
@@ -12130,9 +12130,9 @@
         "kind": "file"
       },
       "_origin": "ast",
-      "id": "ops_verify_production_runtime",
       "community": 57,
-      "norm_label": "verify-production-runtime.sh"
+      "norm_label": "verify-production-runtime.sh",
+      "id": "ops_verify_production_runtime"
     },
     {
       "label": "verify-production-runtime.sh script",
@@ -12144,9 +12144,9 @@
         "kind": "bash_entrypoint"
       },
       "_origin": "ast",
-      "id": "ops_verify_production_runtime_sh__entry",
       "community": 57,
-      "norm_label": "verify-production-runtime.sh script"
+      "norm_label": "verify-production-runtime.sh script",
+      "id": "ops_verify_production_runtime_sh__entry"
     },
     {
       "label": "deploy-script-rollback.test.js",
@@ -12154,9 +12154,9 @@
       "source_file": "test/deploy-script-rollback.test.js",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "test_deploy_script_rollback_test",
       "community": 52,
-      "norm_label": "deploy-script-rollback.test.js"
+      "norm_label": "deploy-script-rollback.test.js",
+      "id": "test_deploy_script_rollback_test"
     },
     {
       "label": "legacyEnvironment()",
@@ -12164,9 +12164,9 @@
       "source_file": "test/deploy-script-rollback.test.js",
       "source_location": "L8",
       "_origin": "ast",
-      "id": "test_deploy_script_rollback_test_legacyenvironment",
       "community": 52,
-      "norm_label": "legacyenvironment()"
+      "norm_label": "legacyenvironment()",
+      "id": "test_deploy_script_rollback_test_legacyenvironment"
     },
     {
       "label": "completeEnvironment()",
@@ -12174,9 +12174,9 @@
       "source_file": "test/deploy-script-rollback.test.js",
       "source_location": "L27",
       "_origin": "ast",
-      "id": "test_deploy_script_rollback_test_completeenvironment",
       "community": 52,
-      "norm_label": "completeenvironment()"
+      "norm_label": "completeenvironment()",
+      "id": "test_deploy_script_rollback_test_completeenvironment"
     },
     {
       "label": "runDeployment()",
@@ -12184,9 +12184,9 @@
       "source_file": "test/deploy-script-rollback.test.js",
       "source_location": "L58",
       "_origin": "ast",
-      "id": "test_deploy_script_rollback_test_rundeployment",
       "community": 52,
-      "norm_label": "rundeployment()"
+      "norm_label": "rundeployment()",
+      "id": "test_deploy_script_rollback_test_rundeployment"
     },
     {
       "label": "production-runtime-verifier.test.js",
@@ -12194,9 +12194,9 @@
       "source_file": "test/production-runtime-verifier.test.js",
       "source_location": "L1",
       "_origin": "ast",
-      "id": "test_production_runtime_verifier_test",
       "community": 73,
-      "norm_label": "production-runtime-verifier.test.js"
+      "norm_label": "production-runtime-verifier.test.js",
+      "id": "test_production_runtime_verifier_test"
     },
     {
       "label": "runVerifier()",
@@ -12204,9 +12204,9 @@
       "source_file": "test/production-runtime-verifier.test.js",
       "source_location": "L8",
       "_origin": "ast",
-      "id": "test_production_runtime_verifier_test_runverifier",
       "community": 73,
-      "norm_label": "runverifier()"
+      "norm_label": "runverifier()",
+      "id": "test_production_runtime_verifier_test_runverifier"
     },
     {
       "label": "sops-production-env.test.js",
@@ -35432,9 +35432,9 @@
       "source_location": "L69",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy",
-      "target": "ops_deploy_rollback",
-      "confidence_score": 1.0
+      "target": "ops_deploy_rollback"
     },
     {
       "relation": "defines",
@@ -35443,9 +35443,9 @@
       "source_location": "L132",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy",
-      "target": "ops_deploy_rollback_on_error",
-      "confidence_score": 1.0
+      "target": "ops_deploy_rollback_on_error"
     },
     {
       "relation": "contains",
@@ -35454,9 +35454,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy",
-      "target": "ops_deploy_sh__entry",
-      "confidence_score": 1.0
+      "target": "ops_deploy_sh__entry"
     },
     {
       "relation": "defines",
@@ -35465,9 +35465,9 @@
       "source_location": "L48",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy",
-      "target": "ops_deploy_wait_for_db_healthy",
-      "confidence_score": 1.0
+      "target": "ops_deploy_wait_for_db_healthy"
     },
     {
       "relation": "calls",
@@ -35477,9 +35477,9 @@
       "weight": 1.0,
       "context": "call",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy_sh__entry",
-      "target": "ops_deploy_wait_for_db_healthy",
-      "confidence_score": 1.0
+      "target": "ops_deploy_wait_for_db_healthy"
     },
     {
       "relation": "calls",
@@ -35489,9 +35489,9 @@
       "weight": 1.0,
       "context": "call",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy_rollback",
-      "target": "ops_deploy_wait_for_db_healthy",
-      "confidence_score": 1.0
+      "target": "ops_deploy_wait_for_db_healthy"
     },
     {
       "relation": "calls",
@@ -35501,9 +35501,9 @@
       "weight": 1.0,
       "context": "call",
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_deploy_rollback_on_error",
-      "target": "ops_deploy_rollback",
-      "confidence_score": 1.0
+      "target": "ops_deploy_rollback"
     },
     {
       "relation": "contains",
@@ -35512,9 +35512,9 @@
       "source_location": "L1",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "ops_verify_production_runtime",
-      "target": "ops_verify_production_runtime_sh__entry",
-      "confidence_score": 1.0
+      "target": "ops_verify_production_runtime_sh__entry"
     },
     {
       "relation": "contains",
@@ -35523,9 +35523,9 @@
       "source_location": "L27",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_deploy_script_rollback_test",
-      "target": "test_deploy_script_rollback_test_completeenvironment",
-      "confidence_score": 1.0
+      "target": "test_deploy_script_rollback_test_completeenvironment"
     },
     {
       "relation": "contains",
@@ -35534,9 +35534,9 @@
       "source_location": "L8",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_deploy_script_rollback_test",
-      "target": "test_deploy_script_rollback_test_legacyenvironment",
-      "confidence_score": 1.0
+      "target": "test_deploy_script_rollback_test_legacyenvironment"
     },
     {
       "relation": "contains",
@@ -35545,9 +35545,9 @@
       "source_location": "L58",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_deploy_script_rollback_test",
-      "target": "test_deploy_script_rollback_test_rundeployment",
-      "confidence_score": 1.0
+      "target": "test_deploy_script_rollback_test_rundeployment"
     },
     {
       "relation": "contains",
@@ -35556,9 +35556,9 @@
       "source_location": "L8",
       "weight": 1.0,
       "_origin": "ast",
+      "confidence_score": 1.0,
       "source": "test_production_runtime_verifier_test",
-      "target": "test_production_runtime_verifier_test_runverifier",
-      "confidence_score": 1.0
+      "target": "test_production_runtime_verifier_test_runverifier"
     },
     {
       "relation": "contains",
@@ -35584,5 +35584,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "1e927b67d3a541202fcd1766dc2b0b46326130ec"
+  "built_at_commit": "2663528b0f774fb636222738d99f8676e314b669"
 }

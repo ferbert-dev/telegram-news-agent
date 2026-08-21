@@ -84,6 +84,10 @@ test("deployment consumes SOPS and no longer reads the multiline environment sec
   assert.match(workflow, /rm -f -- '\$REMOTE_PROBE_ENV'/);
   assert.match(workflow, /runtime_env_ok=true/);
   assert.match(workflow, /telegram_ok=true/);
+  assert.match(
+    workflow,
+    /install -m 755 ops\/verify-production-runtime\.sh deployment\/ops\/verify-production-runtime\.sh/,
+  );
 });
 
 test("deploy rollback restores environment, database credential, and image", () => {
