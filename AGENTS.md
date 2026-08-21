@@ -66,6 +66,20 @@ Prefer tickets that one agent can complete in one or two focused days. One imple
 - Spark agents use targeted searches, ranges, and concise failure excerpts. They must not dump complete large files, broad repository listings, full diffs, or full logs when narrower evidence is sufficient.
 - Custom role profiles live in `.codex/agents/`; `.codex/config.toml` defines project defaults. Explicit spawn overrides are allowed only when the handoff explains why the default is insufficient.
 
+### Automatic orchestration decision
+
+After the start-of-task gate, the Orchestrator decides automatically whether to work directly or delegate; the user does not need to request subagents for each ticket. Keep the complete user, ticket, risk, and integration context in the Sol primary thread. Give each worker only the minimum bounded context it needs and integrate its distilled result back into the primary thread.
+
+Use this routing order:
+
+1. Work directly in Sol when the task is trivial, tightly sequential, immediately blocks the next decision, or requires the Orchestrator's full cross-ticket context.
+2. Spawn `code_explorer` for bounded read-only code mapping, `builder` for a clear routine implementation, or `qa` for targeted verification. These Spark roles are the first choice while the active host exposes Spark and quota is available.
+3. Spawn `researcher` or `documentation` for narrow evidence or grounded documentation work that fits Luna.
+4. Spawn `reviewer` for ordinary independent review. Spawn `integration_builder` only when Spark is unavailable or the implementation is too cross-file for the documented Spark budget but does not cross a Sol risk boundary.
+5. Keep architecture, security, data-loss, PostgreSQL atomicity, production operations, and exact-head release gates on Sol through `critical_reviewer` or `ops`.
+
+Automatic delegation is limited to the user-authorized ticket and branch-local scope. It never grants authority to merge, deploy, rotate secrets, change production settings, expose networks, delete data, or make another external write. If Spark quota or model availability fails, record the failure and selected fallback in the Agent Run; do not silently reroute the task. Use at most two concurrent, disjoint workers and never create an idle pool.
+
 Role contracts and escalation boundaries are in `agents/roles.md` and the Notion Agent Registry.
 
 ## Closure review and retrospective

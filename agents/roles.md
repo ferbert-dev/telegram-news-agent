@@ -20,6 +20,7 @@ Project defaults are defined in `.codex/config.toml`; executable custom role pro
 | Targeted QA and parity checks | `qa` | `gpt-5.3-codex-spark` | `medium` | Approved environment and bounded test surface only |
 | Narrow research and inventory | `researcher` | `gpt-5.6-luna` | `medium` | Primary evidence; escalate ambiguity or conflict |
 | Grounded documentation updates | `documentation` | `gpt-5.6-luna` | `medium` | Verified facts only; no runtime or external changes |
+| Spark fallback or bounded cross-file integration | `integration_builder` | `gpt-5.6-terra` | `medium` | Orchestrator records why Spark is unavailable or insufficient |
 | Routine independent review | `reviewer` | `gpt-5.6-terra` | `high` | Read-only PASS/FAIL/BLOCKED review |
 | Architecture, security, database, production, or exact-head review | `critical_reviewer` | `gpt-5.6-sol` | `high` | Reserved high-risk read-only gate |
 | Authorized release and production operations | `ops` | `gpt-5.6-sol` | `high` | Explicit authority and rollback required |
@@ -27,6 +28,8 @@ Project defaults are defined in `.codex/config.toml`; executable custom role pro
 Use one vertical scope and no more than two concurrent, disjoint subagents. A small sequential task stays with the Orchestrator when delegation overhead would exceed the likely benefit. Every handoff and Agent Run records the selected model, reasoning effort, and cost/quality rationale from launcher or spawn metadata; workers never infer their runtime model from repository configuration. Model routing is fail-closed: if the active Codex host does not expose the configured model, return to the Orchestrator instead of silently substituting another model.
 
 Spark work is budgeted by default. Exploration receives up to 6 files, 8 tool calls, and 500 output words; implementation and QA receive up to 8 files, 12 tool calls, and 700 output words. Handoffs may grant a larger explicit budget when the ticket justifies it. Otherwise the agent returns `NEEDS_NARROWING` before expanding scope and uses targeted ranges or excerpts instead of full file, diff, listing, suite, or log dumps.
+
+The Orchestrator applies this routing automatically after the start-of-task gate; the user does not need to request delegation per ticket. The Sol primary thread retains complete user, ticket, risk, and integration context while workers receive only bounded task context and return distilled evidence. Spark is preferred for eligible code and QA work while exposed and within quota. If Spark is unavailable, the Orchestrator records the failure and may use `integration_builder` for suitable non-critical work; it never silently substitutes a model. Automatic routing remains branch-local and cannot create merge, deploy, secret, production, network, deletion, or other external-write authority.
 
 ## Orchestrator Agent
 
