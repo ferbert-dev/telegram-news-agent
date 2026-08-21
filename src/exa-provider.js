@@ -301,6 +301,28 @@ export function createExaProvider(
     name: "exa",
     model: config.model,
 
+    async testConnection() {
+      const { response, usageEvents } = await executeSearch(
+        "OpenAI official AI product news",
+        {
+          type: config.searchType,
+          numResults: 1,
+          includeDomains: ["openai.com"],
+          contents: false,
+        },
+        "health_check",
+      );
+      return {
+        ok: true,
+        resultCount: Array.isArray(response?.results)
+          ? response.results.length
+          : 0,
+        provider: "exa",
+        model: config.model,
+        usageEvents,
+      };
+    },
+
     async searchNews(input = {}) {
       const limit = Math.max(
         1,

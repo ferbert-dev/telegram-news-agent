@@ -62,7 +62,7 @@ jobs:
           POSTGRES_APP_PASSWORD: ci-application-password
           POSTGRES_SSH_TUNNEL_PORT: "55433"
         run: |
-          bash -n ops/deploy.sh ops/configure-db-observer.sh
+          bash -n ops/deploy.sh ops/configure-db-observer.sh ops/notify-deployment.sh
           docker compose \
             -f compose.yaml \
             -f compose.ssh-access.yaml \
@@ -467,7 +467,9 @@ jobs:
           install -m 755 ops/configure-db-observer.sh deployment/ops/configure-db-observer.sh
           install -m 755 ops/validate-production-env.sh deployment/ops/validate-production-env.sh
           install -m 755 ops/verify-production-runtime.sh deployment/ops/verify-production-runtime.sh
+          install -m 755 ops/notify-deployment.sh deployment/ops/notify-deployment.sh
           install -m 755 ops/postgres/init/00-create-app-role.sh deployment/ops/postgres/init/00-create-app-role.sh
+          install -m 644 package.json deployment/package.json
           install -m 600 "$RUNNER_TEMP/production.env" deployment/.env.production.incoming
           tar -C deployment -czf deployment.tar.gz .
           chmod 600 deployment.tar.gz

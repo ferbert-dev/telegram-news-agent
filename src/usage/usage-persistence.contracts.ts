@@ -59,9 +59,17 @@ export type DailyPublicationCostRow = {
   estimated_cost_usd: string;
 };
 
+export type ProviderUsageSummaryRow = {
+  provider: string;
+  request_count: number;
+  web_search_calls: number;
+  last_success_at: string;
+};
+
 export type DailyUsageDashboard = {
   summary: DailyUsageSummaryRow;
   posts: DailyPublicationCostRow[];
+  providers: ProviderUsageSummaryRow[];
 };
 
 export type GetDailyUsageDashboardInput = {

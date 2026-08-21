@@ -232,6 +232,23 @@ through a temporary mode-`0600` file and atomic rename before promotion. A
 promotion flag prevents an older backup from being restored if backup creation
 or candidate activation fails before the active environment changes.
 
+## Private status and deployment notice
+
+The private `/status` command does not spend provider quota. It reports
+PostgreSQL and Telegram reachability plus configured and persisted provider
+usage. Yellow means ready but unused today, not failed. `Test Exa` is an
+explicit one-search probe with a five-minute cooldown and records one
+`health_check` usage event with zero model tokens.
+
+After the strict deployment gate passes, `ops/notify-deployment.sh` runs
+inside the new bot container. It reads distinct saved `review_chat_id` values,
+verifies each with Telegram `getChat`, and sends only to chats whose type is
+`private`. The message includes `v<package-version>+<short-commit>` and the
+successful health summary. The host stores the full immutable image in
+mode-`0600` `.deployment-notification-image`; an identical image is skipped.
+This notice is best-effort and runs after rollback protection is disabled, so a
+Telegram notification outage cannot roll back an otherwise healthy release.
+
 ## Normal deployment and verification
 
 Merge a reviewed change to `main`, then inspect the `CI and deploy` workflow.

@@ -7,6 +7,7 @@ import {
   editorialReviewComparison,
   handleControlUpdate,
   parseNewsCommand,
+  parseStatusCommand,
   parseStatsCommand,
   parseReviewCallback,
 } from "../src/telegram-control.js";
@@ -124,6 +125,17 @@ test("command and opaque callbacks are strictly parsed and bounded", () => {
     malformed: false,
   });
   assert.equal(parseStatsCommand("/stats today").malformed, true);
+  assert.deepEqual(parseStatusCommand("/status@mhonest_bot"), {
+    botUsername: "mhonest_bot",
+    malformed: false,
+  });
+  assert.equal(
+    classifyControlUpdate(
+      callbackUpdate("status:test:exa"),
+      "mhonest_bot",
+    ).kind,
+    "status_callback",
+  );
   const callback = createReviewCallback("publish", SESSION_ID);
   assert.ok(Buffer.byteLength(callback) <= 64);
   assert.deepEqual(parseReviewCallback(callback), {
@@ -175,6 +187,36 @@ test("/stats is private, admin-only, and does not start research", async () => {
       ([name, body]) => name === "sendMessage" && /AI usage today/.test(body.text),
     )[1].text,
     /Estimated list cost/,
+  );
+});
+
+test("/status is private, admin-only, and renders provider state without research", async () => {
+  let ran = false;
+  const { calls, dependencies } = fixture({
+    repository: {
+      async getDailyUsageDashboard() {
+        return { summary: {}, posts: [], providers: [] };
+      },
+    },
+    dependencies: {
+      aiProvider: { names: ["openai", "gemini", "exa"] },
+      appVersion: "v0.1.0+abcdef0",
+      runNews: async () => {
+        ran = true;
+      },
+    },
+  });
+  const result = await handleControlUpdate(
+    commandUpdate({ text: "/status" }),
+    dependencies,
+  );
+  assert.equal(result.handled, true);
+  assert.equal(ran, false);
+  assert.ok(
+    calls.some(
+      ([name, body]) =>
+        name === "sendMessage" && /System status/.test(body.text),
+    ),
   );
 });
 

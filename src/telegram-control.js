@@ -17,6 +17,14 @@ import {
   showLabs,
 } from "./telegram-labs.js";
 import { showUsageDashboard } from "./telegram-stats.js";
+import {
+  handleStatusCallback,
+  parseStatusCallback,
+  parseStatusCommand,
+  showSystemStatus,
+} from "./telegram-status.js";
+
+export { parseStatusCommand };
 
 const CALLBACK_PATTERN = /^news:([pr]):([a-f0-9]{32,64})$/;
 const ADMIN_STATUSES = new Set(["creator", "administrator"]);
@@ -210,6 +218,12 @@ export function classifyControlUpdate(update, botUsername, botId) {
       ? null
       : { kind: "stats_command", command: statsCommand };
   }
+  const statusCommand = parseStatusCommand(update?.message?.text);
+  if (statusCommand) {
+    return addressedElsewhere(statusCommand, botUsername)
+      ? null
+      : { kind: "status_command", command: statusCommand };
+  }
   const command = parseNewsCommand(update?.message?.text);
   if (command) {
     return addressedElsewhere(command, botUsername)
@@ -228,6 +242,12 @@ export function classifyControlUpdate(update, botUsername, botId) {
     return {
       kind: "settings_callback",
       callback: parseSettingsCallback(data),
+    };
+  }
+  if (typeof data === "string" && data.startsWith("status:")) {
+    return {
+      kind: "status_callback",
+      callback: parseStatusCallback(data),
     };
   }
   if (typeof data === "string" && data.startsWith("news:")) {
@@ -266,6 +286,8 @@ function auditDetails(classification, update) {
       settings_callback: "Telegram admin - settings callback",
       settings_input: "Telegram admin - settings input",
       stats_command: "Telegram admin - /stats",
+      status_command: "Telegram admin - /status",
+      status_callback: "Telegram admin - status callback",
       labs_command: "Telegram admin - /labs",
       labs_callback: "Telegram admin - Labs callback",
     }[classification.kind],
@@ -281,6 +303,8 @@ function updateKind(classification) {
     settings_callback: "settings_callback",
     settings_input: "settings_input",
     stats_command: "stats_command",
+    status_command: "status_command",
+    status_callback: "status_callback",
     labs_command: "labs_command",
     labs_callback: "labs_callback",
   }[classification.kind];
@@ -308,6 +332,8 @@ export async function handleControlUpdate(
     publishDraft = publishApprovedDraft,
     aiProvider,
     durableNewsJobsEnabled = false,
+    appVersion = process.env.APP_VERSION ?? "local",
+    statusCooldownStore,
   },
 ) {
   const classification = classifyControlUpdate(update, botUsername, botId);
@@ -386,6 +412,35 @@ export async function handleControlUpdate(
             update.message,
             classification.command,
             { token, channelId, repository, callTelegram, now },
+          );
+        } else if (classification.kind === "status_command") {
+          value = await handleStatusCommand(
+            update.message,
+            classification.command,
+            {
+              token,
+              channelId,
+              repository,
+              callTelegram,
+              aiProvider,
+              appVersion,
+              now,
+            },
+          );
+        } else if (classification.kind === "status_callback") {
+          value = await handleStatusControlCallback(
+            update.callback_query,
+            classification.callback,
+            {
+              token,
+              channelId,
+              repository,
+              callTelegram,
+              aiProvider,
+              appVersion,
+              now,
+              statusCooldownStore,
+            },
           );
         } else if (classification.kind === "labs_command") {
           value = await handleLabsCommand(
@@ -501,6 +556,42 @@ async function handleStatsCommand(
     now,
   });
   return { auditResult: "Displayed the daily AI usage and cost dashboard." };
+}
+
+async function handleStatusCommand(
+  message,
+  command,
+  { token, channelId, repository, callTelegram, aiProvider, appVersion, now },
+) {
+  const chatId = requirePrivateChat(message);
+  if (command.malformed) {
+    throw new ControlError("malformed_command", "Malformed /status command");
+  }
+  await requireAdmin(message, { token, channelId, callTelegram });
+  await showSystemStatus({
+    token,
+    channelId,
+    chatId,
+    repository,
+    callTelegram,
+    providerNames: aiProvider?.names ?? [],
+    appVersion,
+    now,
+  });
+  return { auditResult: "Displayed the private system status panel." };
+}
+
+async function handleStatusControlCallback(callback, parsed, dependencies) {
+  requirePrivateChat(callback?.message);
+  if (!parsed) {
+    throw new ControlError("malformed_callback", "Invalid status callback");
+  }
+  await requireAdmin(callback, dependencies);
+  return handleStatusCallback(callback, parsed, {
+    ...dependencies,
+    providerNames: dependencies.aiProvider?.names ?? [],
+    cooldownStore: dependencies.statusCooldownStore,
+  });
 }
 
 async function requireAdmin(message, dependencies) {

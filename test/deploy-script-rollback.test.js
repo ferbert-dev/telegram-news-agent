@@ -62,6 +62,7 @@ function runDeployment({
   failRollbackInstall = false,
   botRunning = false,
   runtimePlaceholder = false,
+  notificationFails = false,
 }) {
   const fixture = mkdtempSync(path.join(tmpdir(), "deploy-rollback-"));
   const ops = path.join(fixture, "ops");
@@ -72,6 +73,15 @@ function runDeployment({
   cpSync("ops/deploy.sh", path.join(ops, "deploy.sh"));
   cpSync("ops/validate-production-env.sh", path.join(ops, "validate-production-env.sh"));
   cpSync("ops/verify-production-runtime.sh", path.join(ops, "verify-production-runtime.sh"));
+  const notificationLog = path.join(fixture, "notification.log");
+  writeFileSync(
+    path.join(ops, "notify-deployment.sh"),
+    `#!/usr/bin/env bash
+printf '%s|%s\n' "$1" "$2" >> "$MOCK_NOTIFICATION_LOG"
+exit "${notificationFails ? 88 : 0}"
+`,
+    { mode: 0o755 },
+  );
   writeFileSync(path.join(fixture, ".env.production"), active, { mode: 0o600 });
   writeFileSync(path.join(fixture, ".env.production.incoming"), incoming, { mode: 0o600 });
   if (rollback !== undefined) {
@@ -84,6 +94,7 @@ function runDeployment({
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s|%s\\n' "\${APP_IMAGE:-}" "$*" >> "$MOCK_DOCKER_LOG"
+printf 'APP_VERSION=%s\\n' "\${APP_VERSION:-}" >> "$MOCK_DOCKER_LOG"
 if [[ "$1" == "inspect" && "$*" == *"{{.Config.Image}}"* ]]; then
   printf 'old-image\\n'
 elif [[ "$1" == "inspect" && "$*" == *"{{range .Config.Env}}"* ]]; then
@@ -148,10 +159,11 @@ exec /usr/bin/install "$@"
       MOCK_INSTALL_FAIL_ROLLBACK: String(failRollbackInstall),
       MOCK_BOT_RUNNING: String(botRunning),
       MOCK_RUNTIME_CHANNEL_ID: runtimePlaceholder ? "placeholder" : "@channel",
+      MOCK_NOTIFICATION_LOG: notificationLog,
     },
   });
 
-  return { dockerLog, fixture, result };
+  return { dockerLog, fixture, notificationLog, result };
 }
 
 test("first SOPS deploy accepts legacy active env and restores it after health failure", () => {
@@ -229,4 +241,26 @@ test("runtime credential failure restores the previous environment and image", (
   assert.match(result.stderr, /runtime credential gate/);
   assert.equal(readFileSync(path.join(fixture, ".env.production"), "utf8"), oldEnvironment);
   assert.equal(readFileSync(path.join(fixture, ".env.production.rollback"), "utf8"), oldEnvironment);
+});
+
+test("notification failure preserves a healthy release and passes immutable version to the bot", () => {
+  const oldEnvironment = completeEnvironment("old-app-secret");
+  const newEnvironment = completeEnvironment("new-app-secret");
+  const { dockerLog, fixture, notificationLog, result } = runDeployment({
+    active: oldEnvironment,
+    incoming: newEnvironment,
+    botRunning: true,
+    notificationFails: true,
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /healthy release was not rolled back/);
+  assert.equal(readFileSync(path.join(fixture, ".env.production"), "utf8"), newEnvironment);
+  assert.equal(readFileSync(path.join(fixture, ".env.production.rollback"), "utf8"), oldEnvironment);
+  assert.equal(readFileSync(notificationLog, "utf8"), "bot-id|new-image\n");
+
+  const log = readFileSync(dockerLog, "utf8");
+  assert.match(log, /new-image\|compose .* up -d --no-deps bot/);
+  assert.match(log, /APP_VERSION=v0\.1\.0\+new-ima/);
+  assert.doesNotMatch(log, /old-image\|compose .*force-recreate/);
 });

@@ -8,6 +8,15 @@ cd "$deploy_dir"
 active_env=".env.production"
 candidate_env=".env.production.incoming"
 rollback_env=".env.production.rollback"
+package_version="0.1.0"
+if [[ -f package.json ]]; then
+  detected_package_version="$(sed -nE 's/^[[:space:]]*"version":[[:space:]]*"([^"]+)".*/\1/p' package.json | head -n 1 || true)"
+  if [[ -n "$detected_package_version" ]]; then
+    package_version="$detected_package_version"
+  fi
+fi
+image_tag="${image##*:}"
+app_version="v${package_version}+${image_tag:0:7}"
 
 if [[ ! -f "$active_env" ]]; then
   echo "$active_env is missing; refusing to replace production without a rollback base" >&2
@@ -118,7 +127,9 @@ rollback() {
 
   if [[ -n "$previous_image" ]]; then
     echo "Restoring previous bot image ${previous_image}." >&2
-    if ! APP_IMAGE="$previous_image" "${compose[@]}" up -d --force-recreate --no-deps bot; then
+    rollback_tag="${previous_image##*:}"
+    if ! APP_IMAGE="$previous_image" APP_VERSION="rollback-${rollback_tag:0:7}" \
+      "${compose[@]}" up -d --force-recreate --no-deps bot; then
       rollback_failed=true
     fi
   else
@@ -178,7 +189,7 @@ fi
 APP_IMAGE="$image" "${compose[@]}" exec -T db \
   /docker-entrypoint-initdb.d/00-create-app-role.sh
 APP_IMAGE="$image" "${compose[@]}" run --rm migrate
-APP_IMAGE="$image" "${compose[@]}" up -d --no-deps bot
+APP_IMAGE="$image" APP_VERSION="$app_version" "${compose[@]}" up -d --no-deps bot
 
 healthy_checks=0
 for _ in {1..6}; do
@@ -195,6 +206,9 @@ for _ in {1..6}; do
         false
       fi
       trap - ERR
+      if ! ops/notify-deployment.sh "$container" "$image"; then
+        echo "Deployment notification warning: the healthy release was not rolled back." >&2
+      fi
       echo "Deployment healthy: ${image}"
       "${compose[@]}" ps
       exit 0

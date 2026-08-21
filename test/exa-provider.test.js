@@ -85,6 +85,30 @@ test("Exa news search is bounded and normalizes source content", async () => {
   assert.match(request.query, /marine biology/);
 });
 
+test("Exa connection test performs one minimal zero-content search", async () => {
+  let request;
+  const provider = createExaProvider(config(), {
+    capStore: new Map(),
+    client: {
+      async search(query, options) {
+        request = { query, options };
+        return {
+          requestId: "exa-health-1",
+          results: [{ url: "https://openai.com" }],
+        };
+      },
+    },
+  });
+  const result = await provider.testConnection();
+  assert.equal(result.ok, true);
+  assert.equal(result.resultCount, 1);
+  assert.equal(result.usageEvents[0].operation, "health_check");
+  assert.equal(result.usageEvents[0].webSearchCalls, 1);
+  assert.equal(request.options.numResults, 1);
+  assert.equal(request.options.contents, false);
+  assert.deepEqual(request.options.includeDomains, ["openai.com"]);
+});
+
 test("Exa feed search keeps only eight direct RSS or Atom-looking URLs", async () => {
   let options;
   const provider = createExaProvider(config({ maxResults: 10 }), {
