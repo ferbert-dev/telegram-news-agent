@@ -392,6 +392,32 @@ Inbox -> Ready -> In Progress -> Review -> Blocked / Done -> Archive
 - Ops: handles deployment, environment variables, hosting, CI, and monitoring.
 - Documentation: keeps README, runbooks, specs, and decisions current.
 
+## Cost-Aware Codex Orchestration
+
+Project-scoped Codex configuration keeps GPT-5.6 Sol as the primary
+Orchestrator and routes bounded work to less expensive specialist models. Sol
+retains the complete ticket, risk, authority, and integration context. A worker
+receives only the objective, constraints, file/tool/output budget, acceptance
+criteria, and Notion ticket plus Agent Run IDs needed for its slice.
+
+| Work | Default role and model |
+| --- | --- |
+| Requirements, decomposition, integration, and final decisions | Orchestrator: GPT-5.6 Sol, high reasoning |
+| Bounded code mapping, routine implementation, and targeted QA | Code Explorer / Builder / QA: GPT-5.3-Codex Spark, medium reasoning |
+| Narrow research and grounded documentation | Researcher / Documentation: GPT-5.6 Luna, medium reasoning |
+| Routine independent review or Spark fallback integration | Reviewer / Integration Builder: GPT-5.6 Terra |
+| Architecture, security, PostgreSQL atomicity, exact-head review, and authorized operations | Critical Reviewer / Ops: GPT-5.6 Sol, high reasoning |
+
+The Orchestrator decides the route before loading specialist skills, querying
+Graphify, or reading implementation files. At most two disjoint workers run at
+once. Every delegated task is audited before spawn, actual model metadata comes
+from the launcher rather than worker self-report, and unavailable models or
+audit storage fail closed instead of silently widening cost or authority.
+
+This routing controls the engineering agents that maintain the repository. It
+does not change the production news pipeline, whose provider order and models
+remain controlled by the environment settings documented above.
+
 ## Security Rules
 
 - Never commit API keys, bot tokens, private keys, or secrets.

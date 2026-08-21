@@ -144,6 +144,12 @@ This project has a persistent code-only knowledge graph in `graphify-out/`. It i
 
 The project-scoped skill is at `.codex/skills/graphify/SKILL.md`; `.codex/hooks.json` runs the lightweight pre-tool freshness check.
 
+## README synchronization
+
+- Update `README.md` in the same change when verified work materially changes project capabilities, architecture, setup, operation, deployment, safety boundaries, or the contributor/agent workflow.
+- Keep README statements concise and current. Link detailed runbooks or specifications instead of duplicating them, and clearly separate shipped behavior from plans or assumptions.
+- Do not create README churn for internal refactors with no externally relevant effect. The Orchestrator records the README decision in the ticket or PR, and the closure reviewer checks it.
+
 ## Documentation links
 
 - `docs/engineering-workflow.md`
