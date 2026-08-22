@@ -5,6 +5,7 @@ import {
   runScheduledNewsOnce,
 } from "../src/news-scheduler.js";
 import { NoResearchCandidatesError } from "../src/research.js";
+import { createFallbackAiProvider } from "../src/ai-provider.js";
 import { publishScheduledDraft } from "../src/scheduled-publication.js";
 
 const CLAIM = {
@@ -241,6 +242,21 @@ test("no candidates is a successful terminal schedule outcome", async () => {
   assert.equal(calls[0][1].status, "no_candidates");
 });
 
+test("terminal aggregate provider failure sends its generated trace in one private alert", async () => {
+  const provider = createFallbackAiProvider([{ name: "openai", async generateStructured() {
+    throw Object.assign(new Error("secret provider text"), { status: 401 });
+  } }], { log: { warn() {} }, sleep: async () => {} });
+  const { calls, dependencies } = fixture({ dependencies: {
+    async runNews() { await provider.generateStructured({ usageOperation: "editorial_draft" }); },
+  } });
+  const result = await runScheduledNewsOnce(dependencies);
+  assert.equal(result.status, "failed");
+  const alerts = calls.filter(([name]) => name === "notify");
+  assert.equal(alerts.length, 1);
+  assert.match(alerts[0][2], /scheduled_run_failed.*trace: [0-9a-f-]{36}/i);
+  assert.doesNotMatch(alerts[0][2], /secret|raw|editorial_draft|openai/i);
+});
+
 test("scheduled work starts only inside the injected audit boundary", async () => {
   let auditStarted = false;
   const { dependencies } = fixture({
@@ -308,6 +324,17 @@ test("an unresolved automatic send pauses recurrence", async () => {
   assert.equal(calls.some(([name]) => name === "pause"), true);
   assert.equal(calls.some(([name]) => name === "finish"), false);
   assert.match(calls.find(([name]) => name === "notify")[2], /paused/i);
+  assert.equal(calls.filter(([name]) => name === "notify").length, 1);
+});
+
+test("scheduler replaces an untrusted failure code with the safe fallback", async () => {
+  const { calls, dependencies } = fixture({ dependencies: {
+    async runNews() { const error = new Error("secret"); error.code = "<script>alert(1)</script>"; throw error; },
+  } });
+  const result = await runScheduledNewsOnce(dependencies);
+  assert.equal(result.errorCode, "scheduled_run_failed");
+  assert.match(calls.find(([name]) => name === "notify")[2], /scheduled_run_failed/i);
+  assert.doesNotMatch(calls.find(([name]) => name === "notify")[2], /script|secret/i);
 });
 
 test("a draft already being published is treated as unresolved", async () => {

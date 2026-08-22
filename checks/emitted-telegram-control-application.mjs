@@ -26,6 +26,7 @@ const {
   TelegramLegacyLabsGateway,
   TelegramLegacySettingsGateway,
   TelegramLegacyStatsGateway,
+  TelegramLegacyStatusGateway,
 } = await import(
   "../dist/telegram/transport/telegram-legacy-feature.gateways.js"
 );
@@ -38,6 +39,7 @@ assert.equal(typeof TelegramBotApiOutcomeRenderer, "function");
 assert.equal(typeof TelegramLegacySettingsGateway, "function");
 assert.equal(typeof TelegramLegacyLabsGateway, "function");
 assert.equal(typeof TelegramLegacyStatsGateway, "function");
+assert.equal(typeof TelegramLegacyStatusGateway, "function");
 assert.equal(typeof TelegramControlTransportHandler, "function");
 
 const unused = { async execute() { return { status: "unused" }; } };
@@ -65,6 +67,7 @@ const moduleRef = await Test.createTestingModule({
       settings: unused,
       labs: unused,
       stats: unused,
+      status: unused,
     }),
   ],
 })

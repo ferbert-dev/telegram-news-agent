@@ -10,6 +10,7 @@ import {
 import { groundedFactEvidence } from "./ai-fact-search.js";
 import { LANGUAGE_OPTIONS } from "./news-settings.js";
 import { geminiUsageEvent } from "./ai-usage.js";
+import { providerDiagnosticError } from "./ai-provider-attempts.js";
 
 export function getGeminiProviderConfig(env = process.env) {
   const apiKey = env.GEMINI_API_KEY?.trim();
@@ -63,18 +64,32 @@ export function createGeminiProvider(
         responseJsonSchema: jsonSchema,
       },
     });
+    const usage = geminiUsageEvent(response, { model: config.model, operation: usageOperation });
+    const diagnostics = {
+      providerResponseId: response.responseId,
+      responseStatus: response.candidates?.[0]?.finishReason,
+      incompleteReason: response.promptFeedback?.blockReason,
+      refusal: Boolean(response.promptFeedback?.blockReason),
+      usage,
+    };
     if (!response.text) {
-      throw new Error("Gemini returned no structured response");
+      throw providerDiagnosticError(
+        diagnostics.refusal ? "model_refusal" : "structured_output_missing",
+        diagnostics,
+      );
+    }
+    let value;
+    try {
+      value = zodSchema.parse(parseJsonText(response.text));
+    } catch (error) {
+      throw providerDiagnosticError("schema_validation_failed", diagnostics, error);
     }
     return {
-      value: zodSchema.parse(parseJsonText(response.text)),
+      value,
       provider: "gemini",
       model: config.model,
       usageEvents: [
-        geminiUsageEvent(response, {
-          model: config.model,
-          operation: usageOperation,
-        }),
+        usage,
       ].filter(Boolean),
     };
   };

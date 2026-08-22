@@ -10,6 +10,7 @@ import { EditorialRepository } from "../../src/database/repositories/editorial-r
 import { NotionAuditOutboxRepository } from "../../src/database/repositories/notion-audit-outbox-repository.js";
 import { PipelineLeasesRepository } from "../../src/database/repositories/pipeline-leases-repository.js";
 import { ResearchIngestionRepository } from "../../src/database/repositories/research-ingestion-repository.js";
+import { AiProviderAttemptsRepository } from "../../src/database/repositories/ai-provider-attempts-repository.js";
 import { StoryDeduplicationRepository } from "../../src/database/repositories/story-deduplication-repository.js";
 import { SchedulerRepository } from "../../src/database/repositories/scheduler-repository.js";
 import { SourcesRepository } from "../../src/database/repositories/sources-repository.js";
@@ -62,6 +63,7 @@ test(
     const legacy = new NewsRepository(pool) as unknown as LegacyPersistence;
     const catalog = new SourcesRepository(pool, database);
     const research = new ResearchIngestionRepository(pool, database);
+    const providerAttempts = new AiProviderAttemptsRepository(pool, database);
     const storyDeduplication = new StoryDeduplicationRepository(pool, database);
     const editorial = new EditorialRepository(pool, database);
     const usage = new UsageReportingRepository(pool, database);
@@ -91,6 +93,7 @@ test(
       telegramNewsJobs,
       telegramCheckpoints,
       telegramReviews,
+      providerAttempts,
     );
 
     const suffix = randomUUID();
@@ -101,6 +104,7 @@ test(
     const leaseName = `facade-parity-${suffix}`;
     const pageId = `facade-parity-${suffix}`;
     const responseId = `facade-parity-${suffix}`;
+    const attemptCorrelationId = randomUUID();
     const scheduleClaimToken = randomUUID();
     const updateId = Date.now();
     const reviewChatId = -1_000_000_000_001;
@@ -363,6 +367,19 @@ test(
         canonical(await facade.getDailyUsageDashboard({ channelId, now: new Date(), timeZone: "Europe/Madrid" })),
         canonical(await legacy.getDailyUsageDashboard({ channelId, now: new Date(), timeZone: "Europe/Madrid" })),
       );
+      const olderAttemptId = randomUUID();
+      const newerAttemptId = randomUUID();
+      await facade.startAiProviderAttempt({ id: olderAttemptId, correlationId: attemptCorrelationId, operation: "editorial_fact_search", provider: "exa", model: "exa-search:auto", attemptNumber: 1, startedAt: "2026-08-21T12:00:00.000Z" });
+      await facade.completeAiProviderAttempt({ id: olderAttemptId, status: "failed", completedAt: "2026-08-21T12:00:01.000Z", latencyMs: 1, errorCode: "timeout" });
+      await facade.startAiProviderAttempt({ id: newerAttemptId, correlationId: attemptCorrelationId, operation: "editorial_fact_search", provider: "exa", model: "exa-search:auto", attemptNumber: 2, startedAt: "2026-08-21T12:01:00.000Z" });
+      await facade.completeAiProviderAttempt({ id: newerAttemptId, status: "succeeded", completedAt: "2026-08-21T12:01:01.000Z", latencyMs: 1 });
+      const facadeHealth = await facade.getLatestAiProviderAttemptHealth();
+      const legacyHealth = await legacy.getLatestAiProviderAttemptHealth();
+      assert.deepEqual(canonical(facadeHealth), canonical(legacyHealth));
+      const exaHealth = facadeHealth.find(
+        (row) => (row as { provider?: string }).provider === "exa",
+      ) as { status?: string } | undefined;
+      assert.equal(exaHealth?.status, "succeeded");
 
       const leaseOwners = [randomUUID(), randomUUID()];
       const leaseResults = await Promise.all([
@@ -493,6 +510,7 @@ test(
       await pool.query("delete from public.telegram_updates where update_id = $1", [updateId]).catch(() => {});
       await pool.query("delete from public.telegram_review_sessions where id = any($1::text[])", [reviewSessionIds]).catch(() => {});
       await pool.query("delete from public.ai_usage_events where telegram_channel_id = $1", [channelId]).catch(() => {});
+      await pool.query("delete from public.ai_provider_attempts where correlation_id = $1", [attemptCorrelationId]).catch(() => {});
       await pool.query("delete from public.notion_audit_outbox where notion_page_id = $1", [pageId]).catch(() => {});
       await pool.query("delete from public.pipeline_leases where name = $1", [leaseName]).catch(() => {});
       await pool.query("delete from public.news_bot_settings where telegram_channel_id = $1", [channelId]).catch(() => {});

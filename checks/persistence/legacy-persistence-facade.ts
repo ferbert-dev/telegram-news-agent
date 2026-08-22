@@ -83,6 +83,9 @@ const samples = {
   saveRawContent: [{ article_id: "article-id", content: "body", content_hash: "hash" }],
   transitionArticle: ["article-id", "discovered", "extracted", {}],
   replaceArticleTopics: [{ articleId: "article-id", assignments: [] }],
+  startAiProviderAttempt: [{ id: "00000000-0000-4000-8000-000000000001", correlationId: "00000000-0000-4000-8000-000000000002", operation: "editorial_draft", provider: "openai", model: null, attemptNumber: 1, startedAt: "2026-08-22T06:00:00.000Z" }],
+  completeAiProviderAttempt: [{ id: "00000000-0000-4000-8000-000000000001", status: "failed", completedAt: "2026-08-22T06:00:01.000Z", latencyMs: 1000, errorCode: "rate_limited" }],
+  getLatestAiProviderAttemptHealth: [],
   listRecentPublishedStories: [{ channelId: "@channel", since: "2026-08-01T00:00:00.000Z", limit: 100 }],
   recordStoryDedupDecision: [{ articleId: "article-id", storyFingerprint: "fingerprint", relation: "distinct", decisionSource: "deterministic" }],
   createDraft: [{ article_id: "article-id", body: "body" }],
@@ -180,6 +183,7 @@ function fixture(calls: Call[] = []) {
     telegramNewsJobs: port("telegramNewsJobs", calls),
     telegramCheckpoints: port("telegramCheckpoints", calls),
     telegramReviewSessions: port("telegramReviewSessions", calls),
+    providerAttempts: port("providerAttempts", calls),
   };
   const facade = new LegacyPersistenceFacade(
     ports.catalog as never,
@@ -197,11 +201,12 @@ function fixture(calls: Call[] = []) {
     ports.telegramNewsJobs as never,
     ports.telegramCheckpoints as never,
     ports.telegramReviewSessions as never,
+    ports.providerAttempts as never,
   );
   return { facade, ports };
 }
 
-test("facade and owner manifest cover exactly all 79 live NewsRepository domain methods", () => {
+test("facade and owner manifest cover exactly all 82 live NewsRepository domain methods", () => {
   const legacyMethods = Object.getOwnPropertyNames(NewsRepository.prototype)
     .filter((method) => !infrastructureMethods.has(method))
     .sort();
@@ -210,13 +215,13 @@ test("facade and owner manifest cover exactly all 79 live NewsRepository domain 
     .sort();
   const manifestMethods = Object.keys(LEGACY_PERSISTENCE_METHOD_OWNERS).sort();
 
-  assert.equal(legacyMethods.length, 79);
+  assert.equal(legacyMethods.length, 82);
   assert.deepEqual(facadeMethods, legacyMethods);
   assert.deepEqual(manifestMethods, legacyMethods);
   assert.equal(Object.values(LEGACY_PERSISTENCE_METHOD_OWNERS).includes("fallback" as Owner), false);
 });
 
-test("all 79 methods delegate once to their declared owner and preserve legacy arguments", async () => {
+test("all 82 methods delegate once to their declared owner and preserve legacy arguments", async () => {
   const calls: Call[] = [];
   const { facade } = fixture(calls);
   const dynamicFacade = facade as unknown as DynamicPort;

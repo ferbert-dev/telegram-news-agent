@@ -14,6 +14,7 @@ import { HandleTelegramControlUpdateUseCase } from "../../src/telegram/applicati
 import { GetTelegramStatsUseCase } from "../../src/telegram/application/get-telegram-stats.use-case.js";
 import { HandleTelegramLabsUseCase } from "../../src/telegram/application/handle-telegram-labs.use-case.js";
 import { HandleTelegramSettingsUseCase } from "../../src/telegram/application/handle-telegram-settings.use-case.js";
+import { HandleTelegramStatusUseCase } from "../../src/telegram/application/handle-telegram-status.use-case.js";
 import { RunTelegramNewsUseCase } from "../../src/telegram/application/run-telegram-news.use-case.js";
 import { DecideTelegramReviewUseCase } from "../../src/telegram/application/decide-telegram-review.use-case.js";
 import { TelegramBotApiOutcomeRenderer } from "../../src/telegram/transport/telegram-bot-api.gateway.js";
@@ -83,7 +84,7 @@ const unusedFeature: TelegramControlFeatureGateway = {
   async execute() { throw new Error("unused feature gateway"); },
 };
 
-test("settings, labs, and stats routes have explicit transport-neutral use cases", async () => {
+test("settings, labs, stats, and status routes have explicit transport-neutral use cases", async () => {
   const routed: string[] = [];
   const gateway: TelegramControlFeatureGateway = {
     async execute(request) {
@@ -94,6 +95,7 @@ test("settings, labs, and stats routes have explicit transport-neutral use cases
   const settings = new HandleTelegramSettingsUseCase(gateway);
   const labs = new HandleTelegramLabsUseCase(gateway);
   const stats = new GetTelegramStatsUseCase(gateway);
+  const status = new HandleTelegramStatusUseCase(gateway);
 
   assert.equal((await settings.execute({
     ...BASE_REQUEST,
@@ -107,7 +109,11 @@ test("settings, labs, and stats routes have explicit transport-neutral use cases
     ...BASE_REQUEST,
     route: { kind: "stats" },
   })).status, "stats_ready");
-  assert.deepEqual(routed, ["settings", "labs", "stats"]);
+  assert.equal((await status.execute({
+    ...BASE_REQUEST,
+    route: { kind: "status", action: "open" },
+  })).status, "status_ready");
+  assert.deepEqual(routed, ["settings", "labs", "stats", "status"]);
 
   assert.throws(
     () => settings.execute({ ...BASE_REQUEST, route: { kind: "stats" } }),
@@ -149,6 +155,7 @@ test("update routing is audited before atomic claim, finishes once, and duplicat
     settings,
     unusedFeature,
     unusedFeature,
+    unusedFeature,
   );
   const request: TelegramControlRequest = {
     ...BASE_REQUEST,
@@ -182,6 +189,7 @@ test("update routing is audited before atomic claim, finishes once, and duplicat
     unusedFeature,
     unusedFeature,
     unusedFeature,
+    unusedFeature,
   );
   assert.deepEqual(await terminalDuplicate.execute(request, async () => {}), {
     status: "duplicate",
@@ -198,6 +206,7 @@ test("update routing is audited before atomic claim, finishes once, and duplicat
     passAudit,
     { async execute() { throw new Error("must not execute"); } },
     { async execute() { throw new Error("must not execute"); } },
+    unusedFeature,
     unusedFeature,
     unusedFeature,
     unusedFeature,
@@ -242,6 +251,7 @@ test("required presentation fails the claim for retry and checkpoint recovery av
     unusedFeature,
     unusedFeature,
     unusedFeature,
+    unusedFeature,
   );
   const request: TelegramControlRequest = {
     ...BASE_REQUEST,
@@ -280,6 +290,7 @@ test("invalid application envelopes reject before claim, while claimed malformed
     passAudit,
     { async execute() { calls.push("domain"); return { status: "unexpected" }; } },
     { async execute() { calls.push("domain"); return { status: "unexpected" }; } },
+    unusedFeature,
     unusedFeature,
     unusedFeature,
     unusedFeature,
@@ -344,6 +355,7 @@ test("terminal control failures finish completed while retryable failures finish
     unusedFeature,
     unusedFeature,
     unusedFeature,
+    unusedFeature,
   );
   await assert.rejects(
     denied.execute({ ...BASE_REQUEST, route: { kind: "stats" } }, async () => {}),
@@ -363,6 +375,7 @@ test("terminal control failures finish completed while retryable failures finish
     passAudit,
     { async execute() { throw new Error("research unavailable"); } },
     { async execute() { throw new Error("unused"); } },
+    unusedFeature,
     unusedFeature,
     unusedFeature,
     unusedFeature,
@@ -428,6 +441,7 @@ test("automatic policy-block notice is retryable while manual review block remai
         return { status: "blocked_by_policy", publicationPath: "manual_review" };
       },
     },
+    unusedFeature,
     unusedFeature,
     unusedFeature,
     unusedFeature,
@@ -628,6 +642,7 @@ test("Nest /news durably enqueues before presentation and suppresses a concurren
       },
     },
     { async execute() { throw new Error("unused review"); } },
+    unusedFeature,
     unusedFeature,
     unusedFeature,
     unusedFeature,

@@ -35,7 +35,7 @@ function safeVersion(value) {
   );
 }
 
-function providerLine({ name, label, active, usage, testResult, timeZone }) {
+function providerLine({ name, label, active, usage, attempt, testResult, timeZone }) {
   if (!active) return `⚪ ${label} · disabled`;
   if (name === "exa" && testResult?.ok === false) {
     return `🔴 ${label} · live test failed (${testResult.errorCode})`;
@@ -47,6 +47,9 @@ function providerLine({ name, label, active, usage, testResult, timeZone }) {
     return `🟢 ${label} · live search passed · ${ledger}`;
   }
   const calls = numeric(usage?.request_count);
+  if (attempt?.status === "failed") {
+    return `🔴 ${label} · last attempt failed (${attempt.error_code ?? attempt.errorCode ?? "provider_failed"}) · ${localDateTime(attempt.completed_at ?? attempt.started_at, timeZone)}`;
+  }
   if (calls > 0) {
     return `🟢 ${label} · ${calls} call${calls === 1 ? "" : "s"} today · last ${localDateTime(usage.last_success_at, timeZone)}`;
   }
@@ -71,13 +74,14 @@ export function parseStatusCallback(data) {
 }
 
 export function renderSystemStatus(
-  { dashboard, providerNames = [], appVersion = "local", testResult = null },
+  { dashboard, providerNames = [], attemptHealth = [], appVersion = "local", testResult = null },
   { timeZone = DEFAULT_TIME_ZONE } = {},
 ) {
   const active = new Set(providerNames);
   const usageByProvider = new Map(
     (dashboard?.providers ?? []).map((row) => [row.provider, row]),
   );
+  const attemptsByProvider = new Map(attemptHealth.map((row) => [row.provider, row]));
   return [
     "🩺 System status",
     `Version: ${safeVersion(appVersion)}`,
@@ -92,6 +96,7 @@ export function renderSystemStatus(
         label,
         active: active.has(name),
         usage: usageByProvider.get(name),
+        attempt: attemptsByProvider.get(name),
         testResult,
         timeZone,
       }),
@@ -117,11 +122,15 @@ function statusMarkup(providerNames) {
 }
 
 async function dashboard(repository, channelId, now, timeZone) {
-  return repository.getDailyUsageDashboard({
+  const usage = await repository.getDailyUsageDashboard({
     channelId,
     now: now().toISOString(),
     timeZone,
   });
+  const attemptHealth = repository.getLatestAiProviderAttemptHealth
+    ? await repository.getLatestAiProviderAttemptHealth()
+    : [];
+  return { ...usage, attemptHealth };
 }
 
 export async function showSystemStatus({
@@ -139,7 +148,7 @@ export async function showSystemStatus({
   await callTelegram(token, "sendMessage", {
     chat_id: chatId,
     text: renderSystemStatus(
-      { dashboard: current, providerNames, appVersion },
+      { dashboard: current, attemptHealth: current.attemptHealth, providerNames, appVersion },
       { timeZone },
     ),
     reply_markup: statusMarkup(providerNames),
@@ -208,7 +217,7 @@ export async function handleStatusCallback(
     chat_id: chatId,
     message_id: messageId,
     text: renderSystemStatus(
-      { dashboard: current, providerNames, appVersion, testResult },
+      { dashboard: current, attemptHealth: current.attemptHealth, providerNames, appVersion, testResult },
       { timeZone },
     ),
     reply_markup: statusMarkup(providerNames),

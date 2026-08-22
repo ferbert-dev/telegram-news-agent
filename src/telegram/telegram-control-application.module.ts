@@ -11,6 +11,7 @@ import { GetTelegramStatsUseCase } from "./application/get-telegram-stats.use-ca
 import { HandleTelegramControlUpdateUseCase } from "./application/handle-telegram-control-update.use-case.js";
 import { HandleTelegramLabsUseCase } from "./application/handle-telegram-labs.use-case.js";
 import { HandleTelegramSettingsUseCase } from "./application/handle-telegram-settings.use-case.js";
+import { HandleTelegramStatusUseCase } from "./application/handle-telegram-status.use-case.js";
 import { RunTelegramNewsUseCase } from "./application/run-telegram-news.use-case.js";
 import { TelegramControlService } from "./application/telegram-control.service.js";
 import type {
@@ -32,6 +33,7 @@ import {
   TELEGRAM_REVIEW_PRESENTATION,
   TELEGRAM_SETTINGS_CONTROL,
   TELEGRAM_STATS_CONTROL,
+  TELEGRAM_STATUS_CONTROL,
 } from "./telegram-application.tokens.js";
 import { TelegramPersistenceModule } from "./telegram-persistence.module.js";
 
@@ -43,6 +45,7 @@ export type TelegramControlApplicationGateways = {
   settings: TelegramControlFeatureGateway;
   labs: TelegramControlFeatureGateway;
   stats: TelegramControlFeatureGateway;
+  status: TelegramControlFeatureGateway;
   ids?: TelegramControlIdGenerator;
   clock?: TelegramControlClock;
 };
@@ -65,6 +68,7 @@ export class TelegramControlApplicationModule {
         { provide: TELEGRAM_SETTINGS_CONTROL, useValue: gateways.settings },
         { provide: TELEGRAM_LABS_CONTROL, useValue: gateways.labs },
         { provide: TELEGRAM_STATS_CONTROL, useValue: gateways.stats },
+        { provide: TELEGRAM_STATUS_CONTROL, useValue: gateways.status },
         {
           provide: TELEGRAM_CONTROL_ID_GENERATOR,
           useValue: gateways.ids ?? {
@@ -80,6 +84,7 @@ export class TelegramControlApplicationModule {
         HandleTelegramSettingsUseCase,
         HandleTelegramLabsUseCase,
         GetTelegramStatsUseCase,
+        HandleTelegramStatusUseCase,
         HandleTelegramControlUpdateUseCase,
         TelegramControlService,
         {

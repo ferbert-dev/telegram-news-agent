@@ -7,8 +7,14 @@ import { SELF_DECLARED_DEPS_METADATA } from "@nestjs/common/constants.js";
 
 import { NotionAuditDeliveryService } from "../../src/operations/application/notion-audit-delivery.service.js";
 import { PipelineLeaseService } from "../../src/operations/application/pipeline-lease.service.js";
-import type { NotionAuditGateway } from "../../src/operations/operations-application.contracts.js";
+import type {
+  NotionAuditFinalization,
+  NotionAuditGateway,
+  NotionAuditRun,
+} from "../../src/operations/operations-application.contracts.js";
 import { OperationsApplicationModule } from "../../src/operations/operations-application.module.js";
+import { LegacyNotionAuditGateway } from "../../src/operations/legacy-notion-audit.gateway.js";
+import { LegacyNotionAuditModule } from "../../src/operations/legacy-notion-audit.module.js";
 import {
   NOTION_AUDIT_DELIVERY_APPLICATION,
   NOTION_AUDIT_GATEWAY,
@@ -454,6 +460,72 @@ test("NotionAuditDeliveryService honors cancellation before claim and durably re
     (error) => error === inFlightReason,
   );
   assert.equal(retriedError, inFlightReason);
+});
+
+test("LegacyNotionAuditGateway forwards run and finalization by reference and preserves signal cancellation", async () => {
+  const calls: unknown[] = [];
+  const logger = {
+    async finish(
+      run: NotionAuditRun,
+      finalization: NotionAuditFinalization,
+    ) {
+      calls.push([run, finalization]);
+    },
+  };
+  const gateway = new LegacyNotionAuditGateway(logger);
+  const run = { pageId: "run-1", startedAt: new Date("2026-08-22T08:00:00.000Z") };
+  const finalization = { status: "Succeeded", result: "ok" };
+  const signal = new AbortController().signal;
+
+  await gateway.finalize(run, finalization, signal);
+  assert.equal(calls.length, 1);
+  assert.equal((calls[0] as unknown[])[0], run);
+  assert.equal((calls[0] as unknown[])[1], finalization);
+
+  const canceled = new AbortController();
+  const reason = new Error("delivery canceled");
+  canceled.abort(reason);
+  const canceledGateway = new LegacyNotionAuditGateway({
+    async finish() {
+      throw new Error("must not write");
+    },
+  });
+  await assert.rejects(
+    canceledGateway.finalize(run, finalization, canceled.signal),
+    (error) => error === reason,
+  );
+});
+
+test("LegacyNotionAuditGateway preserves raw finish errors", async () => {
+  const failure = new Error("notion request failed");
+  const logger = {
+    async finish() {
+      throw failure;
+    },
+  };
+  const gateway = new LegacyNotionAuditGateway(logger);
+
+  await assert.rejects(
+    gateway.finalize(
+      { pageId: "run-1", startedAt: new Date("2026-08-22T08:01:00.000Z") },
+      { status: "Failed", result: "boom" },
+    ),
+    (error) => error === failure,
+  );
+});
+
+test("LegacyNotionAuditModule exports only its replaceable gateway token without constructing a client", () => {
+  const customGateway = Symbol("CUSTOM_NOTION_AUDIT_GATEWAY");
+  const finalizer = { async finish() {} };
+  const module = LegacyNotionAuditModule.register(finalizer, customGateway);
+  assert.deepEqual(module.exports, [customGateway]);
+  assert.equal(module.providers?.length, 1);
+  const provider = module.providers?.[0] as {
+    provide?: symbol;
+    useValue?: unknown;
+  };
+  assert.equal(provider.provide, customGateway);
+  assert.ok(provider.useValue instanceof LegacyNotionAuditGateway);
 });
 
 test("Operations application providers use explicit Symbol injection and export only narrow application ports", () => {

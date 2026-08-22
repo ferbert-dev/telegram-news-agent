@@ -108,7 +108,20 @@ facade imports persistence modules only.
 
 ### Application services and adapters
 
-- `ResearchService` coordinates source collection, ranking, extraction and AI providers.
+- `ResearchService` exposes a Symbol-backed stateful execution seam. The
+  additive `LegacyResearchExecutionGateway` is the current compatibility
+  adapter: it delegates exactly once to the existing `runResearch` algorithm
+  while assembling only narrow Catalog, Research Ingestion, Story
+  Deduplication and Usage ports plus an already configured AI provider. It
+  never constructs `NewsRepository`, a PostgreSQL client, environment config
+  or provider clients, and it preserves the exact legacy result and error
+  identity. The legacy engine remains the sole writer for search-run, source
+  health/discovery, candidate, raw-content, excluded-topic, story-dedup and
+  usage effects in this slice. A pre-aborted signal prevents all effects;
+  safe mid-flight cancellation requires the later typed-engine replacement.
+  This adapter remains unwired from production and is temporary: acquisition,
+  ranking, policy, provider discovery, extraction and terminal semantics must
+  move into typed NestJS services before `src/research.js` can be retired.
 - `EditorialWorkflowService` exposes grounded review-draft generation,
   approved publication and operator reconciliation through one Symbol-backed
   application port. Its publication use case keeps PostgreSQL claim/finalize/
@@ -242,6 +255,12 @@ Blueprint + executable database contract
 ```
 
 One implementation slice normally maps to one Notion ticket, one `codex/*` branch, one pull request and one independent closure review. A ticket becomes `Ready` only when every `Depends On` relation is terminal and successful.
+
+### Verified standalone lifecycle foundation
+
+The additive NestJS runtime foundation now uses `NestFactory.createApplicationContext` with no HTTP listener. `RuntimeModule` injects a finite ordered worker set, a signal source, a second-signal escalation boundary, and a validated 40-second total shutdown deadline. `RuntimeCoordinator` owns the single root `AbortController`, tracks each worker before invoking its startup, starts the deadline synchronously with the first stop request, invokes every attempted worker's idempotent `stop()` in reverse declaration order without passing the already-aborted signal, and bounds both in-flight startup and `application.close()` with that same deadline. Programmatic, fatal, and signal-driven shutdown share one cached stop promise, while late startup, stop, close, and escalation failures remain observed. Every concrete worker must treat `stop()` as safe before, during, and after `start()`, latch stopping synchronously, and prevent late startup completion from activating work. The existing `DatabaseLifecycle` remains the sole owner of closing the shared PostgreSQL pool through Nest application shutdown; the coordinator never closes the pool directly.
+
+This foundation is intentionally not a production composition root. It registers no Telegram poller, scheduler, durable news worker, readiness protocol, or Docker command, and `src/telegram-bot.js` remains the production entrypoint until the later worker, packaging, parity, and cutover gates pass.
 
 ## Verification matrix
 

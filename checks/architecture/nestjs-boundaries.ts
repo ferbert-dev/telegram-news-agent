@@ -323,6 +323,39 @@ test("additive Scheduler application is one-shot and remains unwired from the le
   }
 });
 
+test("legacy research compatibility adapter is single-writer, narrow, and remains unwired", async () => {
+  const gateway = await readFile(
+    path.join(sourceRoot, "research/legacy-research-execution.gateway.ts"),
+    "utf8",
+  );
+  const useCase = await readFile(
+    path.join(
+      sourceRoot,
+      "research/application/run-research.use-case.ts",
+    ),
+    "utf8",
+  );
+  assert.doesNotMatch(gateway, /NewsRepository|news-repository|\bpg\b|PG_POOL/);
+  assert.doesNotMatch(gateway, /createAiProvider|process\.env/);
+  assert.match(gateway, /claimSourceDiscovery/);
+  assert.match(gateway, /recordStoryDedupDecision/);
+  assert.match(gateway, /recordAiUsage/);
+  assert.doesNotMatch(
+    useCase,
+    /startSearchRun|finishSearchRun|failSearchRun|saveRawContent|recordAiUsage/,
+  );
+  assert.match(useCase, /RESEARCH_EXECUTION_GATEWAY/);
+
+  for (const entrypoint of ["telegram-bot.js", "pipeline.js"]) {
+    const source = await readFile(path.join(sourceRoot, entrypoint), "utf8");
+    assert.doesNotMatch(
+      source,
+      /legacy-research-execution|LegacyResearchExecutionGateway/,
+      entrypoint,
+    );
+  }
+});
+
 test("Nest module imports are acyclic and avoid forwardRef", async () => {
   const files = (await sourceFiles(sourceRoot)).filter((file) =>
     file.endsWith(".module.ts"),
@@ -360,4 +393,34 @@ test("Nest module imports are acyclic and avoid forwardRef", async () => {
   };
 
   for (const file of files) visit(file, []);
+});
+
+test("runtime bootstrap owns signals and never calls process.exit directly", async () => {
+  const runtimeCoordinator = await readFile(
+    path.join(sourceRoot, "runtime/runtime-coordinator.ts"),
+    "utf8",
+  );
+  const runtimeBootstrap = await readFile(
+    path.join(sourceRoot, "runtime/runtime-bootstrap.ts"),
+    "utf8",
+  );
+  const runtimeModule = await readFile(
+    path.join(sourceRoot, "runtime/runtime-module.ts"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(runtimeCoordinator, /process\.exit\s*\(/);
+  assert.doesNotMatch(runtimeCoordinator, /process\.exitCode/);
+  assert.doesNotMatch(runtimeCoordinator, /process\.(on|off)\(/);
+  assert.match(runtimeBootstrap, /RuntimeModule\.register/);
+  assert.match(runtimeBootstrap, /bindApplicationClose/);
+  assert.match(runtimeBootstrap, /createRuntimeApplicationContext/);
+  assert.match(runtimeModule, /createProcessSignalSource/);
+  assert.match(runtimeModule, /RUNTIME_STOP_GRACE_PERIOD_MS/);
+  assert.match(runtimeModule, /createProcessSecondSignalEscalation/);
+  assert.match(runtimeModule, /DEFAULT_STOP_GRACE_PERIOD_MS/);
+  assert.match(runtimeModule, /MAX_STOP_GRACE_PERIOD_MS|45_000/);
+  assert.ok(!/45_000/.test(runtimeBootstrap), "default stop grace should be below compose 45s");
+  assert.ok(!/process\.exit/.test(runtimeBootstrap), "exit should be in escalation boundary");
+  assert.ok(!/process\.exit/.test(runtimeCoordinator), "exit should be in escalation boundary");
 });
