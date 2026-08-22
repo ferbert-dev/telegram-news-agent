@@ -7,8 +7,9 @@ import {
   createFallbackAiProvider,
   getAiProviderOrder,
 } from "../../src/ai/ai-provider-composition.js";
+import { createFallbackAiProvider as createLegacyFallbackAiProvider } from "../../src/ai-provider.js";
 import { AiProvidersModule } from "../../src/ai/ai-providers.module.js";
-import { AI_PROVIDER } from "../../src/ai/ai-provider.tokens.js";
+import { AI_PROVIDER, GEMINI_CLIENT, GEMINI_SDK } from "../../src/ai/ai-provider.tokens.js";
 
 test("typed composition preserves configured order and retries only transient failures", async () => {
   const calls: string[] = [];
@@ -37,12 +38,56 @@ test("typed composition retains Exa cap and one-shot boundaries", async () => {
   assert.deepEqual(calls, ["exa"]);
 });
 
+test("Exa retry cap hard-stops before a paid fallback", async () => {
+  const calls: string[] = [];
+  const provider = createFallbackAiProvider([
+    { name: "exa", async searchNews() {
+      calls.push("exa");
+      if (calls.length === 1) throw Object.assign(new Error("network"), { code: "ECONNRESET" });
+      throw Object.assign(new Error("cap"), { code: "exa_daily_search_cap", status: 429 });
+    } },
+    { name: "openai", async searchNews() { calls.push("openai"); return { provider: "openai" }; } },
+  ], { log: { warn() {} }, sleep: async () => {} });
+  await assert.rejects(provider.searchNews({}), AiProvidersExhaustedError);
+  assert.deepEqual(calls, ["exa", "exa"]);
+});
+
+test("typed composition preserves legacy fallback result and attempt order", async () => {
+  const typedCalls: string[] = [];
+  const legacyCalls: string[] = [];
+  const createProviders = (calls: string[]) => [
+    { name: "openai" as const, async generateStructured() {
+      calls.push("openai");
+      if (calls.length === 1) throw Object.assign(new Error("rate"), { status: 429 });
+      return { provider: "openai", model: "o" };
+    } },
+    { name: "gemini" as const, async generateStructured() { calls.push("gemini"); return { provider: "gemini", model: "g" }; } },
+  ];
+  const typed = await createFallbackAiProvider(createProviders(typedCalls), { log: { warn() {} }, sleep: async () => {} }).generateStructured({});
+  const legacy = await createLegacyFallbackAiProvider(createProviders(legacyCalls), { log: { warn() {} } as Console, sleep: async () => {} }).generateStructured({});
+  assert.deepEqual(typed, legacy);
+  assert.deepEqual(typedCalls, legacyCalls);
+});
+
 test("Nest composition instantiates SDKs only through Symbol ports and leaves Gemini optional", async () => {
   const module = await Test.createTestingModule({
     imports: [AiProvidersModule.register({ env: { OPENAI_API_KEY: "test-key" } })],
   }).compile();
   try {
     assert.deepEqual(module.get(AI_PROVIDER).names, ["openai"]);
+  } finally {
+    await module.close();
+  }
+});
+
+test("Gemini client uses the injected SDK Symbol override", async () => {
+  const sdk = { models: { generateContent: async () => ({}) } };
+  const builder = Test.createTestingModule({
+    imports: [AiProvidersModule.register({ env: { GEMINI_API_KEY: "test-key" } })],
+  });
+  const module = await builder.overrideProvider(GEMINI_SDK).useValue(sdk).compile();
+  try {
+    assert.equal(module.get(GEMINI_CLIENT).client, sdk);
   } finally {
     await module.close();
   }

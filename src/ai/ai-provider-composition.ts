@@ -134,6 +134,9 @@ export function createFallbackAiProvider(
             return await runAttempt(operation, input, provider, correlationId, ++attemptNumber);
           } catch (retryError) {
             errors.push(retryError); warn(operation, provider, retryError);
+            if (provider.name === "exa" && classifyProviderError(retryError) === "quota_exhausted") {
+              throw new AiProvidersExhaustedError(typeof input.usageOperation === "string" ? input.usageOperation : operation, errors, correlationId);
+            }
           }
         }
       }

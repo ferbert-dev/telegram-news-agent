@@ -1,4 +1,4 @@
-import { createGeminiClient, getGeminiConfig } from "../gemini-client.js";
+import { getGeminiConfig } from "../gemini-client.js";
 import { createGeminiProvider, getGeminiProviderConfig } from "../gemini-provider.js";
 import { createOpenAiProvider, getOpenAiConfig } from "../openai-provider.js";
 import { createExaProvider, getExaProviderConfig } from "../exa-provider.js";
@@ -34,6 +34,7 @@ export function createExaProviderAdapter(
 
 export function createGeminiClientAdapter(
   env: NodeJS.ProcessEnv = process.env,
+  sdk: GeminiSdkPort,
 ): GeminiClientPort {
-  return createGeminiClient(getGeminiConfig(env));
+  return { client: sdk, model: getGeminiConfig(env).model };
 }

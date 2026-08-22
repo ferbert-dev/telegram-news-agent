@@ -30,7 +30,7 @@ export class AiProvidersModule {
           const config = getExaProviderConfig(settings);
           return config ? new Exa(config.apiKey) : null;
         } },
-        { provide: GEMINI_CLIENT, inject: [AI_PROVIDER_ENV], useFactory: (settings: NodeJS.ProcessEnv) => settings.GEMINI_API_KEY?.trim() ? createGeminiClientAdapter(settings) : null },
+        { provide: GEMINI_CLIENT, inject: [AI_PROVIDER_ENV, GEMINI_SDK], useFactory: (settings: NodeJS.ProcessEnv, sdk: unknown) => settings.GEMINI_API_KEY?.trim() ? createGeminiClientAdapter(settings, sdk) : null },
         { provide: OPENAI_PROVIDER, inject: [AI_PROVIDER_ENV, OPENAI_SDK], useFactory: createOpenAiProviderAdapter },
         { provide: GEMINI_PROVIDER, inject: [AI_PROVIDER_ENV, GEMINI_SDK], useFactory: createGeminiProviderAdapter },
         { provide: EXA_PROVIDER, inject: [AI_PROVIDER_ENV, EXA_SDK], useFactory: createExaProviderAdapter },
