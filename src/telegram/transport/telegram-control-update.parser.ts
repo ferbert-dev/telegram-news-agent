@@ -6,6 +6,7 @@ import type {
 import { TelegramControlError } from "../telegram-application.contracts.js";
 import { parseLabsCallback } from "../../telegram-labs.js";
 import { parseSettingsCallback } from "../../telegram-settings.js";
+import { parseStatusCallback } from "../../telegram-status.js";
 
 type TelegramActor = { id?: number; is_bot?: boolean };
 type TelegramChat = { id?: number; type?: TelegramControlChatType };
@@ -35,7 +36,7 @@ const REVIEW_CALLBACK = /^news:([pr]):([a-f0-9]{32,64})$/;
 
 function command(
   text: string | undefined,
-  name: "news" | "settings" | "stats" | "labs",
+  name: "news" | "settings" | "stats" | "status" | "labs",
 ): { botUsername: string | null; malformed: boolean } | null {
   if (typeof text !== "string") return null;
   const match = new RegExp(
@@ -77,13 +78,16 @@ function updateKindFor(route: TelegramControlRoute): string {
           ? "settings_input"
           : "settings_command";
     case "stats": return "stats_command";
+    case "status": return route.action === "callback" ? "status_callback" : "status_command";
     case "labs": return route.action === "callback" ? "labs_callback" : "labs_command";
     case "malformed":
       return route.target === "review"
         ? "news_callback"
         : route.target === "settings"
           ? "settings_callback"
-          : "labs_callback";
+          : route.target === "labs"
+            ? "labs_callback"
+            : "status_callback";
   }
 }
 
@@ -96,6 +100,7 @@ function routeFor(
     ["labs", "labs"],
     ["settings", "settings"],
     ["stats", "stats"],
+    ["status", "status"],
     ["news", "news"],
   ] as const) {
     const parsed = command(update.message?.text, name);
@@ -103,6 +108,7 @@ function routeFor(
     if (addressedElsewhere(parsed, botUsername)) return null;
     if (route === "labs") return { kind: "labs", action: "open", malformed: parsed.malformed };
     if (route === "settings") return { kind: "settings", action: "open", malformed: parsed.malformed };
+    if (route === "status") return { kind: "status", action: "open", malformed: parsed.malformed };
     return { kind: route, malformed: parsed.malformed };
   }
 
@@ -159,6 +165,24 @@ function routeFor(
           errorCode: "malformed_callback",
         };
   }
+  if (typeof data === "string" && data.startsWith("status:")) {
+    const parsed = parseStatusCallback(data);
+    return parsed
+      ? {
+          kind: "status",
+          action: "callback",
+          payload: {
+            callbackId: update.callback_query?.id,
+            messageId: update.callback_query?.message?.message_id,
+            action: parsed,
+          },
+        }
+      : {
+          kind: "malformed",
+          target: "status",
+          errorCode: "malformed_callback",
+        };
+  }
   if (settingsInput(update.message, botId)) {
     return {
       kind: "settings",
@@ -201,6 +225,8 @@ export function parseTelegramControlUpdate(
           ? "settings"
           : typeof callback.data === "string" && callback.data.startsWith("lab:")
             ? "labs"
+            : typeof callback.data === "string" && callback.data.startsWith("status:")
+              ? "status"
             : "review",
       errorCode: "malformed_callback",
     };

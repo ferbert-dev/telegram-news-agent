@@ -8,6 +8,10 @@ import {
   showLabs,
 } from "../../telegram-labs.js";
 import { showUsageDashboard } from "../../telegram-stats.js";
+import {
+  handleStatusCallback,
+  showSystemStatus,
+} from "../../telegram-status.js";
 import type {
   TelegramControlFeatureGateway,
   TelegramControlOutcome,
@@ -25,6 +29,10 @@ type SettingsOperations = {
 type LabsOperations = {
   show: typeof showLabs;
   callback: typeof handleLabsCallback;
+};
+type StatusOperations = {
+  show: typeof showSystemStatus;
+  callback: typeof handleStatusCallback;
 };
 
 type CallbackPayload = {
@@ -202,5 +210,63 @@ export class TelegramLegacyStatsGateway implements TelegramControlFeatureGateway
       now: this.now,
     });
     return { status: "stats_ready", dashboard };
+  }
+}
+
+/** Preserves the redacted status dashboard and explicit one-search Exa probe. */
+export class TelegramLegacyStatusGateway implements TelegramControlFeatureGateway {
+  constructor(
+    private readonly token: string,
+    private readonly channelId: string,
+    private readonly repository: LegacyRepository,
+    private readonly callTelegram: TelegramBotApiCall,
+    private readonly aiProvider: Record<string, unknown>,
+    private readonly providerNames: string[],
+    private readonly appVersion: string,
+    private readonly operations: StatusOperations = {
+      show: showSystemStatus,
+      callback: handleStatusCallback,
+    },
+    private readonly now: () => Date = () => new Date(),
+    private readonly timeZone = "Europe/Madrid",
+    private readonly cooldownStore: Map<string, number> = new Map(),
+  ) {}
+
+  async execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+    if (request.route.kind !== "status") {
+      throw new TelegramControlError("malformed_command", "Expected status route");
+    }
+    if (request.route.action === "open") {
+      const dashboard = await this.operations.show({
+        token: this.token,
+        channelId: this.channelId,
+        chatId: request.chatId,
+        repository: this.repository,
+        callTelegram: this.callTelegram,
+        providerNames: this.providerNames,
+        appVersion: this.appVersion,
+        now: this.now,
+        timeZone: this.timeZone,
+      });
+      return { status: "status_ready", dashboard };
+    }
+    const payload = callbackPayload(request.route.payload);
+    const result = await this.operations.callback(
+      callback(request, payload),
+      payload.action,
+      {
+        token: this.token,
+        channelId: this.channelId,
+        repository: this.repository,
+        callTelegram: this.callTelegram,
+        aiProvider: this.aiProvider,
+        providerNames: this.providerNames,
+        appVersion: this.appVersion,
+        now: this.now,
+        timeZone: this.timeZone,
+        cooldownStore: this.cooldownStore,
+      },
+    );
+    return { status: "status_updated", result };
   }
 }
