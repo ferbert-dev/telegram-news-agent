@@ -13,6 +13,12 @@ const { EditorialApplicationModule } = await import(
 const { EditorialWorkflowService } = await import(
   "../dist/editorial/application/editorial-workflow.service.js"
 );
+const { LegacyEditorialDraftGateway } = await import(
+  "../dist/editorial/legacy-editorial-draft.gateway.js"
+);
+const { LegacyEditorialDraftGatewayModule } = await import(
+  "../dist/editorial/legacy-editorial-draft.module.js"
+);
 const { EDITORIAL_WORKFLOW_APPLICATION } = await import(
   "../dist/editorial/editorial-application.tokens.js"
 );
@@ -25,6 +31,9 @@ const { NEWS_SETTINGS_REPOSITORY } = await import(
 const { USAGE_REPORTING_PERSISTENCE } = await import(
   "../dist/usage/usage-persistence.tokens.js"
 );
+
+assert.equal(typeof LegacyEditorialDraftGateway, "function");
+assert.equal(typeof LegacyEditorialDraftGatewayModule.register, "function");
 
 const unusedEditorial = new Proxy({}, {
   get(_target, property) {
