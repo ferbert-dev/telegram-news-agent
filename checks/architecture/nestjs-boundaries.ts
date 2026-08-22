@@ -323,6 +323,39 @@ test("additive Scheduler application is one-shot and remains unwired from the le
   }
 });
 
+test("legacy research compatibility adapter is single-writer, narrow, and remains unwired", async () => {
+  const gateway = await readFile(
+    path.join(sourceRoot, "research/legacy-research-execution.gateway.ts"),
+    "utf8",
+  );
+  const useCase = await readFile(
+    path.join(
+      sourceRoot,
+      "research/application/run-research.use-case.ts",
+    ),
+    "utf8",
+  );
+  assert.doesNotMatch(gateway, /NewsRepository|news-repository|\bpg\b|PG_POOL/);
+  assert.doesNotMatch(gateway, /createAiProvider|process\.env/);
+  assert.match(gateway, /claimSourceDiscovery/);
+  assert.match(gateway, /recordStoryDedupDecision/);
+  assert.match(gateway, /recordAiUsage/);
+  assert.doesNotMatch(
+    useCase,
+    /startSearchRun|finishSearchRun|failSearchRun|saveRawContent|recordAiUsage/,
+  );
+  assert.match(useCase, /RESEARCH_EXECUTION_GATEWAY/);
+
+  for (const entrypoint of ["telegram-bot.js", "pipeline.js"]) {
+    const source = await readFile(path.join(sourceRoot, entrypoint), "utf8");
+    assert.doesNotMatch(
+      source,
+      /legacy-research-execution|LegacyResearchExecutionGateway/,
+      entrypoint,
+    );
+  }
+});
+
 test("Nest module imports are acyclic and avoid forwardRef", async () => {
   const files = (await sourceFiles(sourceRoot)).filter((file) =>
     file.endsWith(".module.ts"),

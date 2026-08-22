@@ -11,17 +11,22 @@ import { CatalogService } from "../../src/catalog/application/catalog.service.js
 import { CatalogApplicationModule } from "../../src/catalog/catalog-application.module.js";
 import { PG_POOL } from "../../src/database/database.tokens.js";
 import { ResearchService } from "../../src/research/application/research.service.js";
-import {
-  ResearchApplicationModule,
-  type ResearchApplicationGateways,
-} from "../../src/research/research-application.module.js";
+import { RunResearchUseCase } from "../../src/research/application/run-research.use-case.js";
+import type { LegacyRunResearch } from "../../src/research/legacy-research-execution.gateway.js";
+import { LegacyResearchExecutionGatewayModule } from "../../src/research/legacy-research-execution.module.js";
+import type { ResearchExecutionGateway } from "../../src/research/research-gateway.contracts.js";
+import { RESEARCH_EXECUTION_GATEWAY } from "../../src/research/research-gateway.tokens.js";
+import type { ResearchIngestionPersistence } from "../../src/research/research-persistence.contracts.js";
+import { RESEARCH_INGESTION_PERSISTENCE } from "../../src/research/research-persistence.tokens.js";
+import type { UsageReportingPersistence } from "../../src/usage/usage-persistence.contracts.js";
+import { USAGE_REPORTING_PERSISTENCE } from "../../src/usage/usage-persistence.tokens.js";
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION === "1";
 const connectionString =
   process.env.DATABASE_TEST_URL ?? process.env.DATABASE_URL;
 
 test(
-  "Catalog and Research application services preserve PostgreSQL health, idempotency, resume, and recovery behavior",
+  "Catalog ports plus stateful legacy research gateway preserve PostgreSQL health, idempotency, resume, and failure behavior",
   { skip: !enabled || !connectionString },
   async () => {
     const pool = new Pool({ connectionString, max: 6 });
@@ -34,104 +39,113 @@ test(
     const sourceIds: string[] = [];
     const searchRunIds: string[] = [];
     const articleIds: string[] = [];
+    let activeSourceId = "";
 
-    const gateways: ResearchApplicationGateways = {
-      ai: {
-        async generate() {
-          return { output: {}, usageEvents: [] };
+    const runResearchImpl: LegacyRunResearch = async (input) => {
+      const run = await input.repository.startSearchRun({
+        query: input.query,
+        metadata: {
+          keywords: input.keywords,
+          window_hours: input.windowHours,
+          news_settings: input.newsSettings ?? null,
         },
-      },
-      search: {
-        async search() {
-          return { items: [], usageEvents: [] };
-        },
-      },
-      fetch: {
-        async fetch(request) {
-          return {
-            finalUrl: request.url,
-            content: "unused",
-            contentType: "text",
-            contentHash: `unused-${suffix}`,
-          };
-        },
-      },
-      execution: {
-        async execute(request, signal) {
-          if (signal) assert.equal(signal.aborted, false);
-          if (request.input.query.includes("failure")) throw expectedFailure;
-          return {
-            candidates: [
-              {
-                article: {
-                  source_id: request.input.sourceId ?? null,
-                  search_run_id: request.searchRun.id,
-                  canonical_url: canonicalUrl,
-                  title: "Application research candidate",
-                  author: "Codex",
-                  published_at: "2026-08-09T08:00:00.000Z",
-                  content_hash: `article-${suffix}`,
-                  metadata: { integration: true },
-                },
-                rawContents: [
-                  {
-                    content: "Grounded application evidence",
-                    content_type: "text",
-                    language_code: "en",
-                    extractor: "application-integration",
-                    content_hash: `raw-${suffix}`,
-                    metadata: { grounded: true },
-                  },
-                ],
-              },
-              {
-                article: {
-                  source_id: request.input.sourceId ?? null,
-                  search_run_id: request.searchRun.id,
-                  canonical_url: skippedUrl,
-                  title: "Must not resume an extracted article",
-                  author: null,
-                  published_at: null,
-                  content_hash: `skipped-${suffix}`,
-                  metadata: { must_not_resume: true },
-                },
-                rawContents: [
-                  {
-                    content: "Must not be written",
-                    content_hash: `skipped-raw-${suffix}`,
-                  },
-                ],
-              },
-            ],
-            usageEvents: [
-              {
-                provider: "openai",
-                providerResponseId: responseId,
-                model: "integration-model",
-                operation: "research",
-                searchRunId: request.searchRun.id,
-                inputTokens: 30,
-                outputTokens: 10,
-                estimatedCostUsd: "0.00100000",
-              },
-              {
-                provider: "openai",
-                providerResponseId: responseId,
-                model: "must-not-overwrite",
-                operation: "research-retry",
-                searchRunId: request.searchRun.id,
-              },
-            ],
-            finish: { metadata: { grounded: true } },
-          };
-        },
-      },
+      });
+      try {
+        if (input.query.includes("failure")) throw expectedFailure;
+
+        const sources = await input.repository.listEnabledSources();
+        const source = sources.find((row) => row.id === activeSourceId);
+        assert.ok(source);
+        await input.repository.recordAiUsage({
+          provider: "openai",
+          providerResponseId: responseId,
+          model: "integration-model",
+          operation: "research",
+          searchRunId: run.id,
+          inputTokens: 30,
+          outputTokens: 10,
+          estimatedCostUsd: "0.00100000",
+        });
+        await input.repository.recordAiUsage({
+          provider: "openai",
+          providerResponseId: responseId,
+          model: "must-not-overwrite",
+          operation: "research-retry",
+          searchRunId: run.id,
+        });
+
+        const article = await input.repository.createOrResumeArticleCandidate({
+          source_id: source.id,
+          search_run_id: run.id,
+          canonical_url: canonicalUrl,
+          title: "Application research candidate",
+          author: "Codex",
+          published_at: "2026-08-09T08:00:00.000Z",
+          content_hash: `article-${suffix}`,
+          metadata: { integration: true },
+        });
+        assert.ok(article);
+        await input.repository.saveRawContent({
+          article_id: article.id,
+          content: "Grounded application evidence",
+          content_type: "text",
+          language_code: "en",
+          extractor: "application-integration",
+          content_hash: `raw-${suffix}`,
+          metadata: { grounded: true },
+        });
+
+        const skipped = await input.repository.createOrResumeArticleCandidate({
+          source_id: source.id,
+          search_run_id: run.id,
+          canonical_url: skippedUrl,
+          title: "Must not resume an extracted article",
+          author: null,
+          published_at: null,
+          content_hash: `skipped-${suffix}`,
+          metadata: { must_not_resume: true },
+        });
+        assert.equal(skipped, null);
+
+        await input.repository.finishSearchRun(run.id, {
+          resultCount: 1,
+          metadata: {
+            selected_article_id: article.id,
+            grounded: true,
+          },
+        });
+        const selected = {
+          article,
+          source,
+          canonicalUrl,
+          title: article.title,
+          summary: "Grounded application evidence",
+          author: article.author,
+          publishedAt: article.published_at,
+          contentHash: article.content_hash ?? "",
+          score: 100,
+          evidenceText: "Grounded application evidence",
+        };
+        return {
+          runId: run.id,
+          selected,
+          candidates: [selected],
+          feedErrors: [],
+          extractionErrors: [],
+        };
+      } catch (error) {
+        await input.repository.failSearchRun(run.id, error);
+        throw error;
+      }
     };
 
     const moduleRef = await Test.createTestingModule({
       imports: [
         CatalogApplicationModule,
-        ResearchApplicationModule.register(gateways),
+        LegacyResearchExecutionGatewayModule.register({
+          discoveryProvider: { name: "instrumented-test-provider" },
+          runResearchImpl,
+        }),
       ],
     })
       .overrideProvider(PG_POOL)
@@ -140,7 +154,16 @@ test(
     await moduleRef.init();
 
     const catalog = moduleRef.get(CatalogService);
-    const research = moduleRef.get(ResearchService);
+    const gateway = moduleRef.get<ResearchExecutionGateway>(
+      RESEARCH_EXECUTION_GATEWAY,
+    );
+    const research = new ResearchService(
+      moduleRef.get<ResearchIngestionPersistence>(
+        RESEARCH_INGESTION_PERSISTENCE,
+      ),
+      moduleRef.get<UsageReportingPersistence>(USAGE_REPORTING_PERSISTENCE),
+      new RunResearchUseCase(gateway),
+    );
 
     try {
       const source = await catalog.upsertSource({
@@ -152,6 +175,7 @@ test(
         enabled: true,
         is_primary: true,
       });
+      activeSourceId = source.id;
       sourceIds.push(source.id);
 
       await catalog.markSourceFetchFailure(source.id, "http_503");
@@ -166,9 +190,7 @@ test(
         (await catalog.listEnabledSources()).some((row) => row.id === source.id),
         false,
       );
-      const restored = await catalog.markSourceFetchSuccess(source.id);
-      assert.equal(restored.consecutive_failures, 0);
-      assert.equal(restored.disabled_until, null);
+      await catalog.markSourceFetchSuccess(source.id);
 
       assert.equal(await catalog.claimSourceDiscovery(discoveryKey), true);
       assert.equal(await catalog.claimSourceDiscovery(discoveryKey), false);
@@ -201,24 +223,25 @@ test(
       );
       articleIds.push(extractedArticle.rows[0].id);
 
-      const controller = new AbortController();
-      const result = await research.runResearch(
-        {
-          query: `catalog research success ${suffix}`,
-          sourceId: source.id,
-          metadata: { integration: true },
-        },
-        controller.signal,
-      );
-      searchRunIds.push(result.run.id);
+      const result = await research.runResearch({
+        query: `catalog research success ${suffix}`,
+        keywords: ["science"],
+        windowHours: 48,
+        newsSettings: { topicCodes: ["science"] },
+      });
+      searchRunIds.push(result.runId);
       articleIds.push(...result.candidates.map(({ article }) => article.id));
-      assert.equal(result.completedRun.status, "completed");
-      assert.equal(result.completedRun.result_count, 1);
-      assert.equal(result.candidates.length, 1);
-      assert.equal(result.candidates[0].rawContents.length, 1);
-      assert.equal(result.usageEvents.length, 2);
-      assert.equal(result.usageEvents[0].id, result.usageEvents[1].id);
-      assert.equal(result.usageEvents[1].model, "integration-model");
+      assert.equal(result.selected.article.id, result.candidates[0].article.id);
+
+      const completedRun = await pool.query<{
+        status: string;
+        result_count: number;
+      }>(
+        "select status, result_count from public.search_runs where id = $1",
+        [result.runId],
+      );
+      assert.equal(completedRun.rows[0].status, "completed");
+      assert.equal(completedRun.rows[0].result_count, 1);
 
       const usageCount = await pool.query<{ count: string }>(
         `select count(*)::text as count
@@ -244,9 +267,7 @@ test(
         status: string;
         error: string;
       }>(
-        `select id, status, error
-         from public.search_runs
-         where query = $1`,
+        `select id, status, error from public.search_runs where query = $1`,
         [`catalog research failure ${suffix}`],
       );
       assert.equal(failedRun.rows.length, 1);

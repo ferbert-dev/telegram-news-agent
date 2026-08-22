@@ -15,7 +15,10 @@ import type {
   StartSearchRunInput,
 } from "../research-persistence.contracts.js";
 import { RESEARCH_INGESTION_PERSISTENCE } from "../research-persistence.tokens.js";
-import type { RunResearchResult } from "../research-gateway.contracts.js";
+import type {
+  ResearchExecutionInput,
+  RunResearchResult,
+} from "../research-gateway.contracts.js";
 import type {
   AiUsageEventRow,
   RecordAiUsageInput,
@@ -37,7 +40,7 @@ export class ResearchService implements ResearchIngestionPersistence {
   ) {}
 
   runResearch(
-    input: StartSearchRunInput,
+    input: ResearchExecutionInput,
     signal?: AbortSignal,
   ): Promise<RunResearchResult> {
     return this.runResearchUseCase.execute(input, signal);

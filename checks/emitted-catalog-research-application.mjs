@@ -12,6 +12,12 @@ const { ResearchService } = await import(
 const { RunResearchUseCase } = await import(
   "../dist/research/application/run-research.use-case.js"
 );
+const { LegacyResearchExecutionGateway } = await import(
+  "../dist/research/legacy-research-execution.gateway.js"
+);
+const { LegacyResearchExecutionGatewayModule } = await import(
+  "../dist/research/legacy-research-execution.module.js"
+);
 const { ResearchApplicationModule } = await import(
   "../dist/research/research-application.module.js"
 );
@@ -64,25 +70,79 @@ const persistence = {
 const usage = {
   async recordAiUsage() { throw new Error("no usage expected"); },
 };
-const catalogPersistence = {
-  async listEnabledSources() { return []; },
+const candidate = {
+  article: {
+    id: "article-1",
+    source_id: source.id,
+    search_run_id: run.id,
+    canonical_url: "https://example.test/story",
+    title: "Story",
+    author: null,
+    published_at: null,
+    discovered_at: run.started_at,
+    content_hash: "hash",
+    status: "discovered",
+    metadata: {},
+    created_at: run.started_at,
+    updated_at: run.started_at,
+  },
+  source,
+  canonicalUrl: "https://example.test/story",
+  title: "Story",
+  summary: "Summary",
+  author: null,
+  publishedAt: null,
+  contentHash: "hash",
+  score: 100,
+};
+const executionResult = {
+  runId: run.id,
+  selected: candidate,
+  candidates: [candidate],
+  feedErrors: [],
+  extractionErrors: [],
 };
 const execution = {
   async execute(_request, signal) {
     assert.equal(signal, abort.signal);
-    return { candidates: [], usageEvents: [], finish: { metadata: { empty: true } } };
+    return executionResult;
   },
 };
 const abort = new AbortController();
-const useCase = new RunResearchUseCase(
-  persistence,
-  catalogPersistence,
-  usage,
-  execution,
-);
+const useCase = new RunResearchUseCase(execution);
 const service = new ResearchService(persistence, usage, useCase);
 const result = await service.runResearch({ query: "science" }, abort.signal);
-assert.equal(result.completedRun.status, "completed");
+assert.equal(result, executionResult);
+
+let adapterCalled = false;
+const adapter = new LegacyResearchExecutionGateway(
+  {
+    async listEnabledSources() { return []; },
+  },
+  persistence,
+  {
+    async listRecentPublishedStories() { return []; },
+  },
+  usage,
+  {
+    discoveryProvider: {},
+    async runResearchImpl(input) {
+      adapterCalled = true;
+      assert.equal(input.query, "science");
+      return executionResult;
+    },
+  },
+);
+assert.equal(
+  await adapter.execute({ input: { query: "science" } }),
+  executionResult,
+);
+assert.equal(adapterCalled, true);
+assert.equal(
+  LegacyResearchExecutionGatewayModule.register({ discoveryProvider: {} })
+    .exports.includes(tokens.RESEARCH_EXECUTION_GATEWAY),
+  true,
+);
 
 const module = ResearchApplicationModule.register({
   ai: {},

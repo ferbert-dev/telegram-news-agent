@@ -950,9 +950,9 @@
     "semantic_hash": "d06c49a630a6d3e8bb561a970b9936d7"
   },
   "checks/application/catalog-research-research.ts": {
-    "mtime": 1787407074.1625464,
-    "ast_hash": "aa79df17d30cac52726cdc44c128a086",
-    "semantic_hash": "aa79df17d30cac52726cdc44c128a086"
+    "mtime": 1787409938.6548595,
+    "ast_hash": "1060b09b215f66e5f84418d92a96798c",
+    "semantic_hash": "1060b09b215f66e5f84418d92a96798c"
   },
   "checks/application/editorial-application.ts": {
     "mtime": 1787309093.031469,
@@ -960,9 +960,9 @@
     "semantic_hash": "7887b6871ba86aec0ee6553f91ea65c4"
   },
   "checks/application/operations-application.ts": {
-    "mtime": 1787404603.72032,
-    "ast_hash": "17227c0b673eecb2699208954baa6454",
-    "semantic_hash": "17227c0b673eecb2699208954baa6454"
+    "mtime": 1787409938.655909,
+    "ast_hash": "bed091ccffb8e7720d123651c256927b",
+    "semantic_hash": "bed091ccffb8e7720d123651c256927b"
   },
   "checks/application/scheduler-application.ts": {
     "mtime": 1787309093.0322194,
@@ -995,19 +995,19 @@
     "semantic_hash": "f19f88f36a04e7b47ea27d7c89e47afd"
   },
   "checks/architecture/nestjs-boundaries.ts": {
-    "mtime": 1787407716.8232973,
-    "ast_hash": "feea84ad81336a321b75140ac17d79b8",
-    "semantic_hash": "feea84ad81336a321b75140ac17d79b8"
+    "mtime": 1787409938.6561868,
+    "ast_hash": "d5be8973dbb10d39c57bf034e5fcb8e0",
+    "semantic_hash": "d5be8973dbb10d39c57bf034e5fcb8e0"
   },
   "checks/emitted-catalog-research-application.mjs": {
-    "mtime": 1787407074.1631386,
-    "ast_hash": "42c7597a09aed37ac5752473c48664cb",
-    "semantic_hash": "42c7597a09aed37ac5752473c48664cb"
+    "mtime": 1787409938.6565146,
+    "ast_hash": "edee4efec5ddac5ca8b3906ab509588c",
+    "semantic_hash": "edee4efec5ddac5ca8b3906ab509588c"
   },
   "checks/emitted-editorial-application.mjs": {
-    "mtime": 1787403007.910451,
-    "ast_hash": "c67826c88a668d54b58a5abfba7063d9",
-    "semantic_hash": "c67826c88a668d54b58a5abfba7063d9"
+    "mtime": 1787409938.657005,
+    "ast_hash": "5636991b4884adb7f4d80b13ea7c6b6a",
+    "semantic_hash": "5636991b4884adb7f4d80b13ea7c6b6a"
   },
   "checks/emitted-operations-application.mjs": {
     "mtime": 1787309093.0361006,
@@ -1035,9 +1035,9 @@
     "semantic_hash": "09270a100926d513f5d3be08c43c768c"
   },
   "checks/integration/catalog-research-application.ts": {
-    "mtime": 1787407074.1634033,
-    "ast_hash": "e6e9cce65249cbae8c08f50e8f9cef78",
-    "semantic_hash": "e6e9cce65249cbae8c08f50e8f9cef78"
+    "mtime": 1787409938.6574087,
+    "ast_hash": "16df02f1f1014292523e0caea3808382",
+    "semantic_hash": "16df02f1f1014292523e0caea3808382"
   },
   "checks/integration/drizzle-settings-repositories.ts": {
     "mtime": 1787309093.037764,
@@ -1380,14 +1380,14 @@
     "semantic_hash": "ceb27ea5d095fb857eb0d1fdb38287d0"
   },
   "src/research/application/research.service.ts": {
-    "mtime": 1787407074.1660986,
-    "ast_hash": "8b24339e41d7d6c1d083f02cef447e5a",
-    "semantic_hash": "8b24339e41d7d6c1d083f02cef447e5a"
+    "mtime": 1787409938.6679304,
+    "ast_hash": "21220e3a18b655ab3575dd7afc9edfbc",
+    "semantic_hash": "21220e3a18b655ab3575dd7afc9edfbc"
   },
   "src/research/application/run-research.use-case.ts": {
-    "mtime": 1787407074.166283,
-    "ast_hash": "deebed8d5e92df22553980cbff57f88f",
-    "semantic_hash": "deebed8d5e92df22553980cbff57f88f"
+    "mtime": 1787409938.6683788,
+    "ast_hash": "afdfa12d3b4fafd40cd18fae7d3255cb",
+    "semantic_hash": "afdfa12d3b4fafd40cd18fae7d3255cb"
   },
   "src/research/research-application.module.ts": {
     "mtime": 1786350767.473799,
@@ -1395,9 +1395,9 @@
     "semantic_hash": "4cb1b457246b6f5f29c3686b765dad3a"
   },
   "src/research/research-gateway.contracts.ts": {
-    "mtime": 1787407074.1664946,
-    "ast_hash": "5a24573f0abf54d671aead573e8a9574",
-    "semantic_hash": "5a24573f0abf54d671aead573e8a9574"
+    "mtime": 1787409938.6690416,
+    "ast_hash": "4685699e775152acc05da0ef29705c77",
+    "semantic_hash": "4685699e775152acc05da0ef29705c77"
   },
   "src/research/research-gateway.tokens.ts": {
     "mtime": 1786350767.4740682,
@@ -1848,6 +1848,61 @@
     "mtime": 1787400970.9686189,
     "ast_hash": "7e63e6851b83de3dd8e7bcffc50c80f6",
     "semantic_hash": "7e63e6851b83de3dd8e7bcffc50c80f6"
+  },
+  "checks/application/legacy-editorial-draft.gateway.ts": {
+    "mtime": 1787409938.6551883,
+    "ast_hash": "8db9db292cd6ba17cf067594a0c80266",
+    "semantic_hash": "8db9db292cd6ba17cf067594a0c80266"
+  },
+  "src/editorial/legacy-editorial-draft.gateway.ts": {
+    "mtime": 1787409938.6624906,
+    "ast_hash": "1ab183b4c6d13d5dccb54f96f8657b2f",
+    "semantic_hash": "1ab183b4c6d13d5dccb54f96f8657b2f"
+  },
+  "src/editorial/legacy-editorial-draft.module.ts": {
+    "mtime": 1787409938.664427,
+    "ast_hash": "ab0b5a3ef48ea3cbc098139cd71f866a",
+    "semantic_hash": "ab0b5a3ef48ea3cbc098139cd71f866a"
+  },
+  "checks/application/legacy-editorial-publication.gateway.ts": {
+    "mtime": 1787409938.6555324,
+    "ast_hash": "229cc449b8bc2897ec13cf7e34ba3cfb",
+    "semantic_hash": "229cc449b8bc2897ec13cf7e34ba3cfb"
+  },
+  "src/editorial/legacy-editorial-publication-policy.gateway.ts": {
+    "mtime": 1787409938.664714,
+    "ast_hash": "07320be86c45e4d6e1a011a4ee2b7260",
+    "semantic_hash": "07320be86c45e4d6e1a011a4ee2b7260"
+  },
+  "src/editorial/legacy-editorial-publication.gateway.ts": {
+    "mtime": 1787409938.6662025,
+    "ast_hash": "de89f629a279d5b7ae29bbd0889c65bd",
+    "semantic_hash": "de89f629a279d5b7ae29bbd0889c65bd"
+  },
+  "src/editorial/legacy-editorial-publication.module.ts": {
+    "mtime": 1787409938.6665146,
+    "ast_hash": "8177359bf776ab46dc03d1665ea7ce29",
+    "semantic_hash": "8177359bf776ab46dc03d1665ea7ce29"
+  },
+  "src/operations/legacy-notion-audit.gateway.ts": {
+    "mtime": 1787409938.6669095,
+    "ast_hash": "9f6e0fe1ae7396137fddb37eb4a959a9",
+    "semantic_hash": "9f6e0fe1ae7396137fddb37eb4a959a9"
+  },
+  "src/operations/legacy-notion-audit.module.ts": {
+    "mtime": 1787409938.6673677,
+    "ast_hash": "1fd3588c77c29c3f815bd89e17e1e585",
+    "semantic_hash": "1fd3588c77c29c3f815bd89e17e1e585"
+  },
+  "src/research/legacy-research-execution.gateway.ts": {
+    "mtime": 1787409938.6685536,
+    "ast_hash": "4a0dc0be7b1cbb06c2b5cc397c90faed",
+    "semantic_hash": "4a0dc0be7b1cbb06c2b5cc397c90faed"
+  },
+  "src/research/legacy-research-execution.module.ts": {
+    "mtime": 1787409938.668722,
+    "ast_hash": "cdea3ed3f9bab7c49e2d657fc068e83a",
+    "semantic_hash": "cdea3ed3f9bab7c49e2d657fc068e83a"
   },
   "checks/emitted-runtime-bootstrap.mjs": {
     "mtime": 1787407718.628913,
