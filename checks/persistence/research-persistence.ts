@@ -13,6 +13,7 @@ import { createDrizzleDatabase } from "../../src/database/drizzle-client.js";
 import { ResearchIngestionRepository } from "../../src/database/repositories/research-ingestion-repository.js";
 import type { ResearchIngestionPersistence } from "../../src/research/research-persistence.contracts.js";
 import { ResearchPersistenceModule } from "../../src/research/research-persistence.module.js";
+import { AI_PROVIDER_ATTEMPTS_PERSISTENCE } from "../../src/ai-provider-attempts-persistence.tokens.js";
 import { RESEARCH_INGESTION_PERSISTENCE } from "../../src/research/research-persistence.tokens.js";
 import {
   mapArticleRow,
@@ -418,7 +419,7 @@ class ResearchConsumer {
 })
 class ResearchConsumerModule {}
 
-test("ResearchPersistenceModule exports one Symbol alias with exactly seven methods", async () => {
+test("ResearchPersistenceModule exports narrow Symbol aliases for research and provider attempts", async () => {
   const pool = new ResearchPool();
   const moduleRef = await Test.createTestingModule({
     imports: [ResearchConsumerModule],
@@ -446,6 +447,7 @@ test("ResearchPersistenceModule exports one Symbol alias with exactly seven meth
     );
     assert.deepEqual(Reflect.getMetadata("exports", ResearchPersistenceModule), [
       RESEARCH_INGESTION_PERSISTENCE,
+      AI_PROVIDER_ATTEMPTS_PERSISTENCE,
     ]);
   } finally {
     await moduleRef.close();

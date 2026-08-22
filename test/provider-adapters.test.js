@@ -230,6 +230,15 @@ test("Gemini adapter uses structured JSON generation and Google Search", async (
   ]);
 });
 
+test("structured adapters expose safe diagnostics for missing or invalid output", async () => {
+  const provider = createGeminiProvider({ apiKey: "test-key", model: "flash" }, {
+    client: { models: { async generateContent() { return { responseId: "safe-response", candidates: [{ finishReason: "STOP" }], usageMetadata: { promptTokenCount: 1 } }; } } },
+  });
+  await assert.rejects(provider.generateStructured({ systemInstruction: "x", input: {}, zodSchema: Status, jsonSchema: STATUS_JSON_SCHEMA }), (error) =>
+    error.code === "structured_output_missing" && error.providerDiagnostics.providerResponseId === "safe-response",
+  );
+});
+
 test("empty exclusions preserve exact legacy OpenAI and Gemini search requests", async () => {
   let openAiRequest;
   const openAi = createOpenAiProvider(

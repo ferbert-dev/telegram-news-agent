@@ -38,14 +38,25 @@ test("status parsing and rendering distinguish idle providers from failures", ()
   });
   const text = renderSystemStatus({
     dashboard: DASHBOARD,
+    attemptHealth: [{ provider: "gemini", status: "failed", error_code: "rate_limited", started_at: "2026-08-21T12:00:00.000Z" }],
     providerNames: ["openai", "gemini", "exa"],
     appVersion: "v0.1.0+abcdef0",
   });
   assert.match(text, /🟢 PostgreSQL · connected/);
   assert.match(text, /🟢 OpenAI · 2 calls today/);
-  assert.match(text, /🟡 Gemini · configured/);
+  assert.match(text, /🔴 Gemini · last attempt failed \(rate_limited\)/);
   assert.match(text, /🟡 Exa · ready, no calls today/);
   assert.match(text, /idle, not broken/i);
+  assert.match(text, /Gemini.*last attempt failed.*rate_limited/i);
+});
+
+test("status renders the persistence health DTO without selecting an older provider row", () => {
+  const text = renderSystemStatus({
+    dashboard: DASHBOARD,
+    attemptHealth: [{ provider: "openai", status: "failed", errorCode: "timeout", started_at: "2026-08-22T12:00:00.000Z" }],
+    providerNames: ["openai", "gemini", "exa"],
+  });
+  assert.match(text, /OpenAI.*last attempt failed \(timeout\)/i);
 });
 
 test("status display reads PostgreSQL without probing a provider", async () => {

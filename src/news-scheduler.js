@@ -6,8 +6,21 @@ import { NoResearchCandidatesError } from "./research.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
 const DEFAULT_STALE_AFTER_SECONDS = 30 * 60;
+const SAFE_SCHEDULE_ERROR_CODES = new Set([
+  "no_candidates", "pipeline_busy", "claim_lost", "review_delivery_failed",
+  "publication_unresolved", "schedule_pause_failed", "scheduled_run_failed",
+]);
+
+function safeTraceId(value) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : "unavailable";
+}
 
 function errorCode(error) {
+  if (SAFE_SCHEDULE_ERROR_CODES.has(error?.code)) {
+    return error.code;
+  }
   const messages = [error?.message ?? ""];
   if (error instanceof AggregateError) {
     messages.push(...error.errors.map((item) => item?.message ?? ""));
@@ -411,6 +424,12 @@ export async function runScheduledNewsOnce({
       } catch {
         code = "claim_lost";
       }
+    }
+    if (!new Set(["claim_lost", "publication_unresolved"]).has(code)) {
+      await notifyAdmin(
+        settings?.reviewChatId ?? claim.review_chat_id,
+        `Scheduled news failed. Code: ${code}. Trace: ${safeTraceId(error.traceId)}.`,
+      ).catch(() => {});
     }
     log.error?.(
       JSON.stringify({

@@ -2,6 +2,11 @@
 
 Last verified: 2026-08-21
 
+Branch-local, not deployed: `codex/ai-provider-attempts` adds durable, redacted
+AI provider-attempt diagnostics, bounded transient retry, scheduler failure
+alerts, and private status/inspection visibility. It is not activated in
+production until migration, review, and release gates complete.
+
 ## Production
 
 | Item | Verified state |

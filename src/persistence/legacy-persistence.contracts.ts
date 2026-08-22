@@ -1,5 +1,6 @@
 import type { CatalogPersistence } from "../catalog/catalog-persistence.js";
 import type { EditorialPersistence } from "../editorial/editorial-persistence.contracts.js";
+import type { AiProviderAttemptsPersistence } from "../ai-provider-attempts-persistence.contracts.js";
 import type {
   NotionAuditOutboxRepositoryPort,
   PipelineLeasesRepositoryPort,
@@ -33,6 +34,7 @@ export interface LegacyPersistence
   extends
     CatalogPersistence,
     ResearchIngestionPersistence,
+    AiProviderAttemptsPersistence,
     StoryDeduplicationPersistence,
     EditorialPersistence,
     UsageReportingPersistence,
@@ -86,6 +88,9 @@ export const LEGACY_PERSISTENCE_METHOD_OWNERS = {
   saveRawContent: "research",
   transitionArticle: "research",
   replaceArticleTopics: "research",
+  startAiProviderAttempt: "providerAttempts",
+  completeAiProviderAttempt: "providerAttempts",
+  getLatestAiProviderAttemptHealth: "providerAttempts",
   listRecentPublishedStories: "storyDeduplication",
   recordStoryDedupDecision: "storyDeduplication",
 

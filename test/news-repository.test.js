@@ -22,6 +22,16 @@ test("recent story history canonicalizes legacy PostgreSQL Date timestamps", asy
   assert.equal(rows[0].published_at, "2026-08-09T10:00:00.000Z");
 });
 
+test("provider attempt persistence maps only safe operational metadata", async () => {
+  const calls = [];
+  const repository = new NewsRepository({ async query(text, parameters) { calls.push([text, parameters]); return { rows: [{ id: parameters[0] }] }; } });
+  await repository.startAiProviderAttempt({ id: "00000000-0000-4000-8000-000000000001", correlationId: "00000000-0000-4000-8000-000000000002", operation: "editorial_draft", provider: "gemini", model: "flash", attemptNumber: 1, startedAt: "2026-08-22T06:00:00.000Z" });
+  await repository.completeAiProviderAttempt({ id: "00000000-0000-4000-8000-000000000001", status: "failed", completedAt: "2026-08-22T06:00:01.000Z", latencyMs: 1000, errorCode: "rate_limited", errorFingerprint: "a".repeat(64) });
+  assert.match(calls[0][0], /ai_provider_attempts/);
+  assert.doesNotMatch(calls[0][0], /prompt|response_body|error_message/);
+  assert.deepEqual(calls[1][1].slice(0, 5), ["00000000-0000-4000-8000-000000000001", "failed", "2026-08-22T06:00:01.000Z", 1000, "rate_limited"]);
+});
+
 test("createReviewDraft delegates all state changes to one transactional function", async () => {
   const calls = [];
   const repository = new NewsRepository({

@@ -815,6 +815,46 @@ export class NewsRepository {
     return this.one(result, "Record AI usage");
   }
 
+  async startAiProviderAttempt({ id, correlationId, operation, provider, model = null, attemptNumber, startedAt }) {
+    const result = await this.query(
+      "Start AI provider attempt",
+      `insert into public.ai_provider_attempts (
+        id, correlation_id, operation, provider, model, attempt_number, status, started_at
+      ) values ($1, $2, $3, $4, $5, $6, 'started', $7) returning *`,
+      [id, correlationId, operation, provider, model, attemptNumber, startedAt],
+    );
+    return this.one(result, "Start AI provider attempt");
+  }
+
+  async completeAiProviderAttempt({ id, status, completedAt, latencyMs, ...diagnostics }) {
+    const result = await this.query(
+      "Complete AI provider attempt",
+      `update public.ai_provider_attempts set
+        status = $2, completed_at = $3, latency_ms = $4, error_code = $5,
+        http_status = $6, provider_response_id = $7, response_status = $8,
+        incomplete_reason = $9, refusal = $10, input_tokens = $11,
+        output_tokens = $12, reasoning_tokens = $13, error_fingerprint = $14
+      where id = $1 returning *`,
+      [id, status, completedAt, latencyMs, diagnostics.errorCode ?? null, diagnostics.httpStatus ?? null,
+        diagnostics.providerResponseId ?? null, diagnostics.responseStatus ?? null,
+        diagnostics.incompleteReason ?? null, diagnostics.refusal ?? null,
+        diagnostics.inputTokens ?? null, diagnostics.outputTokens ?? null,
+        diagnostics.reasoningTokens ?? null, diagnostics.errorFingerprint ?? null],
+    );
+    return this.one(result, "Complete AI provider attempt");
+  }
+
+  async getLatestAiProviderAttemptHealth() {
+    const result = await this.query(
+      "Get latest AI provider attempt health",
+      `select distinct on (provider) provider, status, error_code, operation, started_at,
+        completed_at, latency_ms, correlation_id
+       from public.ai_provider_attempts
+       order by provider, started_at desc, attempt_number desc, id desc`,
+    );
+    return result.rows;
+  }
+
   async getDailyUsageDashboard({
     channelId,
     now: currentTime = new Date().toISOString(),

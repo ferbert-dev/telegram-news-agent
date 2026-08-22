@@ -20,6 +20,7 @@ import {
   articleTopics,
   rawContents,
   searchRuns,
+  aiProviderAttempts,
 } from "./research.js";
 import {
   newsBotSettings,
@@ -39,6 +40,7 @@ import {
 
 export const databaseTables = [
   aiUsageEvents,
+  aiProviderAttempts,
   articleStoryDecisions,
   articles,
   articleTopics,
