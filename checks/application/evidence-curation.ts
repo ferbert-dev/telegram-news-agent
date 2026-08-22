@@ -275,6 +275,14 @@ test("typed candidate curation rejects unknown IDs and preserves recognized orde
       && error.usageEvents[0]?.provider === "openai",
   );
 
+  const malformedUsage = new EvidenceCurationService(publicDns, { fetchPinned: async () => new Response() }, sleep, { async generateStructured() { return { value: { rankedCandidateIds: ["candidate-3"] }, usageEvents: { secret:"must not escape" } as never }; } });
+  await assert.rejects(
+    malformedUsage.curateNewsCandidates(candidates),
+    (error) => error instanceof InvalidNewsCandidateCurationError
+      && error.code === "invalid_candidate_ids"
+      && error.usageEvents.length === 0,
+  );
+
   const thirteen = Array.from({ length: 13 }, (_value, index) => ({ canonicalUrl:`https://publisher-${index}.example/story`, title:`Story ${index}`, publisher:`publisher-${index}` }));
   const overLimit = new EvidenceCurationService(publicDns, { fetchPinned: async () => new Response() }, sleep, { async generateStructured() { return { value: { rankedCandidateIds: thirteen.map((_candidate,index)=>`candidate-${index+1}`) }, usageEvents }; } });
   await assert.rejects(
