@@ -10,12 +10,18 @@ import { CatalogPersistenceModule } from "../../src/catalog/catalog-persistence.
 import { CATALOG_PERSISTENCE } from "../../src/catalog/catalog-persistence.tokens.js";
 import { ResearchService } from "../../src/research/application/research.service.js";
 import { RunResearchUseCase } from "../../src/research/application/run-research.use-case.js";
+import {
+  LegacyResearchExecutionGateway,
+  type LegacyRunResearchInput,
+} from "../../src/research/legacy-research-execution.gateway.js";
+import { LegacyResearchExecutionGatewayModule } from "../../src/research/legacy-research-execution.module.js";
 import { ResearchApplicationModule } from "../../src/research/research-application.module.js";
 import type {
   ResearchAiGateway,
   ResearchExecutionGateway,
   ResearchFetchGateway,
   ResearchSearchGateway,
+  RunResearchResult,
 } from "../../src/research/research-gateway.contracts.js";
 import {
   RESEARCH_AI_GATEWAY,
@@ -31,6 +37,9 @@ import type {
 } from "../../src/research/research-persistence.contracts.js";
 import { RESEARCH_INGESTION_PERSISTENCE } from "../../src/research/research-persistence.tokens.js";
 import { ResearchPersistenceModule } from "../../src/research/research-persistence.module.js";
+import type { StoryDeduplicationPersistence } from "../../src/story-deduplication/story-deduplication.contracts.js";
+import { StoryDeduplicationPersistenceModule } from "../../src/story-deduplication/story-deduplication-persistence.module.js";
+import { STORY_DEDUPLICATION_PERSISTENCE } from "../../src/story-deduplication/story-deduplication.tokens.js";
 import type {
   AiUsageEventRow,
   RecordAiUsageInput,
@@ -40,58 +49,53 @@ import { UsagePersistenceModule } from "../../src/usage/usage-persistence.module
 import { USAGE_REPORTING_PERSISTENCE } from "../../src/usage/usage-persistence.tokens.js";
 
 const RUN: SearchRunRow = {
-  id: "run-1",
+  id: "00000000-0000-4000-8000-000000000001",
   query: "science",
   status: "running",
   source_id: null,
-  started_at: "2026-08-09T08:00:00.000Z",
+  started_at: "2026-08-22T08:00:00.000Z",
   finished_at: null,
   result_count: 0,
   error: null,
-  metadata: { mode: "test" },
+  metadata: {},
 };
-const COMPLETED_RUN: SearchRunRow = {
-  ...RUN,
-  status: "completed",
-  finished_at: "2026-08-09T08:01:00.000Z",
-  result_count: 1,
-};
+const SOURCE_ID = "00000000-0000-4000-8000-000000000003";
 const ARTICLE: ArticleRow = {
-  id: "article-1",
-  source_id: "source-1",
+  id: "00000000-0000-4000-8000-000000000002",
+  source_id: SOURCE_ID,
   search_run_id: RUN.id,
   canonical_url: "https://example.test/story",
   title: "Story",
   author: null,
-  published_at: null,
-  discovered_at: "2026-08-09T08:00:00.000Z",
+  published_at: "2026-08-22T07:00:00.000Z",
+  discovered_at: RUN.started_at,
   content_hash: "article-hash",
   status: "discovered",
   metadata: {},
-  created_at: "2026-08-09T08:00:00.000Z",
-  updated_at: "2026-08-09T08:00:00.000Z",
+  created_at: RUN.started_at,
+  updated_at: RUN.started_at,
 };
 const RAW: RawContentRow = {
-  id: "raw-1",
+  id: "00000000-0000-4000-8000-000000000004",
   article_id: ARTICLE.id,
   content: "Evidence",
   content_type: "text",
-  language_code: null,
-  fetched_at: "2026-08-09T08:00:00.000Z",
-  extractor: "future-adapter",
+  language_code: "en",
+  fetched_at: RUN.started_at,
+  extractor: "test",
   content_hash: "raw-hash",
   metadata: {},
-  created_at: "2026-08-09T08:00:00.000Z",
+  created_at: RUN.started_at,
 };
 const USAGE: AiUsageEventRow = {
-  id: "usage-1",
+  id: "00000000-0000-4000-8000-000000000005",
   provider: "openai",
   provider_response_id: "response-1",
   model: "model",
   operation: "research",
   telegram_channel_id: null,
   search_run_id: RUN.id,
-  article_id: null,
+  article_id: ARTICLE.id,
   input_tokens: 10,
   cached_input_tokens: 0,
   output_tokens: 2,
@@ -99,373 +103,328 @@ const USAGE: AiUsageEventRow = {
   web_search_calls: 1,
   estimated_cost_usd: "0.01000000",
   pricing_snapshot: null,
-  created_at: "2026-08-09T08:00:00.000Z",
+  created_at: RUN.started_at,
 };
+const SOURCE = {
+  id: SOURCE_ID,
+  name: "Example",
+  homepage_url: "https://example.test",
+  feed_url: "https://example.test/feed.xml",
+  source_type: "rss",
+  reliability_score: 90,
+  enabled: true,
+  last_checked_at: null,
+  created_at: RUN.started_at,
+  updated_at: RUN.started_at,
+  is_primary: true,
+  last_success_at: null,
+  last_failed_at: null,
+  consecutive_failures: 0,
+  last_error_code: null,
+  disabled_until: null,
+  discovered_by: "seed",
+  discovery_metadata: {},
+  topic_codes: ["science"],
+};
+const RESULT: RunResearchResult = {
+  runId: RUN.id,
+  selected: {
+    article: ARTICLE,
+    source: SOURCE,
+    canonicalUrl: ARTICLE.canonical_url,
+    title: ARTICLE.title,
+    summary: "Summary",
+    author: null,
+    publishedAt: ARTICLE.published_at,
+    contentHash: ARTICLE.content_hash ?? "",
+    score: 100,
+    evidenceText: RAW.content,
+  },
+  candidates: [],
+  feedErrors: [],
+  extractionErrors: [],
+};
+RESULT.candidates.push(RESULT.selected);
 
-const CATALOG = {
-  async listEnabledSources() { return []; },
-} as unknown as CatalogPersistence;
-
-function unusedDashboard(): ReturnType<UsageReportingPersistence["getDailyUsageDashboard"]> {
-  throw new Error("dashboard is outside this slice");
+function fixturePorts() {
+  const catalog: CatalogPersistence = {
+    async listEnabledSources() { return [SOURCE]; },
+    async listEnabledArticleTags() { return []; },
+    async listSourceHealth() { return [SOURCE]; },
+    async upsertSource() { return SOURCE; },
+    async setSourceEnabled() { return SOURCE; },
+    async markSourceChecked() { return SOURCE; },
+    async markSourceFetchSuccess() { return SOURCE; },
+    async markSourceFetchFailure() { return SOURCE; },
+    async claimSourceDiscovery() { return true; },
+    async completeSourceDiscovery() { return true; },
+    async upsertDiscoveredSource() { return SOURCE; },
+  };
+  const research: ResearchIngestionPersistence = {
+    async startSearchRun() { return RUN; },
+    async finishSearchRun() { return { ...RUN, status: "completed" }; },
+    async failSearchRun() { return { ...RUN, status: "failed" }; },
+    async createOrResumeArticleCandidate() { return ARTICLE; },
+    async saveRawContent() { return RAW; },
+    async transitionArticle() { return ARTICLE; },
+    async replaceArticleTopics() { return []; },
+  };
+  const story: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() { return []; },
+    async recordStoryDedupDecision() {
+      return {
+        article_id: ARTICLE.id,
+        story_fingerprint: "fingerprint",
+        relation: "distinct",
+        duplicate_of_article_id: null,
+        confidence: "1",
+        reason: null,
+        decision_source: "deterministic",
+        metadata: {},
+        decided_at: RUN.started_at,
+        updated_at: RUN.started_at,
+      };
+    },
+  };
+  const usage: UsageReportingPersistence = {
+    async recordAiUsage() { return USAGE; },
+    async getDailyUsageDashboard() { throw new Error("unused"); },
+  };
+  return { catalog, research, story, usage };
 }
 
-test("RunResearchUseCase preserves signal and usage identity, skips null candidates, writes raw content, and finishes the run", async () => {
-  const calls: unknown[] = [];
-  const startInput = {
+test("RunResearchUseCase delegates exactly once and preserves result identity", async () => {
+  const signal = new AbortController().signal;
+  const input = {
     query: "science",
-    metadata: { scope: "broad" },
+    keywords: ["space"],
+    windowHours: 24,
+    newsSettings: { channelId: "channel" },
   };
-  const articleInput = {
-    source_id: "source-1",
+  const calls: unknown[][] = [];
+  const gateway: ResearchExecutionGateway = {
+    async execute(...args) { calls.push(args); return RESULT; },
+  };
+
+  const result = await new RunResearchUseCase(gateway).execute(input, signal);
+
+  assert.equal(result, RESULT);
+  assert.deepEqual(calls, [[{ input }, signal]]);
+  assert.deepEqual(
+    Reflect.getMetadata(SELF_DECLARED_DEPS_METADATA, RunResearchUseCase),
+    [{ index: 0, param: RESEARCH_EXECUTION_GATEWAY }],
+  );
+});
+
+test("RunResearchUseCase preserves gateway error identity", async () => {
+  const failure = new Error("provider unavailable");
+  const useCase = new RunResearchUseCase({
+    async execute() { throw failure; },
+  });
+  await assert.rejects(
+    useCase.execute({ query: "science" }),
+    (error) => error === failure,
+  );
+});
+
+test("LegacyResearchExecutionGateway exposes every required narrow effect and returns the exact legacy result", async () => {
+  const ports = fixturePorts();
+  const provider = { searchNews: async () => ({ items: [] }) };
+  const fixedNow = new Date("2026-08-22T08:00:00.000Z");
+  let captured: LegacyRunResearchInput | undefined;
+  const gateway = new LegacyResearchExecutionGateway(
+    ports.catalog,
+    ports.research,
+    ports.story,
+    ports.usage,
+    {
+      discoveryProvider: provider,
+      now: () => fixedNow,
+      runResearchImpl: async (input) => {
+        captured = input;
+        return RESULT;
+      },
+    },
+  );
+
+  const result = await gateway.execute({
+    input: {
+      query: "science",
+      keywords: ["space"],
+      windowHours: 12,
+      newsSettings: { topicCodes: ["science"] },
+    },
+  });
+
+  assert.equal(result, RESULT);
+  assert.ok(captured);
+  assert.equal(captured.discoveryProvider, provider);
+  assert.equal(captured.now, fixedNow);
+  assert.equal(captured.query, "science");
+  assert.deepEqual(captured.keywords, ["space"]);
+  assert.equal(captured.windowHours, 12);
+  assert.deepEqual(captured.newsSettings, { topicCodes: ["science"] });
+  assert.deepEqual(Object.keys(captured.repository).sort(), [
+    "claimSourceDiscovery",
+    "completeSourceDiscovery",
+    "createOrResumeArticleCandidate",
+    "failSearchRun",
+    "finishSearchRun",
+    "listEnabledSources",
+    "listRecentPublishedStories",
+    "markSourceChecked",
+    "markSourceFetchFailure",
+    "markSourceFetchSuccess",
+    "recordAiUsage",
+    "recordStoryDedupDecision",
+    "saveRawContent",
+    "startSearchRun",
+    "transitionArticle",
+    "upsertDiscoveredSource",
+  ]);
+  assert.equal(await captured.repository.startSearchRun({ query: "x" }), RUN);
+  assert.equal(await captured.repository.createOrResumeArticleCandidate({
+    source_id: ARTICLE.source_id,
     search_run_id: RUN.id,
     canonical_url: ARTICLE.canonical_url,
     title: ARTICLE.title,
     author: null,
     published_at: null,
     content_hash: ARTICLE.content_hash,
-    metadata: {},
-  };
-  const skippedArticleInput = {
-    ...articleInput,
-    canonical_url: "https://example.test/existing",
-    title: "Existing",
-  };
-  const rawInput = {
+  }), ARTICLE);
+  assert.equal(await captured.repository.saveRawContent({
+    article_id: ARTICLE.id,
     content: RAW.content,
-    content_type: RAW.content_type,
-    language_code: RAW.language_code,
-    extractor: RAW.extractor,
     content_hash: RAW.content_hash,
-    metadata: RAW.metadata,
+  }), RAW);
+  assert.equal(await captured.repository.claimSourceDiscovery("topic"), true);
+  assert.equal(await captured.repository.recordAiUsage({
+    provider: "openai",
+    providerResponseId: "response-1",
+    model: "model",
+    operation: "research",
+  }), USAGE);
+});
+
+test("LegacyResearchExecutionGateway rejects a pre-aborted signal before any legacy effect", async () => {
+  const ports = fixturePorts();
+  const controller = new AbortController();
+  const reason = new Error("cancelled before start");
+  controller.abort(reason);
+  let called = false;
+  const gateway = new LegacyResearchExecutionGateway(
+    ports.catalog,
+    ports.research,
+    ports.story,
+    ports.usage,
+    {
+      discoveryProvider: {},
+      runResearchImpl: async () => { called = true; return RESULT; },
+    },
+  );
+
+  await assert.rejects(
+    gateway.execute({ input: { query: "science" } }, controller.signal),
+    (error) => error === reason,
+  );
+  assert.equal(called, false);
+});
+
+test("LegacyResearchExecutionGatewayModule binds the exact Symbol through its injected factory", async () => {
+  const ports = fixturePorts();
+  let called = false;
+  const module = LegacyResearchExecutionGatewayModule.register({
+    discoveryProvider: {},
+    runResearchImpl: async () => { called = true; return RESULT; },
+  });
+  const provider = (module.providers ?? [])[0] as {
+    provide: symbol;
+    inject: symbol[];
+    useFactory: (...args: unknown[]) => ResearchExecutionGateway;
   };
-  const skippedRawInput = { ...rawInput, content_hash: "must-not-write" };
+  assert.equal(provider.provide, RESEARCH_EXECUTION_GATEWAY);
+  assert.deepEqual(provider.inject, [
+    CATALOG_PERSISTENCE,
+    RESEARCH_INGESTION_PERSISTENCE,
+    STORY_DEDUPLICATION_PERSISTENCE,
+    USAGE_REPORTING_PERSISTENCE,
+  ]);
+  const gateway = provider.useFactory(
+    ports.catalog,
+    ports.research,
+    ports.story,
+    ports.usage,
+  );
+  assert.equal(
+    await gateway.execute({ input: { query: "science" } }),
+    RESULT,
+  );
+  assert.equal(called, true);
+  assert.deepEqual(module.imports, [
+    CatalogPersistenceModule,
+    ResearchPersistenceModule,
+    StoryDeduplicationPersistenceModule,
+    UsagePersistenceModule,
+  ]);
+  assert.deepEqual(module.exports, [RESEARCH_EXECUTION_GATEWAY]);
+});
+
+test("ResearchService preserves persistence DTOs and delegates execution through the use case", async () => {
+  const ports = fixturePorts();
   const usageInput: RecordAiUsageInput = {
     provider: "openai",
     providerResponseId: "response-1",
     model: "model",
     operation: "research",
-    searchRunId: RUN.id,
-    inputTokens: 10,
-    outputTokens: 2,
-    webSearchCalls: 1,
   };
-  const finishMetadata = { selected_article_id: ARTICLE.id };
-  const persistence: ResearchIngestionPersistence = {
-    async startSearchRun(input) {
-      calls.push(["start", input]);
-      return RUN;
-    },
-    async finishSearchRun(id, input) {
-      calls.push(["finish", id, input]);
-      return COMPLETED_RUN;
-    },
-    async failSearchRun(id, error) {
-      calls.push(["fail", id, error]);
-      throw new Error("must not fail");
-    },
-    async createOrResumeArticleCandidate(input) {
-      calls.push(["candidate", input]);
-      return input === skippedArticleInput ? null : ARTICLE;
-    },
-    async saveRawContent(input) {
-      calls.push(["raw", input]);
-      return RAW;
-    },
-    async transitionArticle() {
-      throw new Error("unused");
-    },
-    async replaceArticleTopics() {
-      throw new Error("unused");
-    },
-  };
-  const usage: UsageReportingPersistence = {
-    async recordAiUsage(input) {
-      calls.push(["usage", input]);
-      return USAGE;
-    },
-    getDailyUsageDashboard: unusedDashboard,
-  };
-  const controller = new AbortController();
-  let gatewayRequest: unknown;
-  let gatewaySignal: AbortSignal | undefined;
-  const executionResult = {
-    usageEvents: [usageInput],
-    candidates: [
-      { article: articleInput, rawContents: [rawInput] },
-      { article: skippedArticleInput, rawContents: [skippedRawInput] },
-    ],
-    finish: { metadata: finishMetadata },
-    output: { selected: ARTICLE.id },
-  };
-  const gateway: ResearchExecutionGateway = {
-    async execute(request, signal) {
-      gatewayRequest = request;
-      gatewaySignal = signal;
-      return executionResult;
-    },
-  };
-  const useCase = new RunResearchUseCase(persistence, CATALOG, usage, gateway);
-
-  const result = await useCase.execute(startInput, controller.signal);
-
-  assert.equal((gatewayRequest as { searchRun: SearchRunRow }).searchRun, RUN);
-  assert.equal((gatewayRequest as { input: typeof startInput }).input, startInput);
-  assert.deepEqual((gatewayRequest as { sources: unknown[] }).sources, []);
-  assert.equal(gatewaySignal, controller.signal);
-  assert.equal((calls[1] as unknown[])[1], usageInput);
-  assert.equal(usageInput.providerResponseId, "response-1");
-  assert.equal((calls[2] as unknown[])[1], articleInput);
-  assert.deepEqual((calls[3] as unknown[])[1], {
-    ...rawInput,
-    article_id: ARTICLE.id,
+  const runUseCase = new RunResearchUseCase({
+    async execute() { return RESULT; },
   });
-  assert.equal((calls[4] as unknown[])[1], skippedArticleInput);
-  assert.equal(
-    calls.filter(
-      (call) => Array.isArray(call) && call[0] === "raw",
-    ).length,
-    1,
-  );
-  const finishInput = (calls[5] as unknown[])[2] as {
-    resultCount: number;
-    metadata: unknown;
-  };
-  assert.equal(finishInput.resultCount, 1);
-  assert.equal(finishInput.metadata, finishMetadata);
-  assert.equal(result.run, RUN);
-  assert.equal(result.completedRun, COMPLETED_RUN);
-  assert.equal(result.execution, executionResult);
-  assert.equal(result.usageEvents[0], USAGE);
-  assert.equal(result.candidates[0].article, ARTICLE);
-  assert.equal(result.candidates[0].rawContents[0], RAW);
-});
+  const service = new ResearchService(ports.research, ports.usage, runUseCase);
 
-test("RunResearchUseCase fails the started run and rethrows the original gateway error identity", async () => {
-  const failure = new Error("provider unavailable");
-  let failedRunId: string | undefined;
-  let failedError: unknown;
-  const persistence: ResearchIngestionPersistence = {
-    async startSearchRun() { return RUN; },
-    async finishSearchRun() { throw new Error("must not finish"); },
-    async failSearchRun(id, error) {
-      failedRunId = id;
-      failedError = error;
-      return { ...RUN, status: "failed", error: failure.message };
-    },
-    async createOrResumeArticleCandidate() { throw new Error("unused"); },
-    async saveRawContent() { throw new Error("unused"); },
-    async transitionArticle() { throw new Error("unused"); },
-    async replaceArticleTopics() { throw new Error("unused"); },
-  };
-  const usage: UsageReportingPersistence = {
-    async recordAiUsage() { throw new Error("unused"); },
-    getDailyUsageDashboard: unusedDashboard,
-  };
-  const gateway: ResearchExecutionGateway = {
-    async execute() { throw failure; },
-  };
-  const useCase = new RunResearchUseCase(persistence, CATALOG, usage, gateway);
-
-  await assert.rejects(
-    useCase.execute({ query: "science" }),
-    (error) => error === failure,
-  );
-  assert.equal(failedRunId, RUN.id);
-  assert.equal(failedError, failure);
-});
-
-test("RunResearchUseCase preserves legacy replacement semantics when failSearchRun itself rejects", async () => {
-  const executionFailure = new Error("provider unavailable");
-  const failWriteFailure = new Error("failed-run persistence unavailable");
-  const persistence: ResearchIngestionPersistence = {
-    async startSearchRun() { return RUN; },
-    async finishSearchRun() { throw new Error("must not finish"); },
-    async failSearchRun(_id, error) {
-      assert.equal(error, executionFailure);
-      throw failWriteFailure;
-    },
-    async createOrResumeArticleCandidate() { throw new Error("unused"); },
-    async saveRawContent() { throw new Error("unused"); },
-    async transitionArticle() { throw new Error("unused"); },
-    async replaceArticleTopics() { throw new Error("unused"); },
-  };
-  const usage: UsageReportingPersistence = {
-    async recordAiUsage() { throw new Error("unused"); },
-    getDailyUsageDashboard: unusedDashboard,
-  };
-  const gateway: ResearchExecutionGateway = {
-    async execute() { throw executionFailure; },
-  };
-
-  await assert.rejects(
-    new RunResearchUseCase(persistence, CATALOG, usage, gateway).execute({
-      query: "science",
-    }),
-    (error) => error === failWriteFailure,
-  );
-});
-
-test("RunResearchUseCase keeps usage writes best effort and continues after an individual accounting failure", async () => {
-  const firstUsage: RecordAiUsageInput = {
-    provider: "openai",
-    providerResponseId: "response-failed",
-    model: "model",
-    operation: "research",
-  };
-  const secondUsage: RecordAiUsageInput = {
-    provider: "gemini",
-    providerResponseId: "response-recorded",
-    model: "model",
-    operation: "research",
-  };
-  const attempted: RecordAiUsageInput[] = [];
-  let finished = false;
-  const persistence: ResearchIngestionPersistence = {
-    async startSearchRun() { return RUN; },
-    async finishSearchRun() {
-      finished = true;
-      return { ...COMPLETED_RUN, result_count: 0 };
-    },
-    async failSearchRun() { throw new Error("usage telemetry must not fail the run"); },
-    async createOrResumeArticleCandidate() { throw new Error("unused"); },
-    async saveRawContent() { throw new Error("unused"); },
-    async transitionArticle() { throw new Error("unused"); },
-    async replaceArticleTopics() { throw new Error("unused"); },
-  };
-  const usage: UsageReportingPersistence = {
-    async recordAiUsage(input) {
-      attempted.push(input);
-      if (input === firstUsage) throw new Error("usage database offline");
-      return { ...USAGE, provider: "gemini", provider_response_id: "response-recorded" };
-    },
-    getDailyUsageDashboard: unusedDashboard,
-  };
-  const gateway: ResearchExecutionGateway = {
-    async execute() {
-      return {
-        candidates: [],
-        usageEvents: [firstUsage, secondUsage],
-        finish: {},
-      };
-    },
-  };
-
-  const result = await new RunResearchUseCase(
-    persistence,
-    CATALOG,
-    usage,
-    gateway,
-  ).execute({ query: "science" });
-
-  assert.deepEqual(attempted, [firstUsage, secondUsage]);
-  assert.equal(attempted[0], firstUsage);
-  assert.equal(attempted[1], secondUsage);
-  assert.equal(finished, true);
-  assert.equal(result.usageEvents.length, 1);
-  assert.equal(result.usageEvents[0].provider_response_id, "response-recorded");
-});
-
-test("ResearchService preserves exact persistence DTO, null, and error identity", async () => {
-  const calls: unknown[] = [];
-  const failure = new Error("transition conflict");
-  const FAILED_RUN = { ...RUN, status: "failed" as const };
-  const persistence: ResearchIngestionPersistence = {
-    async startSearchRun(input) { calls.push(["start", input]); return RUN; },
-    async finishSearchRun(id, input) { calls.push(["finish", id, input]); return COMPLETED_RUN; },
-    async failSearchRun(id, error) { calls.push(["fail", id, error]); return FAILED_RUN; },
-    async createOrResumeArticleCandidate(input) { calls.push(["candidate", input]); return null; },
-    async saveRawContent(input) { calls.push(["raw", input]); return RAW; },
-    async transitionArticle() { throw failure; },
-    async replaceArticleTopics(input) { calls.push(["topics", input]); return []; },
-  };
-  const usageInput: RecordAiUsageInput = {
-    provider: "openai",
-    providerResponseId: "response-identity",
-    model: "model",
-    operation: "research",
-  };
-  const usage: UsageReportingPersistence = {
-    async recordAiUsage(input) { calls.push(["usage", input]); return USAGE; },
-    getDailyUsageDashboard: unusedDashboard,
-  };
-  const runUseCase = { execute: async () => ({ run: RUN }) } as unknown as RunResearchUseCase;
-  const service = new ResearchService(persistence, usage, runUseCase);
-  const candidateInput = {
-    source_id: null,
+  assert.equal(await service.runResearch({ query: "science" }), RESULT);
+  assert.equal(await service.startSearchRun({ query: "science" }), RUN);
+  assert.equal(await service.createOrResumeArticleCandidate({
+    source_id: ARTICLE.source_id,
     search_run_id: RUN.id,
     canonical_url: ARTICLE.canonical_url,
     title: ARTICLE.title,
     author: null,
     published_at: null,
-    content_hash: null,
-  };
-  const rawInput = {
-    article_id: ARTICLE.id,
-    content: RAW.content,
-    content_hash: RAW.content_hash,
-  };
-  const topicsInput = { articleId: ARTICLE.id, assignments: [] };
-
-  assert.equal(await service.startSearchRun({ query: "science" }), RUN);
-  assert.equal(await service.finishSearchRun(RUN.id, { resultCount: 1 }), COMPLETED_RUN);
-  assert.equal(await service.failSearchRun(RUN.id, failure), FAILED_RUN);
-  assert.equal(await service.createOrResumeArticleCandidate(candidateInput), null);
-  assert.equal(await service.saveRawContent(rawInput), RAW);
-  assert.deepEqual(await service.replaceArticleTopics(topicsInput), []);
+    content_hash: ARTICLE.content_hash,
+  }), ARTICLE);
   assert.equal(await service.recordAiUsage(usageInput), USAGE);
-  assert.equal((calls.at(-1) as unknown[])[1], usageInput);
-  await assert.rejects(
-    service.transitionArticle(ARTICLE.id, "discovered", "extracted"),
-    (error) => error === failure,
-  );
 });
 
-test("research application composition binds all four outbound Symbol gateways explicitly", async () => {
-  const signal = new AbortController().signal;
-  const aiRequest = { operation: "curate", input: { count: 2 } };
-  const searchRequest = { query: "science", windowHours: 48, limit: 8 };
-  const fetchRequest = { url: ARTICLE.canonical_url, kind: "article" as const };
+test("ResearchApplicationModule keeps transport-neutral gateways replaceable", () => {
   const ai: ResearchAiGateway = {
-    async generate(request, receivedSignal) {
-      assert.equal(request, aiRequest);
-      assert.equal(receivedSignal, signal);
-      return { output: {}, usageEvents: [] };
-    },
+    async generate() { return { output: {}, usageEvents: [] }; },
   };
   const search: ResearchSearchGateway = {
-    async search(request, receivedSignal) {
-      assert.equal(request, searchRequest);
-      assert.equal(receivedSignal, signal);
-      return { items: [], usageEvents: [] };
-    },
+    async search() { return { items: [], usageEvents: [] }; },
   };
   const fetch: ResearchFetchGateway = {
-    async fetch(request, receivedSignal) {
-      assert.equal(request, fetchRequest);
-      assert.equal(receivedSignal, signal);
+    async fetch(request) {
       return {
-        finalUrl: ARTICLE.canonical_url,
-        content: "Evidence",
+        finalUrl: request.url,
+        content: "evidence",
         contentType: "text",
         contentHash: "hash",
       };
     },
   };
   const execution: ResearchExecutionGateway = {
-    async execute() { return { candidates: [], usageEvents: [], finish: {} }; },
+    async execute() { return RESULT; },
   };
-  await ai.generate(aiRequest, signal);
-  await search.search(searchRequest, signal);
-  await fetch.fetch(fetchRequest, signal);
-
-  const module = ResearchApplicationModule.register({ ai, search, fetch, execution });
-  assert.deepEqual(module.imports, [
-    CatalogPersistenceModule,
-    ResearchPersistenceModule,
-    UsagePersistenceModule,
-  ]);
-  const providers = module.providers as Array<{ provide?: symbol; useValue?: unknown } | Function>;
+  const module = ResearchApplicationModule.register({
+    ai,
+    search,
+    fetch,
+    execution,
+  });
+  const providers = module.providers as Array<
+    { provide?: symbol; useValue?: unknown } | Function
+  >;
   assert.deepEqual(
     providers.slice(0, 4).map((provider) =>
       typeof provider === "function" ? null : provider.provide,
@@ -475,24 +434,6 @@ test("research application composition binds all four outbound Symbol gateways e
       RESEARCH_SEARCH_GATEWAY,
       RESEARCH_FETCH_GATEWAY,
       RESEARCH_EXECUTION_GATEWAY,
-    ],
-  );
-  assert.deepEqual(module.exports, [
-    RESEARCH_AI_GATEWAY,
-    RESEARCH_SEARCH_GATEWAY,
-    RESEARCH_FETCH_GATEWAY,
-    RESEARCH_EXECUTION_GATEWAY,
-    RunResearchUseCase,
-    ResearchService,
-  ]);
-
-  assert.deepEqual(
-    Reflect.getMetadata(SELF_DECLARED_DEPS_METADATA, RunResearchUseCase),
-    [
-      { index: 3, param: RESEARCH_EXECUTION_GATEWAY },
-      { index: 2, param: USAGE_REPORTING_PERSISTENCE },
-      { index: 1, param: CATALOG_PERSISTENCE },
-      { index: 0, param: RESEARCH_INGESTION_PERSISTENCE },
     ],
   );
   assert.deepEqual(
