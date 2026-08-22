@@ -56,6 +56,11 @@ test("typed source health retries and preserves success/failure error identity",
   assert.deepEqual(failed.calls.filter((call) => (call as unknown[])[0] === "sleep"), [["sleep", 300], ["sleep", 600]]);
   assert.deepEqual(failed.calls.at(-1), ["failure", "source-2", "http_503"]);
 
+  const aborted=Object.assign(new Error("This operation was aborted"),{name:"AbortError",code:"ABORT_ERR"});
+  const timedOut=service({transport:{async fetchPinned(){throw aborted;}}});
+  await assert.rejects(timedOut.value.fetchSourceFeed({sourceId:"source-timeout",feedUrl:"https://publisher.test/feed.xml"}),(error)=>error===aborted);
+  assert.deepEqual(timedOut.calls.at(-1),["failure","source-timeout","timeout"]);
+
   const reddit = service({ transport: { async fetchPinned() { return new Response(RSS, { status:200 }); } } });
   await reddit.value.fetchSource({ sourceId:"source-3", sourceType:"reddit", feedUrl:"https://publisher.test/feed.xml" });
   assert.deepEqual(reddit.calls.at(-1), ["success", "source-3"]);
