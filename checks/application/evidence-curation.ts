@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import test from "node:test";
 
-import { EvidenceCurationService } from "../../src/research/curation/evidence-curation.engine.js";
+import { EvidenceCurationService, InvalidNewsCandidateCurationError } from "../../src/research/curation/evidence-curation.engine.js";
 import { PinnedEvidenceHttpTransport } from "../../src/research/curation/evidence-curation.http.js";
 import { EvidenceCurationModule } from "../../src/research/curation/evidence-curation.module.js";
 import { evaluateStoryDuplicate as legacyDedup, storyFingerprint as legacyFingerprint } from "../../src/story-deduplication.js";
@@ -60,6 +60,9 @@ test("typed extraction, retry, fact provenance and sampling match legacy contrac
   const typed = service(async () => new Response(`<article><p>${article}</p></article>`, { status: 200, headers: { "content-type": "text/html" } }));
   const html = `<nav>ignore</nav><article><h1>Evidence</h1><p>${article}</p></article>`;
   assert.equal(typed.extractArticleText(html), legacyExtract(html));
+  const postContent = `<body><div class="post-content"><p>${article}</p></div><aside><p>${"sidebar noise should never become evidence ".repeat(10)}</p></aside><template><p>${"template noise ".repeat(20)}</p></template><svg><text>${"svg noise ".repeat(20)}</text></svg></body>`;
+  assert.equal(typed.extractArticleText(postContent), legacyExtract(postContent));
+  assert.doesNotMatch(typed.extractArticleText(postContent), /sidebar noise|template noise|svg noise/);
   const fetched = await typed.fetchArticle("https://example.com/story");
   assert.equal(fetched.contentHash.length, 64);
   const delays: number[] = [];
@@ -263,6 +266,21 @@ test("typed candidate curation rejects unknown IDs and preserves recognized orde
   const generated = { async generateStructured() { return { value: { rankedCandidateIds: ["candidate-2", "candidate-1"] }, provider: "test", model: "test", usageEvents: [] }; } };
   const typed = new EvidenceCurationService(publicDns, { fetchPinned: async () => new Response() }, sleep, generated);
   assert.deepEqual((await typed.curateNewsCandidates(candidates)).candidates.map((candidate) => candidate.canonicalUrl), ["https://two.example/1", "https://one.example/0"]);
-  const invalid = new EvidenceCurationService(publicDns, { fetchPinned: async () => new Response() }, sleep, { async generateStructured() { return { value: { rankedCandidateIds: ["candidate-3"] } }; } });
-  await assert.rejects(invalid.curateNewsCandidates(candidates), /invalid candidate IDs/);
+  const usageEvents = [{ provider:"openai", model:"test", operation:"feed_candidate_curation", inputTokens:5 }];
+  const invalid = new EvidenceCurationService(publicDns, { fetchPinned: async () => new Response() }, sleep, { async generateStructured() { return { value: { rankedCandidateIds: ["candidate-3"] }, usageEvents }; } });
+  await assert.rejects(
+    invalid.curateNewsCandidates(candidates),
+    (error) => error instanceof InvalidNewsCandidateCurationError
+      && error.code === "invalid_candidate_ids"
+      && error.usageEvents[0]?.provider === "openai",
+  );
+
+  const thirteen = Array.from({ length: 13 }, (_value, index) => ({ canonicalUrl:`https://publisher-${index}.example/story`, title:`Story ${index}`, publisher:`publisher-${index}` }));
+  const overLimit = new EvidenceCurationService(publicDns, { fetchPinned: async () => new Response() }, sleep, { async generateStructured() { return { value: { rankedCandidateIds: thirteen.map((_candidate,index)=>`candidate-${index+1}`) }, usageEvents }; } });
+  await assert.rejects(
+    overLimit.curateNewsCandidates(thirteen),
+    (error) => error instanceof InvalidNewsCandidateCurationError
+      && error.code === "invalid_candidate_ids"
+      && error.usageEvents[0]?.inputTokens === 5,
+  );
 });

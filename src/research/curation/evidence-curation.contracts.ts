@@ -29,7 +29,7 @@ export interface FactSearchPort {
   }): Promise<FactSearchResult>;
 }
 
-export type CurationCandidate = { canonicalUrl: string; title?: string | null; summary?: string | null; publisher?: string | null; publishedAt?: string | null; score?: number; source?: { name?: string | null; topic_codes?: string[]; reliability_score?: number | null; is_primary?: boolean } };
+export type CurationCandidate = { canonicalUrl: string; title?: string | null; summary?: string | null; publisher?: string | null; publishedAt?: string | null; score?: number; source?: { name?: string | null; homepage_url?: string | null; topic_codes?: string[]; reliability_score?: number | null; is_primary?: boolean } };
 export type FactEvidence = { fact: null | { claim: string; sourceUrl: string; sourceTitle: string; sourceKind: "official" | "government" | "academic" | "reputable_news"; evidenceText: string } };
 export type FactSearchOutcome = FactEvidence & { provider: string | null; model: string | null; usageEvents: RecordAiUsageInput[] };
 export type ArticleEvidence = { text: string; contentHash: string; finalUrl: string };
