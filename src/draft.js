@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { recordAiUsageEvents } from "./ai-usage.js";
 import {
   appendTopicHashtags,
@@ -80,6 +81,16 @@ const UNVERIFIED_PREFIXES = Object.freeze({
   uk: "НЕПЕРЕВІРЕНИЙ ТРЕНД",
   de: "UNBESTÄTIGTER TREND",
 });
+
+function newDraftValidationError(traceId, cause) {
+  const error = new Error(
+    "Draft validation failed after retry and cannot be persisted",
+    { cause },
+  );
+  error.code = "draft_validation_failed";
+  error.traceId = traceId;
+  return error;
+}
 
 function proseMetrics(text) {
   const prose = text
@@ -283,64 +294,95 @@ export async function generateDraft({
         jsonSchema: BASE_TELEGRAM_DRAFT_JSON_SCHEMA,
         schemaName: "telegram_news_draft",
       };
-  let generated;
-  if (aiProvider) {
-    generated = await aiProvider.generateStructured({
-      systemInstruction,
-      input,
-      ...responseContract,
-    });
-  } else {
-    const response = await client.models.generateContent({
-      model,
-      contents: JSON.stringify(input),
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseJsonSchema: responseContract.jsonSchema,
-      },
-    });
-    if (!response.text) {
-      throw new Error("Gemini returned no structured draft");
-    }
-    let value;
-    try {
-      value = JSON.parse(response.text);
-    } catch {
-      throw new Error("Gemini returned invalid JSON");
-    }
-    generated = { value, provider: "gemini", model };
-  }
-
-  await recordAiUsageEvents(repository, generated.usageEvents, {
+  const usageContext = {
     channelId: newsSettings?.channelId ?? null,
     searchRunId: article.search_run_id ?? null,
     articleId: article.id,
-  });
+  };
+  const generateBaseline = async () => {
+    const traceId = randomUUID();
+    let generated;
+    if (aiProvider) {
+      generated = await aiProvider.generateStructured({
+        systemInstruction,
+        input,
+        usageOperation: "editorial_draft",
+        traceId,
+        ...responseContract,
+      });
+    } else {
+      const response = await client.models.generateContent({
+        model,
+        contents: JSON.stringify(input),
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseJsonSchema: responseContract.jsonSchema,
+        },
+      });
+      if (!response.text) {
+        throw new Error("Gemini returned no structured draft");
+      }
+      let value;
+      try {
+        value = JSON.parse(response.text);
+      } catch {
+        throw new Error("Gemini returned invalid JSON");
+      }
+      generated = { value, provider: "gemini", model };
+    }
 
-  const generatedTopicTags = taggingActive ? generated.value?.topicTags : [];
-  const generatedDraft = { ...generated.value, topicTags: [] };
-  const grounded = validateGroundedDraft(generatedDraft, evidence, {
-    languageCode,
-  });
-  let topicTags = [];
-  let topicTaggingDiagnostic = null;
+    await recordAiUsageEvents(repository, generated.usageEvents, usageContext);
+    const generatedTopicTags = taggingActive ? generated.value?.topicTags : [];
+    const generatedDraft = { ...generated.value, topicTags: [] };
+    try {
+      const grounded = validateGroundedDraft(generatedDraft, evidence, {
+        languageCode,
+      });
+      let topicTags = [];
+      let topicTaggingDiagnostic = null;
+      try {
+        topicTags = validateTopicTagAssignments(
+          generatedTopicTags,
+          normalizedTagging,
+        );
+      } catch {
+        topicTaggingDiagnostic = "invalid_assignments_discarded";
+      }
+      const baselineDraft = completeDraft({
+        grounded,
+        topicTags,
+        unverified,
+        languageCode,
+        editor,
+        tagging: normalizedTagging,
+      });
+      return {
+        generated,
+        topicTags,
+        topicTaggingDiagnostic,
+        grounded,
+        baselineDraft,
+      };
+    } catch (error) {
+      throw newDraftValidationError(traceId, error);
+    }
+  };
+
+  let baseline;
   try {
-    topicTags = validateTopicTagAssignments(
-      generatedTopicTags,
-      normalizedTagging,
-    );
-  } catch {
-    topicTaggingDiagnostic = "invalid_assignments_discarded";
+    baseline = await generateBaseline();
+  } catch (error) {
+    if (error?.code !== "draft_validation_failed") throw error;
+    baseline = await generateBaseline();
   }
-  const baselineDraft = completeDraft({
-    grounded,
+  const {
+    generated,
     topicTags,
-    unverified,
-    languageCode,
-    editor,
-    tagging: normalizedTagging,
-  });
+    topicTaggingDiagnostic,
+    grounded,
+    baselineDraft,
+  } = baseline;
 
   const enrichmentState = editorialEnrichmentState(editorialEnrichment);
   let enrichment = null;

@@ -395,6 +395,155 @@ test("invalid editorial output falls back to the baseline without blocking revie
   assert.equal(result.editorialEnrichment.diagnostic, "enrichment_failed");
 });
 
+test("generateDraft retries one invalid baseline before saving once", async () => {
+  const usageRecords = [];
+  const draftWrites = [];
+  const traceIds = [];
+  let calls = 0;
+  const result = await generateDraft({
+    aiProvider: {
+      async generateStructured(request) {
+        calls += 1;
+        traceIds.push(request.traceId);
+        const usageEvents = [
+          {
+            provider: "openai",
+            providerResponseId: `response-${calls}`,
+            operation: request.usageOperation,
+            inputTokens: 12,
+            outputTokens: 8,
+          },
+        ];
+        if (calls === 1) {
+          return {
+            value: structuredDraft({
+              claims: [
+                {
+                  text: "Incorrectly grounded claim.",
+                  sourceUrl: "https://invalid.example/claim",
+                },
+              ],
+            }),
+            provider: "openai",
+            model: "gpt-fail",
+            usageEvents,
+          };
+        }
+        return {
+          value: structuredDraft(),
+          provider: "openai",
+          model: "gpt-good",
+          usageEvents,
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        draftWrites.push(draft);
+        return { id: "draft-retry", ...draft };
+      },
+      async recordAiUsage(event) {
+        usageRecords.push(event);
+        return { id: `usage-${usageRecords.length}` };
+      },
+    },
+    article: {
+      id: "article-retry-success",
+      title: "Primary announcement",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [
+      {
+        url: SOURCE_URL,
+        primary: true,
+        text: "A primary source announced a new AI agent.",
+      },
+    ],
+  });
+
+  assert.equal(calls, 2);
+  assert.equal(draftWrites.length, 1);
+  assert.equal(usageRecords.length, 2);
+  assert.equal(usageRecords[0].operation, "editorial_draft");
+  assert.equal(usageRecords[1].operation, "editorial_draft");
+  assert.match(traceIds[0], /^[0-9a-f-]{36}$/i);
+  assert.match(traceIds[1], /^[0-9a-f-]{36}$/i);
+  assert.notEqual(traceIds[0], traceIds[1]);
+  assert.equal(result.saved.id, "draft-retry");
+});
+
+test("generateDraft stops after two invalid baselines without saving", async () => {
+  const usageRecords = [];
+  const draftWrites = [];
+  const traceIds = [];
+  let calls = 0;
+  const result = generateDraft({
+    aiProvider: {
+      async generateStructured(request) {
+        calls += 1;
+        traceIds.push(request.traceId);
+        return {
+          value: structuredDraft({
+            claims: [
+              {
+                text: "Incorrectly grounded claim.",
+                sourceUrl: "https://invalid.example/claim",
+              },
+            ],
+          }),
+          provider: "openai",
+          model: "gpt-fail",
+          usageEvents: [
+            {
+              provider: "openai",
+              providerResponseId: `response-${calls}`,
+              operation: request.usageOperation,
+              inputTokens: 12,
+              outputTokens: 8,
+            },
+          ],
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        draftWrites.push(draft);
+        return { id: "draft-should-not-save", ...draft };
+      },
+      async recordAiUsage(event) {
+        usageRecords.push(event);
+        return { id: `usage-${usageRecords.length}` };
+      },
+    },
+    article: {
+      id: "article-retry-fail",
+      title: "Primary announcement",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [
+      {
+        url: SOURCE_URL,
+        primary: true,
+        text: "A primary source announced a new AI agent.",
+      },
+    ],
+  });
+
+  await assert.rejects(result, (error) => {
+    assert.equal(error.code, "draft_validation_failed");
+    assert.equal(error.traceId, traceIds[1]);
+    assert.match(
+      error.traceId,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    return true;
+  });
+  assert.equal(calls, 2);
+  assert.equal(draftWrites.length, 0);
+  assert.equal(usageRecords.length, 2);
+  assert.notEqual(traceIds[0], traceIds[1]);
+});
+
 test("tagging off normalizes model assignments without persistence or hashtags", async () => {
   let stored;
   let replaced = false;
