@@ -19,6 +19,7 @@ import {
   TelegramLegacyLabsGateway,
   TelegramLegacySettingsGateway,
   TelegramLegacyStatsGateway,
+  TelegramLegacyStatusGateway,
 } from "../../src/telegram/transport/telegram-legacy-feature.gateways.js";
 import { TelegramControlTransportHandler } from "../../src/telegram/transport/telegram-control-transport.handler.js";
 import { parseTelegramControlUpdate } from "../../src/telegram/transport/telegram-control-update.parser.js";
@@ -86,6 +87,7 @@ test("transport parser keeps strict command addressing, opaque feature callbacks
     [31, "news:broken", "review"],
     [32, `cfg:${"x".repeat(70)}`, "settings"],
     [33, "lab:s:unknown", "labs"],
+    [34, "status:unknown", "status"],
   ] as const) {
     const malformed = parseTelegramControlUpdate({
       update_id: updateId,
@@ -127,6 +129,29 @@ test("transport parser keeps strict command addressing, opaque feature callbacks
         version: 7,
         featureKey: "editorial_enrichment",
       },
+    },
+  });
+
+  const status = parseTelegramControlUpdate(
+    {
+      update_id: 41,
+      callback_query: {
+        id: "cb-status",
+        data: "status:test:exa",
+        from: { id: 9 },
+        message: { message_id: 14, chat: { id: 10, type: "private" } },
+      },
+    },
+    IDENTITY,
+  );
+  assert.equal(status?.updateKind, "status_callback");
+  assert.deepEqual(status?.route, {
+    kind: "status",
+    action: "callback",
+    payload: {
+      callbackId: "cb-status",
+      messageId: 14,
+      action: { action: "test_exa" },
     },
   });
 
@@ -423,7 +448,7 @@ test("concrete Bot API outcome renderer keeps required sends retryable and manua
   assert.equal(calls.length, 3);
 });
 
-test("legacy settings, Labs, and stats adapters execute verified transport flows behind neutral ports", async () => {
+test("legacy settings, Labs, stats, and status adapters execute verified transport flows behind neutral ports", async () => {
   const calls: string[] = [];
   const callTelegram = async () => ({ message_id: 1 });
   const base: TelegramControlRequest = {
@@ -483,12 +508,37 @@ test("legacy settings, Labs, and stats adapters execute verified transport flows
     },
   );
   await stats.execute({ ...base, updateKind: "stats_command", route: { kind: "stats" } });
+  const status = new TelegramLegacyStatusGateway(
+    "token",
+    "@channel",
+    {},
+    callTelegram,
+    {},
+    ["exa"],
+    "test-version",
+    {
+      async show() { calls.push("status:open"); return { providers: [] }; },
+      async callback() { calls.push("status:callback"); return { auditResult: "ok" }; },
+    },
+  );
+  await status.execute({ ...base, updateKind: "status_command", route: { kind: "status", action: "open" } });
+  await status.execute({
+    ...base,
+    updateKind: "status_callback",
+    route: {
+      kind: "status",
+      action: "callback",
+      payload: { callbackId: "cb-status", messageId: 14, action: { action: "test_exa" } },
+    },
+  });
   assert.deepEqual(calls, [
     "settings:open",
     "settings:callback",
     "settings:input",
     "labs:open",
     "stats:open",
+    "status:open",
+    "status:callback",
   ]);
 });
 
@@ -518,6 +568,7 @@ test("TelegramControlApplicationModule exposes a real Nest application identity 
         settings: unused,
         labs: unused,
         stats: unused,
+        status: unused,
       }),
     ],
   })

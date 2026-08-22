@@ -6,10 +6,11 @@ export type TelegramControlRoute =
   | { kind: "news"; malformed?: boolean }
   | { kind: "settings"; action: "open" | "callback" | "input"; payload?: unknown; malformed?: boolean }
   | { kind: "stats"; malformed?: boolean }
+  | { kind: "status"; action: "open" | "callback"; payload?: unknown; malformed?: boolean }
   | { kind: "labs"; action: "open" | "callback"; payload?: unknown; malformed?: boolean }
   | {
       kind: "malformed";
-      target: "review" | "settings" | "labs";
+      target: "review" | "settings" | "labs" | "status";
       errorCode: "malformed_callback";
     }
   | {

@@ -23,6 +23,7 @@ import { DecideTelegramReviewUseCase } from "./decide-telegram-review.use-case.j
 import { GetTelegramStatsUseCase } from "./get-telegram-stats.use-case.js";
 import { HandleTelegramLabsUseCase } from "./handle-telegram-labs.use-case.js";
 import { HandleTelegramSettingsUseCase } from "./handle-telegram-settings.use-case.js";
+import { HandleTelegramStatusUseCase } from "./handle-telegram-status.use-case.js";
 import { RunTelegramNewsUseCase } from "./run-telegram-news.use-case.js";
 
 @Injectable()
@@ -45,6 +46,8 @@ export class HandleTelegramControlUpdateUseCase
     private readonly labs: TelegramControlFeatureGateway,
     @Inject(GetTelegramStatsUseCase)
     private readonly stats: TelegramControlFeatureGateway,
+    @Inject(HandleTelegramStatusUseCase)
+    private readonly status: TelegramControlFeatureGateway,
   ) {}
 
   async execute(
@@ -149,7 +152,9 @@ export class HandleTelegramControlUpdateUseCase
       throw new TelegramControlError("malformed_callback", "Invalid review callback");
     }
     if (
-      (request.route.kind === "settings" || request.route.kind === "labs") &&
+      (request.route.kind === "settings" ||
+        request.route.kind === "labs" ||
+        request.route.kind === "status") &&
       request.route.action === "callback"
     ) {
       const payload = request.route.payload as {
@@ -204,6 +209,8 @@ export class HandleTelegramControlUpdateUseCase
         return this.labs.execute(request);
       case "stats":
         return this.stats.execute(request);
+      case "status":
+        return this.status.execute(request);
       case "malformed":
         throw new TelegramControlError(request.route.errorCode, "Malformed callback");
     }
