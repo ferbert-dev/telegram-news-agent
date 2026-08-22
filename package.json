@@ -8,7 +8,7 @@
     "test": "node --test",
     "test:drizzle": "tsx --test checks/drizzle-schema.ts",
     "test:drizzle:sources": "tsx --test checks/sources-repository.ts",
-    "test:nest:build": "npm run build:nest && node checks/emitted-database-module.mjs && node checks/emitted-usage-application.mjs && node checks/emitted-settings-application.mjs && node checks/emitted-catalog-research-application.mjs && node checks/emitted-operations-application.mjs && node checks/emitted-editorial-application.mjs && node checks/emitted-telegram-control-application.mjs && node checks/emitted-scheduler-application.mjs && node checks/emitted-runtime-bootstrap.mjs && node checks/emitted-telemetry-adapters.mjs && node checks/emitted-ai-provider-core.mjs",
+    "test:nest:build": "npm run build:nest && node checks/emitted-database-module.mjs && node checks/emitted-usage-application.mjs && node checks/emitted-settings-application.mjs && node checks/emitted-catalog-research-application.mjs && node checks/emitted-evidence-curation.mjs && node checks/emitted-operations-application.mjs && node checks/emitted-editorial-application.mjs && node checks/emitted-telegram-control-application.mjs && node checks/emitted-scheduler-application.mjs && node checks/emitted-runtime-bootstrap.mjs && node checks/emitted-telemetry-adapters.mjs && node checks/emitted-ai-provider-core.mjs",
     "test:persistence": "tsx --test checks/persistence/*.ts",
     "test:application": "tsx --test checks/application/*.ts",
     "test:architecture": "tsx --test checks/architecture/*.ts",

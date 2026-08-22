@@ -1,0 +1,191 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { EvidenceCurationService } from "../../src/research/curation/evidence-curation.engine.js";
+import { EvidenceCurationModule } from "../../src/research/curation/evidence-curation.module.js";
+import { evaluateStoryDuplicate as legacyDedup, storyFingerprint as legacyFingerprint } from "../../src/story-deduplication.js";
+import { extractArticleText as legacyExtract } from "../../src/article-extractor.js";
+import { selectCurationSample as legacySample } from "../../src/news-curation.js";
+
+const publicDns = async () => [{ address: "93.184.216.34", family: 4 }];
+const sleep = { async sleep() {} };
+function service(fetch = async () => new Response("", { status: 200, headers: { "content-type": "text/html" } })) {
+  return new EvidenceCurationService(publicDns, { fetch }, sleep);
+}
+const article = "The research team announced a new artificial intelligence model with documented evaluation results and limitations. ".repeat(4);
+const prior = {
+  article_id: "published-1", title: "Kimi AI model escaped cybersecurity testing",
+  feed_summary: "Researchers reported Kimi tried to bypass its test harness.",
+  message_text: "A Kimi model attempted to escape a controlled cybersecurity evaluation.",
+  telegram_channel_id: "@channel", telegram_message_id: 1, published_at: "2026-08-07T08:00:00.000Z", story_fingerprint: null,
+};
+
+test("typed safe fetch preserves hostile DNS and redirect guards", async () => {
+  const blocked = new EvidenceCurationService(async () => [{ address: "::ffff:127.0.0.1", family: 6 }], { fetch: async () => { throw new Error("must not fetch"); } }, sleep);
+  await assert.rejects(blocked.fetchPublicHttp("https://example.com"), /not allowed/);
+  const requests: string[] = [];
+  const redirecting = new EvidenceCurationService(async (hostname) => [{ address: hostname === "public.example" ? "93.184.216.34" : "10.0.0.1", family: 4 }], { fetch: async (url) => { requests.push(url.href); return new Response(null, { status: 302, headers: { location: "https://internal.example" } }); } }, sleep);
+  await assert.rejects(redirecting.fetchPublicHttp("https://public.example"), /not allowed/);
+  assert.deepEqual(requests, ["https://public.example/"]);
+});
+
+test("typed extraction, retry, fact provenance and sampling match legacy contracts", async () => {
+  const typed = service(async () => new Response(`<article><p>${article}</p></article>`, { status: 200, headers: { "content-type": "text/html" } }));
+  const html = `<nav>ignore</nav><article><h1>Evidence</h1><p>${article}</p></article>`;
+  assert.equal(typed.extractArticleText(html), legacyExtract(html));
+  const fetched = await typed.fetchArticle("https://example.com/story");
+  assert.equal(fetched.contentHash.length, 64);
+  const delays: number[] = [];
+  const retrying = new EvidenceCurationService(publicDns, { fetch: async () => new Response() }, { async sleep(delay) { delays.push(delay); } });
+  let calls = 0;
+  assert.equal(await retrying.withRetry(async () => { if (++calls < 3) throw new Error("temporary"); return "ok"; }, { baseDelayMs: 10 }), "ok");
+  assert.deepEqual(delays, [10, 20]);
+  assert.deepEqual(typed.groundedFactEvidence({ fact: { claim: "Verified", sourceUrl: "https://example.com/evidence/", sourceTitle:"Official evidence", sourceKind:"official", evidenceText: "Proof" } }, ["https://example.com/evidence"]), { fact: { claim: "Verified", sourceUrl: "https://example.com/evidence", sourceTitle:"Official evidence", sourceKind:"official", evidenceText: "Proof" } });
+  const candidates = ["one", "one", "two"].map((publisher, index) => ({ canonicalUrl: `https://${publisher}.example/${index}`, title: `Story ${index}`, publisher }));
+  assert.deepEqual(typed.selectCurationSample(candidates, 3), legacySample(candidates, 3));
+});
+
+test("typed dedup matches legacy deterministic and fail-closed semantic outcomes", async () => {
+  const candidate = { title: prior.title, summary: prior.feed_summary };
+  const fingerprint = legacyFingerprint(candidate);
+  const stories = [{ ...prior, story_fingerprint: fingerprint }];
+  const typed = service();
+  const typedDecision = await typed.evaluateStoryDuplicate(candidate, stories);
+  const legacyDecision = await legacyDedup({ candidate, publishedStories: stories, aiProvider: null });
+  assert.deepEqual(typedDecision.relation, legacyDecision.relation);
+  assert.equal(typedDecision.fingerprint, legacyDecision.fingerprint);
+  const uncertain = await typed.evaluateStoryDuplicate({ title: "Kimi model test harness report", summary: "A report about attempts to bypass a test harness." }, [prior]);
+  assert.equal(uncertain.relation, "uncertain");
+  assert.equal(uncertain.decisionSource, "fallback");
+});
+
+test("typed dedup can read and persist recent history decisions", async () => {
+  const seen: string[] = [];
+  const calls = {
+    list: 0 as number,
+    record: 0 as number,
+  };
+  const persistence = {
+    async listRecentPublishedStories(input: { channelId: string | null; since: string | Date; limit?: number; }) {
+      seen.push(`${input.channelId ?? "null"}:${input.limit ?? 100}`);
+      calls.list += 1;
+      return [{ ...prior, story_fingerprint: legacyFingerprint({ title: prior.title, summary: prior.feed_summary }) }];
+    },
+    async recordStoryDedupDecision(input: { articleId: string; relation: string }) {
+      calls.record += 1;
+      assert.equal(input.articleId, "article-1");
+      return {
+        article_id: input.articleId,
+        story_fingerprint: input.relation === "distinct" ? "no-dedup" : "dedup",
+        relation: input.relation,
+        duplicate_of_article_id: null,
+        confidence: "1",
+        reason: "unit",
+        decision_source: "deterministic",
+        metadata: { recentCandidates: 1, semanticAttemptLimit: 3 },
+        decided_at: "2026-08-22T00:00:00.000Z",
+        updated_at: "2026-08-22T00:00:00.000Z",
+      };
+    },
+  };
+  const fixedNow = new Date("2026-08-22T08:00:00.000Z");
+  const service = new EvidenceCurationService(
+    publicDns,
+    { fetch: async () => new Response() },
+    sleep,
+    undefined,
+    undefined,
+    persistence as never,
+    () => fixedNow,
+  );
+  const result = await service.evaluateStoryDuplicateFromPersistence(
+    { title: prior.title, summary: prior.feed_summary },
+    "article-1",
+    { channelId: "@channel" },
+  );
+  assert.equal(result.relation, "duplicate");
+  assert.equal(calls.list, 1);
+  assert.equal(calls.record, 1);
+  assert.equal(seen[0], "@channel:100");
+});
+
+test("typed semantic dedup is single-attempt and enforces a three-call run budget", async () => {
+  const attempts = { calls: 0 };
+  const provider = {
+    async generateStructured() {
+      attempts.calls += 1;
+      throw new Error("transient provider error");
+    },
+  };
+  const service = new EvidenceCurationService(
+    publicDns,
+    { fetch: async () => new Response() },
+    { async sleep() {} },
+    provider,
+  );
+  const decision = await service.evaluateStoryDuplicate(
+    { title: prior.title, summary: prior.feed_summary },
+    [{ ...prior, story_fingerprint: null }],
+  );
+  assert.equal(attempts.calls, 1);
+  assert.equal(decision.relation, "uncertain");
+  assert.equal(decision.decisionSource, "fallback");
+
+  const capped = new EvidenceCurationService(
+    publicDns,
+    { fetch: async () => new Response() },
+    sleep,
+    provider,
+    undefined,
+    { async listRecentPublishedStories() { return [{ ...prior, story_fingerprint:null }]; }, async recordStoryDedupDecision() { throw new Error("persist disabled"); } } as never,
+  );
+  const exhausted = await capped.evaluateStoryDuplicateFromPersistence(
+    { title: prior.title, summary: prior.feed_summary },
+    "article-capped",
+    { semanticAttemptsUsed:3, persist:false },
+  );
+  assert.equal(attempts.calls, 1);
+  assert.equal(exhausted.classifierAttempted, false);
+  assert.equal(exhausted.relation, "uncertain");
+});
+
+test("typed fact search fallback only returns evidence after provenance check", async () => {
+  let searchQuery: string | null = null;
+  const typed = new EvidenceCurationService(
+    publicDns,
+    { fetch: async () => new Response() },
+    sleep,
+    undefined,
+    { async searchFact(input) {
+      searchQuery = input.query;
+      return { value:{ fact: { claim: "Verified fact", sourceUrl: "https://example.com/evidence/", sourceTitle:"Evidence", sourceKind:"official", evidenceText: "Verified" } }, sourceUrls:["https://example.com/evidence"], provider:"exa", model:"exa-test", usageEvents:[] };
+    } },
+  );
+  const trusted = await typed.resolveFactEvidence({ fact: { claim: "Verified", sourceUrl: "https://example.com/evidence", sourceTitle:"Evidence", sourceKind:"academic", evidenceText: "direct" } }, ["https://example.com/evidence"]);
+  assert.equal(trusted.fact?.claim, "Verified");
+  const fallback = await typed.resolveFactEvidence({ fact: {} }, ["https://example.com/evidence"], { query:"probe this", expectedClaim:"Verified fact", languageCode:"en" });
+  assert.equal(searchQuery, "probe this");
+  assert.equal(fallback.fact?.sourceUrl, "https://example.com/evidence");
+  assert.equal(fallback.provider, "exa");
+  const hostilePort = new EvidenceCurationService(publicDns, { fetch: async () => new Response() }, sleep, undefined, { async searchFact() { return { value:{ fact:{ claim:"Bad", sourceUrl:"https://attacker.example", sourceTitle:"Bad", sourceKind:"reputable_news", evidenceText:"Bad" } }, sourceUrls:["https://trusted.example"] }; } });
+  const rejected = await hostilePort.resolveFactEvidence({ fact: {} }, [], { query:"probe", expectedClaim:"claim" });
+  assert.equal(rejected.fact, null);
+});
+
+test("EvidenceCurationModule exposes replaceable provider ports without wiring legacy runtime", () => {
+  const factSearch = { async searchFact() { return { value:{ fact:null }, sourceUrls:[] }; } };
+  const module = EvidenceCurationModule.register({ factSearch, semanticAttemptLimit:9 });
+  assert.equal(module.module, EvidenceCurationModule);
+  assert.equal(module.exports?.includes(EvidenceCurationService), true);
+  assert.equal(module.imports?.length, 1);
+  assert.equal(module.providers?.length, 9);
+});
+
+test("typed candidate curation rejects unknown IDs and preserves recognized ordering", async () => {
+  const candidates = ["one", "two"].map((publisher, index) => ({ canonicalUrl: `https://${publisher}.example/${index}`, title: `Story ${index}`, publisher }));
+  const generated = { async generateStructured() { return { value: { rankedCandidateIds: ["candidate-2", "candidate-1"] }, provider: "test", model: "test", usageEvents: [] }; } };
+  const typed = new EvidenceCurationService(publicDns, { fetch: async () => new Response() }, sleep, generated);
+  assert.deepEqual((await typed.curateNewsCandidates(candidates)).candidates.map((candidate) => candidate.canonicalUrl), ["https://two.example/1", "https://one.example/0"]);
+  const invalid = new EvidenceCurationService(publicDns, { fetch: async () => new Response() }, sleep, { async generateStructured() { return { value: { rankedCandidateIds: ["candidate-3"] } }; } });
+  await assert.rejects(invalid.curateNewsCandidates(candidates), /invalid candidate IDs/);
+});
