@@ -8,6 +8,7 @@ import {
 } from "./ai-fact-search.js";
 import { openAiUsageEvent } from "./ai-usage.js";
 import { LANGUAGE_OPTIONS } from "./news-settings.js";
+import { providerDiagnosticError } from "./ai-provider-attempts.js";
 
 const OPENAI_REASONING_EFFORTS = new Set([
   "none",
@@ -82,18 +83,21 @@ export function createOpenAiProvider(
           format: zodTextFormat(zodSchema, schemaName),
         },
       });
+      const usage = openAiUsageEvent(response, { model: config.model, operation: usageOperation });
       if (!response.output_parsed) {
-        throw new Error("OpenAI returned no structured response");
+        throw providerDiagnosticError("structured_output_missing", {
+          providerResponseId: response.id, responseStatus: response.status,
+          incompleteReason: response.incomplete_details?.reason,
+          refusal: Boolean(response.output?.some((item) => item.content?.some((content) => content.refusal))),
+          usage,
+        });
       }
       return {
         value: response.output_parsed,
         provider: "openai",
         model: config.model,
         usageEvents: [
-          openAiUsageEvent(response, {
-            model: config.model,
-            operation: usageOperation,
-          }),
+          usage,
         ].filter(Boolean),
       };
     },

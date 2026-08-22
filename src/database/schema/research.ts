@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   index,
   integer,
@@ -202,5 +203,38 @@ export const aiUsageEvents = pgTable(
     index("ai_usage_events_article_idx")
       .on(table.articleId)
       .where(sql`${table.articleId} is not null`),
+  ],
+).enableRLS();
+
+export const aiProviderAttempts = pgTable(
+  "ai_provider_attempts",
+  {
+    id: uuid("id").primaryKey(),
+    correlationId: uuid("correlation_id").notNull(),
+    operation: text("operation").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model"),
+    attemptNumber: integer("attempt_number").notNull(),
+    status: text("status").notNull(),
+    errorCode: text("error_code"),
+    httpStatus: integer("http_status"),
+    providerResponseId: text("provider_response_id"),
+    responseStatus: text("response_status"),
+    incompleteReason: text("incomplete_reason"),
+    refusal: boolean("refusal"),
+    latencyMs: integer("latency_ms"),
+    inputTokens: bigint("input_tokens", { mode: "number" }),
+    outputTokens: bigint("output_tokens", { mode: "number" }),
+    reasoningTokens: bigint("reasoning_tokens", { mode: "number" }),
+    errorFingerprint: text("error_fingerprint"),
+    aiUsageEventId: uuid("ai_usage_event_id").references(() => aiUsageEvents.id, { onDelete: "set null" }),
+    startedAt: timestampWithTimezone("started_at").defaultNow().notNull(),
+    completedAt: timestampWithTimezone("completed_at"),
+    createdAt: timestampWithTimezone("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    unique("ai_provider_attempts_correlation_attempt_key").on(table.correlationId, table.attemptNumber),
+    index("ai_provider_attempts_recent_idx").on(table.startedAt.desc()),
+    index("ai_provider_attempts_provider_recent_idx").on(table.provider, table.startedAt.desc()),
   ],
 ).enableRLS();

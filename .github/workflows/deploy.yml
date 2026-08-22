@@ -270,6 +270,15 @@ jobs:
             'BotState status={{.State.Status}} running={{.State.Running}} restart_count={{.RestartCount}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} started_at={{.State.StartedAt}}' \
             "$container_id"
 
+          docker exec -i "$container_id" node --input-type=module <<'NODE'
+          import pg from 'pg';
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+          const result = await client.query(`select provider, status, error_code, operation, started_at, completed_at, latency_ms, correlation_id from public.ai_provider_attempts order by started_at desc limit 10`);
+          for (const row of result.rows) console.log(`AiProviderAttempt provider=${row.provider} status=${row.status} error_code=${row.error_code ?? 'none'} operation=${row.operation} started_at=${row.started_at?.toISOString?.() ?? row.started_at} completed_at=${row.completed_at?.toISOString?.() ?? row.completed_at} latency_ms=${row.latency_ms ?? 'none'} trace_id=${row.correlation_id}`);
+          await client.end();
+          NODE
+
           runtime_env_ok=true
           if ! docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" |
             awk -F= '

@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 
+import type { AiProviderAttemptsPersistence } from "../ai-provider-attempts-persistence.contracts.js";
+import { AI_PROVIDER_ATTEMPTS_PERSISTENCE } from "../ai-provider-attempts-persistence.tokens.js";
 import type { CatalogPersistence } from "../catalog/catalog-persistence.js";
 import { CATALOG_PERSISTENCE } from "../catalog/catalog-persistence.tokens.js";
 import type { EditorialPersistence } from "../editorial/editorial-persistence.contracts.js";
@@ -78,6 +80,8 @@ export class LegacyPersistenceFacade implements LegacyPersistence {
     private readonly telegramCheckpoints: TelegramCheckpointsPersistence,
     @Inject(TELEGRAM_REVIEW_SESSIONS_PERSISTENCE)
     private readonly telegramReviewSessions: TelegramReviewSessionsPersistence,
+    @Inject(AI_PROVIDER_ATTEMPTS_PERSISTENCE)
+    private readonly providerAttempts: AiProviderAttemptsPersistence,
   ) {}
 
   listEnabledSources(...args: Parameters<CatalogPersistence["listEnabledSources"]>) {
@@ -134,6 +138,15 @@ export class LegacyPersistenceFacade implements LegacyPersistence {
   }
   replaceArticleTopics(...args: Parameters<ResearchIngestionPersistence["replaceArticleTopics"]>) {
     return this.research.replaceArticleTopics(...args);
+  }
+  startAiProviderAttempt(...args: Parameters<AiProviderAttemptsPersistence["startAiProviderAttempt"]>) {
+    return this.providerAttempts.startAiProviderAttempt(...args);
+  }
+  completeAiProviderAttempt(...args: Parameters<AiProviderAttemptsPersistence["completeAiProviderAttempt"]>) {
+    return this.providerAttempts.completeAiProviderAttempt(...args);
+  }
+  getLatestAiProviderAttemptHealth(...args: Parameters<AiProviderAttemptsPersistence["getLatestAiProviderAttemptHealth"]>) {
+    return this.providerAttempts.getLatestAiProviderAttemptHealth(...args);
   }
   listRecentPublishedStories(...args: Parameters<StoryDeduplicationPersistence["listRecentPublishedStories"]>) {
     return this.storyDeduplication.listRecentPublishedStories(...args);

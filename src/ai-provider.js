@@ -10,15 +10,22 @@ import {
   createExaProvider,
   getExaProviderConfig,
 } from "./exa-provider.js";
+import {
+  classifySafeProviderError,
+  isTransientProviderError,
+  newAttemptId,
+  safeAttemptDiagnostics,
+} from "./ai-provider-attempts.js";
 
 const SUPPORTED_PROVIDERS = new Set(["openai", "gemini", "exa"]);
 
 export class AiProvidersExhaustedError extends AggregateError {
-  constructor(operation, errors) {
+  constructor(operation, errors, traceId = newAttemptId()) {
     super(errors, `No AI provider completed ${operation}`);
     this.name = "AiProvidersExhaustedError";
     this.code = "ai_providers_exhausted";
     this.operation = operation;
+    this.traceId = traceId;
   }
 }
 
@@ -43,6 +50,8 @@ export function getAiProviderOrder(env = process.env) {
 }
 
 export function classifyProviderError(error) {
+  const safeCode = classifySafeProviderError(error);
+  if (safeCode !== "provider_failed") return safeCode;
   const status = Number(error?.status ?? error?.statusCode ?? error?.code);
   if (status === 401 || status === 403) {
     return "authentication_failed";
@@ -64,7 +73,7 @@ export function classifyProviderError(error) {
 
 export function createFallbackAiProvider(
   providers,
-  { log = console } = {},
+  { log = console, attemptRepository = null, now = () => new Date(), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {},
 ) {
   const available = providers.filter(Boolean);
   if (!available.length) {
@@ -73,14 +82,56 @@ export function createFallbackAiProvider(
     );
   }
 
+  const writeAttempt = async (method, input) => {
+    if (!attemptRepository?.[method]) return;
+    try {
+      await attemptRepository[method](input);
+    } catch {
+      log.warn?.(JSON.stringify({ event: "ai_provider_attempt_telemetry_failed", operation: input.operation ?? null }));
+    }
+  };
+
+  const runAttempt = async ({ operation, input, provider, correlationId, attemptNumber }) => {
+    const id = newAttemptId();
+    const started = now();
+    const semanticOperation = input?.usageOperation ?? operation;
+    await writeAttempt("startAiProviderAttempt", {
+      id, correlationId, operation: semanticOperation, provider: provider.name,
+      model: provider.model ?? null, attemptNumber, startedAt: started.toISOString(),
+    });
+    try {
+      const result = await provider[operation](input);
+      await writeAttempt("completeAiProviderAttempt", {
+        id, status: "succeeded", completedAt: now().toISOString(),
+        latencyMs: Math.max(0, now().valueOf() - started.valueOf()),
+        ...safeAttemptDiagnostics(null, result),
+      });
+      return result;
+    } catch (error) {
+      error.traceId ??= correlationId;
+      error.providerDiagnostics = {
+        ...error.providerDiagnostics,
+        provider: provider.name,
+      };
+      await writeAttempt("completeAiProviderAttempt", {
+        id, status: "failed", completedAt: now().toISOString(),
+        latencyMs: Math.max(0, now().valueOf() - started.valueOf()),
+        ...safeAttemptDiagnostics(error),
+      });
+      throw error;
+    }
+  };
+
   const execute = async (operation, input) => {
     const errors = [];
+    const correlationId = input?.traceId ?? newAttemptId();
+    let attemptNumber = 0;
     for (const provider of available) {
       if (typeof provider[operation] !== "function") {
         continue;
       }
       try {
-        return await provider[operation](input);
+        return await runAttempt({ operation, input, provider, correlationId, attemptNumber: ++attemptNumber });
       } catch (error) {
         errors.push(error);
         log.warn?.(
@@ -91,9 +142,18 @@ export function createFallbackAiProvider(
             error_code: classifyProviderError(error),
           }),
         );
+        if (isTransientProviderError(error)) {
+          try {
+            await sleep(250);
+            return await runAttempt({ operation, input, provider, correlationId, attemptNumber: ++attemptNumber });
+          } catch (retryError) {
+            errors.push(retryError);
+            log.warn?.(JSON.stringify({ event: "ai_provider_failed", operation, provider: provider.name, error_code: classifyProviderError(retryError) }));
+          }
+        }
       }
     }
-    throw new AiProvidersExhaustedError(operation, errors);
+    throw new AiProvidersExhaustedError(input?.usageOperation ?? operation, errors, correlationId);
   };
 
   const executeOnce = async (operation, input) => {
@@ -104,7 +164,7 @@ export function createFallbackAiProvider(
       throw new AiProvidersExhaustedError(operation, []);
     }
     try {
-      return await provider[operation](input);
+      return await runAttempt({ operation, input, provider, correlationId: input?.traceId ?? newAttemptId(), attemptNumber: 1 });
     } catch (error) {
       log.warn?.(
         JSON.stringify({
@@ -114,7 +174,7 @@ export function createFallbackAiProvider(
           error_code: classifyProviderError(error),
         }),
       );
-      throw new AiProvidersExhaustedError(operation, [error]);
+      throw new AiProvidersExhaustedError(operation, [error], error.traceId);
     }
   };
 
@@ -124,8 +184,9 @@ export function createFallbackAiProvider(
         candidate.name === "exa" && typeof candidate.searchFact === "function",
     );
     if (!exa) return execute("searchFact", input);
+    const correlationId = input?.traceId ?? newAttemptId();
     try {
-      return await exa.searchFact(input);
+      return await runAttempt({ operation: "searchFact", input, provider: exa, correlationId, attemptNumber: 1 });
     } catch (error) {
       log.warn?.(
         JSON.stringify({
@@ -135,7 +196,16 @@ export function createFallbackAiProvider(
           error_code: classifyProviderError(error),
         }),
       );
-      throw new AiProvidersExhaustedError("searchFact", [error]);
+      if (isTransientProviderError(error)) {
+        try {
+          await sleep(250);
+          return await runAttempt({ operation: "searchFact", input, provider: exa, correlationId, attemptNumber: 2 });
+        } catch (retryError) {
+          log.warn?.(JSON.stringify({ event: "ai_provider_failed", operation: "searchFact", provider: exa.name, error_code: classifyProviderError(retryError) }));
+          throw new AiProvidersExhaustedError("searchFact", [error, retryError], correlationId);
+        }
+      }
+      throw new AiProvidersExhaustedError("searchFact", [error], correlationId);
     }
   };
 
@@ -162,12 +232,12 @@ export function createFallbackAiProvider(
   };
 }
 
-export function createAiProvider(env = process.env, { log = console } = {}) {
+export function createAiProvider(env = process.env, { log = console, attemptRepository = null } = {}) {
   const factories = {
     exa: () => createExaProvider(getExaProviderConfig(env)),
     openai: () => createOpenAiProvider(getOpenAiConfig(env)),
     gemini: () => createGeminiProvider(getGeminiProviderConfig(env)),
   };
   const providers = getAiProviderOrder(env).map((name) => factories[name]());
-  return createFallbackAiProvider(providers, { log });
+  return createFallbackAiProvider(providers, { log, attemptRepository });
 }
