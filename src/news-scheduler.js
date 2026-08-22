@@ -9,6 +9,7 @@ const DEFAULT_STALE_AFTER_SECONDS = 30 * 60;
 const SAFE_SCHEDULE_ERROR_CODES = new Set([
   "no_candidates", "pipeline_busy", "claim_lost", "review_delivery_failed",
   "publication_unresolved", "schedule_pause_failed", "scheduled_run_failed",
+  "draft_validation_failed",
 ]);
 
 function safeTraceId(value) {
@@ -395,6 +396,7 @@ export async function runScheduledNewsOnce({
     );
   } catch (error) {
     let code = errorCode(error);
+    const traceId = safeTraceId(error?.traceId);
     try {
       await heartbeat.stop();
     } catch {
@@ -428,7 +430,7 @@ export async function runScheduledNewsOnce({
     if (!new Set(["claim_lost", "publication_unresolved"]).has(code)) {
       await notifyAdmin(
         settings?.reviewChatId ?? claim.review_chat_id,
-        `Scheduled news failed. Code: ${code}. Trace: ${safeTraceId(error.traceId)}.`,
+        `Scheduled news failed. Code: ${code}. Trace: ${traceId}.`,
       ).catch(() => {});
     }
     log.error?.(
@@ -438,7 +440,7 @@ export async function runScheduledNewsOnce({
         settings_version: settings?.version ?? null,
       }),
     );
-    return { status: "failed", errorCode: code, settings };
+    return { status: "failed", errorCode: code, traceId, settings };
   }
 }
 

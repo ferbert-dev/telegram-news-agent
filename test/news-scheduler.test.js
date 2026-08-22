@@ -337,6 +337,27 @@ test("scheduler replaces an untrusted failure code with the safe fallback", asyn
   assert.doesNotMatch(calls.find(([name]) => name === "notify")[2], /script|secret/i);
 });
 
+test("scheduler preserves draft_validation_failed with a valid trace", async () => {
+  const stableTraceId = "d5c13e4f-5a13-4ef3-9c9a-6aeb5df6f0ff";
+  const { calls, dependencies } = fixture({
+    dependencies: {
+      async runNews() {
+        const error = new Error("Draft validation failed");
+        error.code = "draft_validation_failed";
+        error.traceId = stableTraceId;
+        throw error;
+      },
+    },
+  });
+  const result = await runScheduledNewsOnce(dependencies);
+  assert.equal(result.status, "failed");
+  assert.equal(result.errorCode, "draft_validation_failed");
+  assert.equal(result.traceId, stableTraceId);
+  const notifyMessage = calls.find(([name]) => name === "notify")[2];
+  assert.match(notifyMessage, /draft_validation_failed/i);
+  assert.match(notifyMessage, new RegExp(stableTraceId));
+});
+
 test("a draft already being published is treated as unresolved", async () => {
   const claim = {
     ...CLAIM,
