@@ -134,14 +134,18 @@ export function createFallbackAiProvider(
         return await runAttempt({ operation, input, provider, correlationId, attemptNumber: ++attemptNumber });
       } catch (error) {
         errors.push(error);
+        const errorCode = classifyProviderError(error);
         log.warn?.(
           JSON.stringify({
             event: "ai_provider_failed",
             operation,
             provider: provider.name,
-            error_code: classifyProviderError(error),
+            error_code: errorCode,
           }),
         );
+        if (provider.name === "exa" && errorCode === "quota_exhausted") {
+          throw new AiProvidersExhaustedError(input?.usageOperation ?? operation, errors, correlationId);
+        }
         if (isTransientProviderError(error)) {
           try {
             await sleep(250);

@@ -20,6 +20,29 @@ const SAFE_ERROR_CODES = new Set([
   "provider_failed",
 ]);
 
+const QUOTA_ERROR_CODES = new Set([
+  "insufficient_quota",
+  "exa_daily_search_cap",
+  "resource_exhausted",
+]);
+
+function getProviderErrorCode(error) {
+  return [
+    error?.providerDiagnostics?.errorCode,
+    error?.error?.code,
+    error?.error?.type,
+    error?.code,
+    error?.type,
+  ].find((code) => typeof code === "string" && code.trim().length > 0) ?? null;
+}
+
+function normalizeCode(value) {
+  return String(value)
+    .trim()
+    .replace(/[\s-]+/g, "_")
+    .toLowerCase();
+}
+
 function safeText(value, maximum = 64) {
   const normalized = String(value ?? "").replace(/[^A-Za-z0-9_.:-]/g, "");
   return normalized.slice(0, maximum) || null;
@@ -46,7 +69,9 @@ export function providerDiagnosticError(errorCode, diagnostics, cause) {
 }
 
 export function classifySafeProviderError(error) {
-  const explicit = error?.providerDiagnostics?.errorCode ?? error?.code;
+  const explicit = getProviderErrorCode(error);
+  const normalized = normalizeCode(explicit);
+  if (normalized && QUOTA_ERROR_CODES.has(normalized)) return "quota_exhausted";
   if (SAFE_ERROR_CODES.has(explicit)) return explicit;
   const status = safeStatus(error?.status ?? error?.statusCode);
   if (status === 401 || status === 403) return "authentication_failed";

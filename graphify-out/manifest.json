@@ -210,9 +210,9 @@
     "semantic_hash": "3189ea30bd57fc29831943653eb774f9"
   },
   "src/ai-provider.js": {
-    "mtime": 1787393792.2363567,
-    "ast_hash": "0ff98145c7d510b752bfeac6be0711bb",
-    "semantic_hash": "0ff98145c7d510b752bfeac6be0711bb"
+    "mtime": 1787394622.4993386,
+    "ast_hash": "595054f0dc500bbd9616c5ce93dc1349",
+    "semantic_hash": "595054f0dc500bbd9616c5ce93dc1349"
   },
   "src/ai-usage.js": {
     "mtime": 1787391166.5432367,
@@ -490,9 +490,9 @@
     "semantic_hash": "99936b6800112f29babd8d2af943782e"
   },
   "test/ai-provider.test.js": {
-    "mtime": 1787393793.0105653,
-    "ast_hash": "f2168cf6c86ca89b8201fda58d33d15c",
-    "semantic_hash": "f2168cf6c86ca89b8201fda58d33d15c"
+    "mtime": 1787394634.3772569,
+    "ast_hash": "c8db9538c1352643e2b0e8a13943f658",
+    "semantic_hash": "c8db9538c1352643e2b0e8a13943f658"
   },
   "test/ai-usage.test.js": {
     "mtime": 1787391166.598512,
@@ -1830,9 +1830,9 @@
     "semantic_hash": "0cce3347be0355bef4d49e081110f784"
   },
   "src/ai-provider-attempts.js": {
-    "mtime": 1787391538.2642639,
-    "ast_hash": "f13ce749d42698ce95fcbe8b58df7d23",
-    "semantic_hash": "f13ce749d42698ce95fcbe8b58df7d23"
+    "mtime": 1787394616.640445,
+    "ast_hash": "e9944f6c02b9a4fe4a66f27dc047ae5e",
+    "semantic_hash": "e9944f6c02b9a4fe4a66f27dc047ae5e"
   },
   "src/database/repositories/ai-provider-attempts-repository.ts": {
     "mtime": 1787393792.661087,

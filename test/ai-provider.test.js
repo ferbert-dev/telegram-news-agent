@@ -6,6 +6,10 @@ import {
   createFallbackAiProvider,
   getAiProviderOrder,
 } from "../src/ai-provider.js";
+import {
+  classifySafeProviderError,
+  isTransientProviderError,
+} from "../src/ai-provider-attempts.js";
 
 test("provider order defaults to OpenAI then Gemini and rejects unknown providers", () => {
   assert.deepEqual(getAiProviderOrder({}), ["openai", "gemini"]);
@@ -20,6 +24,36 @@ test("provider order defaults to OpenAI then Gemini and rejects unknown provider
   assert.throws(
     () => getAiProviderOrder({ AI_PROVIDER_ORDER: "gemini,unknown" }),
     /Unsupported AI provider/,
+  );
+});
+
+test("classifies provider quota codes as quota_exhausted and non-transient", () => {
+  assert.equal(
+    classifySafeProviderError({
+      code: "insufficient_quota",
+      status: 429,
+    }),
+    "quota_exhausted",
+  );
+  assert.equal(
+    classifySafeProviderError({
+      error: {
+        code: "RESOURCE_EXHAUSTED",
+        status: 429,
+      },
+    }),
+    "quota_exhausted",
+  );
+  assert.equal(
+    classifySafeProviderError({
+      code: "exa_daily_search_cap",
+      status: 429,
+    }),
+    "quota_exhausted",
+  );
+  assert.equal(
+    isTransientProviderError({ code: "insufficient_quota", status: 429 }),
+    false,
   );
 });
 
@@ -116,6 +150,31 @@ test("normal fallback records best-effort attempts, retries one transient failur
   assert.equal((await provider.generateStructured({ usageOperation: "editorial_draft" })).provider, "gemini");
   assert.deepEqual(calls, ["openai", "openai", "gemini"]);
   assert.equal(records.filter(([kind]) => kind === "start").length, 3);
+});
+
+test("Exa quota cap failures stop after a single provider call and do not fallback", async () => {
+  const calls = [];
+  const provider = createFallbackAiProvider([
+    { name: "exa", async searchNews() {
+      calls.push("exa");
+      throw Object.assign(new Error("quota cap reached"), {
+        code: "exa_daily_search_cap",
+        status: 429,
+      });
+    } },
+    { name: "openai", async searchNews() {
+      calls.push("openai");
+      return { provider: "openai" };
+    } },
+  ], { log: { warn() {} }, sleep: async () => {} });
+  await assert.rejects(
+    provider.searchNews({}),
+    (error) =>
+      error instanceof AiProvidersExhaustedError &&
+      error.errors.length === 1 &&
+      error.code === "ai_providers_exhausted",
+  );
+  assert.deepEqual(calls, ["exa"]);
 });
 
 test("non-retryable fallback failure immediately tries the next provider", async () => {
@@ -240,6 +299,43 @@ test("editorial fact search never falls through from Exa to a paid provider", as
       error instanceof AiProvidersExhaustedError && error.errors.length === 1,
   );
   assert.deepEqual(calls, ["exa"]);
+});
+
+test("OpenAI insufficient_quota is classified as non-retryable and falls through the provider chain", async () => {
+  const calls = [];
+  const provider = createFallbackAiProvider([
+    { name: "openai", async searchNews() {
+      calls.push("openai");
+      throw Object.assign(new Error("quota exceeded"), { code: "insufficient_quota", status: 429 });
+    } },
+    { name: "gemini", async searchNews() {
+      calls.push("gemini");
+      return { provider: "gemini", model: "g", items: [] };
+    } },
+  ], { log: { warn() {} }, sleep: async () => {} });
+  await provider.searchNews({});
+  assert.deepEqual(calls, ["openai", "gemini"]);
+});
+
+test("Gemini RESOURCE_EXHAUSTED is classified as non-retryable and falls through the provider chain", async () => {
+  const calls = [];
+  const provider = createFallbackAiProvider([
+    {
+      name: "gemini",
+      async searchNews() {
+        calls.push("gemini");
+        throw Object.assign(new Error("quota consumed"), {
+          error: { code: "RESOURCE_EXHAUSTED", status: 429 },
+        });
+      },
+    },
+    { name: "openai", async searchNews() {
+      calls.push("openai");
+      return { provider: "openai", model: "o", items: [] };
+    } },
+  ], { log: { warn() {} }, sleep: async () => {} });
+  await provider.searchNews({});
+  assert.deepEqual(calls, ["gemini", "openai"]);
 });
 
 test("Exa fact search persists only safe success telemetry", async () => {
