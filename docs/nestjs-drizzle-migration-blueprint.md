@@ -251,6 +251,12 @@ Blueprint + executable database contract
 
 One implementation slice normally maps to one Notion ticket, one `codex/*` branch, one pull request and one independent closure review. A ticket becomes `Ready` only when every `Depends On` relation is terminal and successful.
 
+### Verified standalone lifecycle foundation
+
+The additive NestJS runtime foundation now uses `NestFactory.createApplicationContext` with no HTTP listener. `RuntimeModule` injects a finite ordered worker set, a signal source, a second-signal escalation boundary, and a validated 40-second total shutdown deadline. `RuntimeCoordinator` owns the single root `AbortController`, tracks each worker before invoking its startup, starts the deadline synchronously with the first stop request, invokes every attempted worker's idempotent `stop()` in reverse declaration order without passing the already-aborted signal, and bounds both in-flight startup and `application.close()` with that same deadline. Programmatic, fatal, and signal-driven shutdown share one cached stop promise, while late startup, stop, close, and escalation failures remain observed. Every concrete worker must treat `stop()` as safe before, during, and after `start()`, latch stopping synchronously, and prevent late startup completion from activating work. The existing `DatabaseLifecycle` remains the sole owner of closing the shared PostgreSQL pool through Nest application shutdown; the coordinator never closes the pool directly.
+
+This foundation is intentionally not a production composition root. It registers no Telegram poller, scheduler, durable news worker, readiness protocol, or Docker command, and `src/telegram-bot.js` remains the production entrypoint until the later worker, packaging, parity, and cutover gates pass.
+
 ## Verification matrix
 
 | Gate | Required evidence |

@@ -394,3 +394,33 @@ test("Nest module imports are acyclic and avoid forwardRef", async () => {
 
   for (const file of files) visit(file, []);
 });
+
+test("runtime bootstrap owns signals and never calls process.exit directly", async () => {
+  const runtimeCoordinator = await readFile(
+    path.join(sourceRoot, "runtime/runtime-coordinator.ts"),
+    "utf8",
+  );
+  const runtimeBootstrap = await readFile(
+    path.join(sourceRoot, "runtime/runtime-bootstrap.ts"),
+    "utf8",
+  );
+  const runtimeModule = await readFile(
+    path.join(sourceRoot, "runtime/runtime-module.ts"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(runtimeCoordinator, /process\.exit\s*\(/);
+  assert.doesNotMatch(runtimeCoordinator, /process\.exitCode/);
+  assert.doesNotMatch(runtimeCoordinator, /process\.(on|off)\(/);
+  assert.match(runtimeBootstrap, /RuntimeModule\.register/);
+  assert.match(runtimeBootstrap, /bindApplicationClose/);
+  assert.match(runtimeBootstrap, /createRuntimeApplicationContext/);
+  assert.match(runtimeModule, /createProcessSignalSource/);
+  assert.match(runtimeModule, /RUNTIME_STOP_GRACE_PERIOD_MS/);
+  assert.match(runtimeModule, /createProcessSecondSignalEscalation/);
+  assert.match(runtimeModule, /DEFAULT_STOP_GRACE_PERIOD_MS/);
+  assert.match(runtimeModule, /MAX_STOP_GRACE_PERIOD_MS|45_000/);
+  assert.ok(!/45_000/.test(runtimeBootstrap), "default stop grace should be below compose 45s");
+  assert.ok(!/process\.exit/.test(runtimeBootstrap), "exit should be in escalation boundary");
+  assert.ok(!/process\.exit/.test(runtimeCoordinator), "exit should be in escalation boundary");
+});
