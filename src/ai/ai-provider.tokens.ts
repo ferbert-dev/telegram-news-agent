@@ -1,0 +1,11 @@
+export const AI_PROVIDER_ENV = Symbol("AI_PROVIDER_ENV");
+export const AI_PROVIDER_ATTEMPT_WRITER = Symbol("AI_PROVIDER_ATTEMPT_WRITER");
+export const AI_PROVIDER_LOGGER = Symbol("AI_PROVIDER_LOGGER");
+export const OPENAI_SDK = Symbol("OPENAI_SDK");
+export const GEMINI_SDK = Symbol("GEMINI_SDK");
+export const EXA_SDK = Symbol("EXA_SDK");
+export const GEMINI_CLIENT = Symbol("GEMINI_CLIENT");
+export const OPENAI_PROVIDER = Symbol("OPENAI_PROVIDER");
+export const GEMINI_PROVIDER = Symbol("GEMINI_PROVIDER");
+export const EXA_PROVIDER = Symbol("EXA_PROVIDER");
+export const AI_PROVIDER = Symbol("AI_PROVIDER");
