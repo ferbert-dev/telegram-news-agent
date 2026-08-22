@@ -13,7 +13,7 @@ assert.equal(module.exports.includes(EvidenceCurationService), true);
 
 const service = new EvidenceCurationService(
   async () => [{ address: "93.184.216.34", family: 4 }],
-  { async fetch() { return new Response(); } },
+  { async fetchPinned() { return new Response(); } },
   { async sleep() {} },
 );
 assert.equal(

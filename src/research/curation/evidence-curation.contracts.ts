@@ -8,9 +8,10 @@ import type {
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type DnsAddress = { address: string; family: number };
 export type DnsLookupPort = (hostname: string, options: { all: true; verbatim: true }) => Promise<DnsAddress[]>;
-export type HttpResponsePort = { ok: boolean; status: number; headers: Headers; text(): Promise<string>; body?: { cancel(): Promise<void> | void } | null };
-export interface HttpPort { fetch(url: URL, init: RequestInit): Promise<HttpResponsePort>; }
+export type HttpResponsePort = { ok: boolean; status: number; headers: Headers; body: ReadableStream<Uint8Array> | null };
+export interface HttpPort { fetchPinned(url: URL, init: RequestInit, addresses: DnsAddress[]): Promise<HttpResponsePort>; }
 export interface SleepPort { sleep(delayMs: number): Promise<void>; }
+export type RandomPort = () => number;
 export type StructuredGeneration = { value: unknown; provider?: string | null; model?: string | null; usageEvents?: RecordAiUsageInput[] };
 export interface StructuredGenerationPort { generateStructured(input: { systemInstruction: string; input: JsonValue; schemaName: string; usageOperation: string }): Promise<StructuredGeneration>; }
 export type FactSearchResult = {
@@ -35,7 +36,7 @@ export type ArticleEvidence = { text: string; contentHash: string; finalUrl: str
 export type StoryDecision = { fingerprint: string; relation: StoryRelation; duplicateOfArticleId: string | null; confidence: number; reason: string; decisionSource: StoryDecisionSource; usageEvents: RecordAiUsageInput[]; classifierAttempted: boolean; shortlist: Array<{ articleId: string; similarity: number }> };
 export type StoryCandidate = Pick<CurationCandidate, "title" | "summary" | "publisher" | "publishedAt">;
 export type NewsSettings = { languageCode?: string; topicCodes?: string[]; customTopics?: string[] };
-export type RetryOptions = { attempts?: number; baseDelayMs?: number; shouldRetry?: (error: unknown) => boolean };
+export type RetryOptions = { attempts?: number; baseDelayMs?: number; jitterRatio?: number; shouldRetry?: (error: unknown) => boolean };
 export type FetchOptions = { timeoutMs?: number; maxRedirects?: number; headers?: HeadersInit; maxBytes?: number };
 export type CurationResult = { candidates: CurationCandidate[]; consideredCount: number; rankedCount?: number; provider: string | null; model: string | null; usageEvents: RecordAiUsageInput[] };
 export type { RecentPublishedStoryRow };

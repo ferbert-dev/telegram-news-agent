@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import { createServer } from "node:http";
 import test from "node:test";
 
 import { EvidenceCurationService } from "../../src/research/curation/evidence-curation.engine.js";
+import { PinnedEvidenceHttpTransport } from "../../src/research/curation/evidence-curation.http.js";
 import { EvidenceCurationModule } from "../../src/research/curation/evidence-curation.module.js";
 import { evaluateStoryDuplicate as legacyDedup, storyFingerprint as legacyFingerprint } from "../../src/story-deduplication.js";
 import { extractArticleText as legacyExtract } from "../../src/article-extractor.js";
@@ -10,7 +13,7 @@ import { selectCurationSample as legacySample } from "../../src/news-curation.js
 const publicDns = async () => [{ address: "93.184.216.34", family: 4 }];
 const sleep = { async sleep() {} };
 function service(fetch = async () => new Response("", { status: 200, headers: { "content-type": "text/html" } })) {
-  return new EvidenceCurationService(publicDns, { fetch }, sleep);
+  return new EvidenceCurationService(publicDns, { fetchPinned: fetch }, sleep);
 }
 const article = "The research team announced a new artificial intelligence model with documented evaluation results and limitations. ".repeat(4);
 const prior = {
@@ -21,12 +24,36 @@ const prior = {
 };
 
 test("typed safe fetch preserves hostile DNS and redirect guards", async () => {
-  const blocked = new EvidenceCurationService(async () => [{ address: "::ffff:127.0.0.1", family: 6 }], { fetch: async () => { throw new Error("must not fetch"); } }, sleep);
+  const blocked = new EvidenceCurationService(async () => [{ address: "::ffff:127.0.0.1", family: 6 }], { fetchPinned: async () => { throw new Error("must not fetch"); } }, sleep);
   await assert.rejects(blocked.fetchPublicHttp("https://example.com"), /not allowed/);
   const requests: string[] = [];
-  const redirecting = new EvidenceCurationService(async (hostname) => [{ address: hostname === "public.example" ? "93.184.216.34" : "10.0.0.1", family: 4 }], { fetch: async (url) => { requests.push(url.href); return new Response(null, { status: 302, headers: { location: "https://internal.example" } }); } }, sleep);
+  const pinned: unknown[][] = [];
+  const redirecting = new EvidenceCurationService(async (hostname) => [{ address: hostname === "public.example" ? "93.184.216.34" : "10.0.0.1", family: 4 }], { fetchPinned: async (url, _init, addresses) => { requests.push(url.href); pinned.push(addresses); return new Response(null, { status: 302, headers: { location: "https://internal.example" } }); } }, sleep);
   await assert.rejects(redirecting.fetchPublicHttp("https://public.example"), /not allowed/);
   assert.deepEqual(requests, ["https://public.example/"]);
+  assert.deepEqual(pinned, [[{ address: "93.184.216.34", family: 4 }]]);
+});
+
+test("native evidence transport connects only to the validated address", async (context) => {
+  let expectedHost = "";
+  const server = createServer((request, response) => {
+    assert.equal(request.headers.host, expectedHost);
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end(`<article><p>${article}</p></article>`);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  expectedHost = `rebind.invalid:${address.port}`;
+  const response = await new PinnedEvidenceHttpTransport().fetchPinned(
+    new URL(`http://${expectedHost}/story`),
+    {},
+    [{ address: "127.0.0.1", family: 4 }],
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /research team/);
 });
 
 test("typed extraction, retry, fact provenance and sampling match legacy contracts", async () => {
@@ -36,13 +63,32 @@ test("typed extraction, retry, fact provenance and sampling match legacy contrac
   const fetched = await typed.fetchArticle("https://example.com/story");
   assert.equal(fetched.contentHash.length, 64);
   const delays: number[] = [];
-  const retrying = new EvidenceCurationService(publicDns, { fetch: async () => new Response() }, { async sleep(delay) { delays.push(delay); } });
+  const samples = [0, 1];
+  const retrying = new EvidenceCurationService(publicDns, { fetchPinned: async () => new Response() }, { async sleep(delay) { delays.push(delay); } }, undefined, undefined, undefined, undefined, 3, () => samples.shift() ?? .5);
   let calls = 0;
-  assert.equal(await retrying.withRetry(async () => { if (++calls < 3) throw new Error("temporary"); return "ok"; }, { baseDelayMs: 10 }), "ok");
-  assert.deepEqual(delays, [10, 20]);
+  assert.equal(await retrying.withRetry(async () => { if (++calls < 3) throw new Error("temporary"); return "ok"; }, { baseDelayMs: 10, jitterRatio: .5 }), "ok");
+  assert.deepEqual(delays, [5, 30]);
   assert.deepEqual(typed.groundedFactEvidence({ fact: { claim: "Verified", sourceUrl: "https://example.com/evidence/", sourceTitle:"Official evidence", sourceKind:"official", evidenceText: "Proof" } }, ["https://example.com/evidence"]), { fact: { claim: "Verified", sourceUrl: "https://example.com/evidence", sourceTitle:"Official evidence", sourceKind:"official", evidenceText: "Proof" } });
   const candidates = ["one", "one", "two"].map((publisher, index) => ({ canonicalUrl: `https://${publisher}.example/${index}`, title: `Story ${index}`, publisher }));
   assert.deepEqual(typed.selectCurationSample(candidates, 3), legacySample(candidates, 3));
+});
+
+test("typed extraction cancels a chunked response as soon as maxBytes is exceeded", async () => {
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("12345678"));
+      controller.enqueue(new TextEncoder().encode("abcdefgh"));
+    },
+    cancel() { cancelled = true; },
+  });
+  const typed = new EvidenceCurationService(
+    publicDns,
+    { fetchPinned: async () => new Response(body, { headers: { "content-type": "text/html" } }) },
+    sleep,
+  );
+  await assert.rejects(typed.fetchArticle("https://example.com/story", { maxBytes: 10 }), /exceeds 10 bytes/);
+  assert.equal(cancelled, true);
 });
 
 test("typed dedup matches legacy deterministic and fail-closed semantic outcomes", async () => {
@@ -57,10 +103,24 @@ test("typed dedup matches legacy deterministic and fail-closed semantic outcomes
   const uncertain = await typed.evaluateStoryDuplicate({ title: "Kimi model test harness report", summary: "A report about attempts to bypass a test harness." }, [prior]);
   assert.equal(uncertain.relation, "uncertain");
   assert.equal(uncertain.decisionSource, "fallback");
+
+  const malformed = new EvidenceCurationService(
+    publicDns,
+    { fetchPinned: async () => new Response() },
+    sleep,
+    { async generateStructured() { return { value: { relation: "distinct", matchedPublishedArticleId: null, confidence: 2, reason: "" } }; } },
+  );
+  const malformedDecision = await malformed.evaluateStoryDuplicate(
+    { title: "Kimi model test harness report", summary: "A report about attempts to bypass a test harness." },
+    [prior],
+  );
+  assert.equal(malformedDecision.relation, "uncertain");
+  assert.equal(malformedDecision.decisionSource, "fallback");
 });
 
 test("typed dedup can read and persist recent history decisions", async () => {
   const seen: string[] = [];
+  const seenSince: Array<string | Date> = [];
   const calls = {
     list: 0 as number,
     record: 0 as number,
@@ -68,6 +128,7 @@ test("typed dedup can read and persist recent history decisions", async () => {
   const persistence = {
     async listRecentPublishedStories(input: { channelId: string | null; since: string | Date; limit?: number; }) {
       seen.push(`${input.channelId ?? "null"}:${input.limit ?? 100}`);
+      seenSince.push(input.since);
       calls.list += 1;
       return [{ ...prior, story_fingerprint: legacyFingerprint({ title: prior.title, summary: prior.feed_summary }) }];
     },
@@ -91,7 +152,7 @@ test("typed dedup can read and persist recent history decisions", async () => {
   const fixedNow = new Date("2026-08-22T08:00:00.000Z");
   const service = new EvidenceCurationService(
     publicDns,
-    { fetch: async () => new Response() },
+    { fetchPinned: async () => new Response() },
     sleep,
     undefined,
     undefined,
@@ -107,6 +168,7 @@ test("typed dedup can read and persist recent history decisions", async () => {
   assert.equal(calls.list, 1);
   assert.equal(calls.record, 1);
   assert.equal(seen[0], "@channel:100");
+  assert.equal(new Date(seenSince[0]).toISOString(), "2026-08-08T08:00:00.000Z");
 });
 
 test("typed semantic dedup is single-attempt and enforces a three-call run budget", async () => {
@@ -119,7 +181,7 @@ test("typed semantic dedup is single-attempt and enforces a three-call run budge
   };
   const service = new EvidenceCurationService(
     publicDns,
-    { fetch: async () => new Response() },
+    { fetchPinned: async () => new Response() },
     { async sleep() {} },
     provider,
   );
@@ -133,27 +195,42 @@ test("typed semantic dedup is single-attempt and enforces a three-call run budge
 
   const capped = new EvidenceCurationService(
     publicDns,
-    { fetch: async () => new Response() },
+    { fetchPinned: async () => new Response() },
     sleep,
     provider,
     undefined,
     { async listRecentPublishedStories() { return [{ ...prior, story_fingerprint:null }]; }, async recordStoryDedupDecision() { throw new Error("persist disabled"); } } as never,
   );
-  const exhausted = await capped.evaluateStoryDuplicateFromPersistence(
-    { title: prior.title, summary: prior.feed_summary },
-    "article-capped",
-    { semanticAttemptsUsed:3, persist:false },
-  );
-  assert.equal(attempts.calls, 1);
+  attempts.calls = 0;
+  const budget = capped.createSemanticAttemptBudget();
+  const decisions = [];
+  for (let index = 0; index < 4; index += 1) {
+    decisions.push(await capped.evaluateStoryDuplicateFromPersistence(
+      { title: prior.title, summary: prior.feed_summary },
+      `article-capped-${index}`,
+      { semanticBudget: budget, persist:false },
+    ));
+  }
+  const exhausted = decisions[3];
+  assert.equal(attempts.calls, 3);
+  assert.equal(budget.used, 3);
   assert.equal(exhausted.classifierAttempted, false);
   assert.equal(exhausted.relation, "uncertain");
+
+  const noBudget = await capped.evaluateStoryDuplicateFromPersistence(
+    { title: prior.title, summary: prior.feed_summary },
+    "article-no-budget",
+    { persist:false },
+  );
+  assert.equal(attempts.calls, 3);
+  assert.equal(noBudget.classifierAttempted, false);
 });
 
 test("typed fact search fallback only returns evidence after provenance check", async () => {
   let searchQuery: string | null = null;
   const typed = new EvidenceCurationService(
     publicDns,
-    { fetch: async () => new Response() },
+    { fetchPinned: async () => new Response() },
     sleep,
     undefined,
     { async searchFact(input) {
@@ -167,7 +244,7 @@ test("typed fact search fallback only returns evidence after provenance check", 
   assert.equal(searchQuery, "probe this");
   assert.equal(fallback.fact?.sourceUrl, "https://example.com/evidence");
   assert.equal(fallback.provider, "exa");
-  const hostilePort = new EvidenceCurationService(publicDns, { fetch: async () => new Response() }, sleep, undefined, { async searchFact() { return { value:{ fact:{ claim:"Bad", sourceUrl:"https://attacker.example", sourceTitle:"Bad", sourceKind:"reputable_news", evidenceText:"Bad" } }, sourceUrls:["https://trusted.example"] }; } });
+  const hostilePort = new EvidenceCurationService(publicDns, { fetchPinned: async () => new Response() }, sleep, undefined, { async searchFact() { return { value:{ fact:{ claim:"Bad", sourceUrl:"https://attacker.example", sourceTitle:"Bad", sourceKind:"reputable_news", evidenceText:"Bad" } }, sourceUrls:["https://trusted.example"] }; } });
   const rejected = await hostilePort.resolveFactEvidence({ fact: {} }, [], { query:"probe", expectedClaim:"claim" });
   assert.equal(rejected.fact, null);
 });
@@ -178,14 +255,14 @@ test("EvidenceCurationModule exposes replaceable provider ports without wiring l
   assert.equal(module.module, EvidenceCurationModule);
   assert.equal(module.exports?.includes(EvidenceCurationService), true);
   assert.equal(module.imports?.length, 1);
-  assert.equal(module.providers?.length, 9);
+  assert.equal(module.providers?.length, 10);
 });
 
 test("typed candidate curation rejects unknown IDs and preserves recognized ordering", async () => {
   const candidates = ["one", "two"].map((publisher, index) => ({ canonicalUrl: `https://${publisher}.example/${index}`, title: `Story ${index}`, publisher }));
   const generated = { async generateStructured() { return { value: { rankedCandidateIds: ["candidate-2", "candidate-1"] }, provider: "test", model: "test", usageEvents: [] }; } };
-  const typed = new EvidenceCurationService(publicDns, { fetch: async () => new Response() }, sleep, generated);
+  const typed = new EvidenceCurationService(publicDns, { fetchPinned: async () => new Response() }, sleep, generated);
   assert.deepEqual((await typed.curateNewsCandidates(candidates)).candidates.map((candidate) => candidate.canonicalUrl), ["https://two.example/1", "https://one.example/0"]);
-  const invalid = new EvidenceCurationService(publicDns, { fetch: async () => new Response() }, sleep, { async generateStructured() { return { value: { rankedCandidateIds: ["candidate-3"] } }; } });
+  const invalid = new EvidenceCurationService(publicDns, { fetchPinned: async () => new Response() }, sleep, { async generateStructured() { return { value: { rankedCandidateIds: ["candidate-3"] } }; } });
   await assert.rejects(invalid.curateNewsCandidates(candidates), /invalid candidate IDs/);
 });
