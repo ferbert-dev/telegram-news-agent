@@ -22,6 +22,7 @@ const { ResearchApplicationModule } = await import(
   "../dist/research/research-application.module.js"
 );
 const tokens = await import("../dist/research/research-gateway.tokens.js");
+const sourceAcquisition = await import("../dist/research/source-acquisition.module.js");
 
 const source = {
   id: "source-1",
@@ -153,3 +154,4 @@ const module = ResearchApplicationModule.register({
 assert.equal(module.module, ResearchApplicationModule);
 assert.equal(module.exports.includes(tokens.RESEARCH_EXECUTION_GATEWAY), true);
 assert.equal(typeof CatalogApplicationModule, "function");
+assert.equal(sourceAcquisition.SourceAcquisitionModule.register(null).exports.length, 1);
