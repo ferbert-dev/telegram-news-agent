@@ -2,19 +2,19 @@
   "contractVersion": 1,
   "postgresqlMajor": 17,
   "requiredCounts": {
-    "tables": 26,
-    "foreignKeys": 30,
-    "functionNames": 59,
-    "functionSignatures": 61
+    "tables": 27,
+    "foreignKeys": 32,
+    "functionNames": 66,
+    "functionSignatures": 68
   },
   "sectionHashes": {
-    "tables": "1af06c95e980e612f83ed3e737c4538923e75aeb7218d3714bcff2f1d9bc1a1c",
-    "columns": "ac5f4c82270e90d6c1f8c69d5ffdeda73d2537883b8890cb7ace5dea397fae10",
-    "constraints": "ef484f171e06676008f1177ca2fed6b7ad25151569353f14fa323afa16da4f9e",
-    "indexes": "d32a898d0a33affe8fb4d58cc46d60a2a02776e4c12c705e21797b9144171111",
-    "functions": "c685706808c4079f5da5174441512112b10040ad22c702d568a1dd75f2b5ebfc",
-    "policies": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
-    "grants": "c07ec2979b71754ad8a42fff999a829b0bf22b65398d8b4c8f7f8903991e8245",
-    "migrations": "77f849bfdb1c3626bb1a774695773e4f3fa1eea1b7bee8133bf8a75a3e845945"
+    "tables": "c9392f053d9f68f94ff6ce724dd29e4f4d1bf97381db2d03d7bb2da7760ae4b7",
+    "columns": "0a6a0e79525e09ed9ac1239fb0e8c5395683fc6afe58a9991eb41c088b893a7b",
+    "constraints": "99f450bd6c9c458386231bf25c1d59c02f1da2d70cd8120363c1632ea187cde5",
+    "indexes": "16c3e4d1e86f90705ef9701d248c01682c7d4eb3b2b8fc7ae61ba7b4ba0945ef",
+    "functions": "9cdb732e19e9c903eb8256d14955f814f41ae32c1222f5def6cc998e9f51436f",
+    "policies": "d66abcf6f5c74b9a8bdf921ceaf6eead083f654c316eae4dafd5c793e35b980c",
+    "grants": "f6d66bcc825c5f7c83782feda57893dad4a6f23cd54279e7d422dda6632669d1",
+    "migrations": "4447c358b2f3d38762eb69edaca193b27cd8afe1d6976a8adbe7c2b43e2e2308"
   }
 }

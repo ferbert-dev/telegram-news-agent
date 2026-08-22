@@ -281,7 +281,7 @@ test(
         });
       assert.deepEqual(
         createdFlags.map((flag) => flag.feature_key),
-        ["article_tags", "editorial_enrichment"],
+        ["article_tags", "editorial_enrichment", "publication_milestones"],
       );
       const articleTagsFlag = createdFlags.find(
         (flag) => flag.feature_key === "article_tags",
