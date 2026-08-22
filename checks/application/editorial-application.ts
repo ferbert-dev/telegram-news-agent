@@ -17,7 +17,9 @@ import type {
 } from "../../src/editorial/editorial-application.contracts.js";
 import { PublicationDeliveryError } from "../../src/editorial/editorial-application.contracts.js";
 import { EditorialApplicationModule } from "../../src/editorial/editorial-application.module.js";
+import { EditorialIntegrationEventsModule } from "../../src/editorial/editorial-integration-events.module.js";
 import {
+  ARTICLE_PUBLISHED_EVENT_PUBLISHER,
   EDITORIAL_DRAFT_GATEWAY,
   EDITORIAL_PUBLICATION_GATEWAY,
   EDITORIAL_WORKFLOW_APPLICATION,
@@ -383,10 +385,11 @@ test("PublishApprovedDraftUseCase evaluates the current settings and exact claim
     asUsage({}),
     policy,
     gateway,
+    { async publish(event, eventSignal) { calls.push(["event", event, eventSignal]); } },
   ).execute({ draftId: DRAFT.id, channelId: "@channel", signal });
 
   assert.deepEqual(calls.map((call) => (call as unknown[])[0]), [
-    "find", "settings", "policy", "claim", "gateway", "finalize",
+    "find", "settings", "policy", "claim", "gateway", "finalize", "event",
   ]);
   assert.deepEqual((calls[2] as unknown[])[1], {
     draftId: DRAFT.id,
@@ -412,11 +415,39 @@ test("PublishApprovedDraftUseCase evaluates the current settings and exact claim
       editor: { name: "Editor" },
     },
   });
+  assert.deepEqual((calls[6] as unknown[])[1], {
+    draftId: DRAFT.id,
+    articleId: ARTICLE.id,
+    publicationPath: "automatic",
+    publication: PUBLICATION,
+  });
+  assert.equal((calls[6] as unknown[])[2], signal);
   assert.deepEqual(result, {
     status: "published",
     publication: PUBLICATION,
     alreadyPublished: false,
   });
+});
+
+test("PublishApprovedDraftUseCase preserves publication success when a post-finalize subscriber fails", async () => {
+  const result = await new PublishApprovedDraftUseCase(
+    asPolicyEditorial({
+      async findPublicationByDraft() { return null; },
+      async finalizeDraftPublication() { return PUBLICATION; },
+    }),
+    {
+      async getNewsSettings() {
+        return { version: 1, excluded_topic_codes: [] } as never;
+      },
+    } as never,
+    asUsage({}),
+    { async evaluate() { return { decision: "allow" }; } },
+    { async publish() { return { messageId: 42 }; } },
+    { async publish() { throw new Error("subscriber offline"); } },
+  ).execute({ draftId: DRAFT.id, channelId: "@channel" });
+
+  assert.equal(result.status, "published");
+  assert.equal(result.publication.id, PUBLICATION.id);
 });
 
 test("PublishApprovedDraftUseCase records completed policy usage before honoring a post-response abort", async () => {
@@ -703,6 +734,7 @@ test("Editorial application providers use Symbol injection and export only the w
   assert.deepEqual(
     Reflect.getMetadata(SELF_DECLARED_DEPS_METADATA, PublishApprovedDraftUseCase),
     [
+      { index: 5, param: ARTICLE_PUBLISHED_EVENT_PUBLISHER },
       { index: 4, param: EDITORIAL_PUBLICATION_GATEWAY },
       { index: 3, param: EXCLUDED_TOPIC_PUBLICATION_POLICY },
       { index: 2, param: USAGE_REPORTING_PERSISTENCE },
@@ -720,6 +752,7 @@ test("Editorial application providers use Symbol injection and export only the w
     EditorialPersistenceModule,
     UsagePersistenceModule,
     SettingsPersistenceModule,
+    EditorialIntegrationEventsModule,
   ]);
   assert.deepEqual(module.exports, [EDITORIAL_WORKFLOW_APPLICATION]);
   assert.ok((module.providers ?? []).some(

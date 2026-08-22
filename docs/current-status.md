@@ -28,6 +28,12 @@ Last verified: 2026-08-21
 - SOPS-encrypted production configuration, hash-aware environment promotion, immutable GHCR images, health gates, and rollback.
 - Private, idempotent deployment-version notifications after successful production verification.
 - Typed Drizzle repositories and NestJS modules operating alongside the current legacy entrypoint.
+- An optional `PublicationMilestonesModule` implements deterministic every-50th-
+  article audience messages behind a default-off per-channel flag. It is not
+  wired into the legacy production entrypoint and remains inactive until the
+  standalone Nest runtime and durable event replay gate are complete. Delivery
+  uses a PostgreSQL claim token and parks ambiguous Telegram outcomes in
+  `uncertain` for explicit reconciliation instead of retrying blindly.
 
 ## Current Architecture
 
@@ -36,6 +42,12 @@ polling and the database scheduler while persistence migration proceeds in
 vertical slices. PostgreSQL functions remain authoritative for atomic leases,
 review decisions, publication claims, scheduling checkpoints, and other
 concurrency-sensitive transitions.
+
+New Nest feature slices communicate through a neutral in-process integration-
+event bus rather than importing each other. Optional subscribers register with
+the bus at module startup; omitting a module leaves the publisher unchanged.
+Idempotent publication retries replay `ArticlePublished`, but crash-independent
+delivery still requires the durable outbox named in the cutover plan.
 
 Exa is a retrieval provider, not a structured drafting replacement. It supplies
 bounded source-linked evidence; OpenAI or Gemini produces structured output when

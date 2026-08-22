@@ -38,6 +38,8 @@ and records it in the usage ledger.
   material article details.
 - OpenAI, Gemini, and Exa provider fallback with per-operation usage accounting.
 - PostgreSQL leases, idempotent publication, crash recovery, and manual review.
+- TypeScript-first NestJS feature modules with ports/adapters and optional
+  integration-event subscribers; publication milestones are the first module.
 - Docker-based Oracle production deployment with migration and rollback gates.
 - Graphify-assisted architecture navigation and impact analysis.
 

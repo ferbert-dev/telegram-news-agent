@@ -134,7 +134,7 @@ export const newsFeatureFlags = pgTable(
     primaryKey({ columns: [table.telegramChannelId, table.featureKey] }),
     check(
       "news_feature_flags_feature_key_check",
-      sql`${table.featureKey} in ('article_tags', 'editorial_enrichment')`,
+      sql`${table.featureKey} in ('article_tags', 'editorial_enrichment', 'publication_milestones')`,
     ),
     check(
       "news_feature_flags_state_check",

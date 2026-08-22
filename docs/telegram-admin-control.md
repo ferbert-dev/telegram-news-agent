@@ -51,6 +51,14 @@ write tag assignments. The Labs menu applies each change immediately, uses
 optimistic version fencing for stale callbacks, and can be closed with
 `Done & close`. Story connections are displayed only as a planned V2 feature.
 
+`Publication milestones` is stored as a default-off per-channel feature for the
+new Nest runtime. It is intentionally not exposed by the current legacy `/labs`
+menu and cannot be activated in production yet. After the Nest cutover gate, an
+enabled channel may post one deterministic, source-free thank-you after each
+50th published article; no AI provider or web search is used. A timeout after a
+send is treated as uncertain and requires sent/not-sent reconciliation before
+retry, matching the main publication safety boundary.
+
 Frequency choices are paused, 1 hour, 3 hours, 6 hours, 12 hours, and 24 hours. A due row
 is claimed atomically in PostgreSQL, so a process restart or a second transient
 worker does not create a parallel run. The selected draft and publication

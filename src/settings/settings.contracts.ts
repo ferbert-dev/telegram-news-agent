@@ -1,6 +1,9 @@
 export type NewsLanguageCode = "en" | "uk" | "de";
 export type NewsApprovalPolicy = "manual" | "automatic";
-export type NewsFeatureKey = "article_tags" | "editorial_enrichment";
+export type NewsFeatureKey =
+  | "article_tags"
+  | "editorial_enrichment"
+  | "publication_milestones";
 export type NewsFeatureState = "off" | "collect" | "enabled";
 
 export type NewsSettingsRow = {

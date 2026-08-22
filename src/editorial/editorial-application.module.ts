@@ -19,6 +19,7 @@ import {
   EDITORIAL_WORKFLOW_APPLICATION,
   EXCLUDED_TOPIC_PUBLICATION_POLICY,
 } from "./editorial-application.tokens.js";
+import { EditorialIntegrationEventsModule } from "./editorial-integration-events.module.js";
 import { EditorialPersistenceModule } from "./editorial-persistence.module.js";
 
 export type EditorialApplicationGateways = {
@@ -40,6 +41,7 @@ export class EditorialApplicationModule {
         EditorialPersistenceModule,
         UsagePersistenceModule,
         SettingsPersistenceModule,
+        EditorialIntegrationEventsModule,
       ],
       providers: [
         { provide: EDITORIAL_DRAFT_GATEWAY, useValue: gateways.draft },

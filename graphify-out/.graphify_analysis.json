@@ -13,8 +13,6 @@
       "src_database_getdatabaseconfig",
       "src_database_positiveinteger",
       "src_drafts_cli",
-      "src_drafts_cli_argument",
-      "src_drafts_cli_execute",
       "src_drafts_cli_main",
       "src_news_repository",
       "src_news_repository_article_update_columns",
@@ -82,6 +80,18 @@
       "src_news_curation_plaintext",
       "src_news_curation_publisherkey",
       "src_news_curation_selectcurationsample",
+      "src_news_scheduler",
+      "src_news_scheduler_deferforquiethours",
+      "src_news_scheduler_deferreddraftresult",
+      "src_news_scheduler_draftforclaim",
+      "src_news_scheduler_errorcode",
+      "src_news_scheduler_executeclaim",
+      "src_news_scheduler_finish",
+      "src_news_scheduler_requiresaved",
+      "src_news_scheduler_runnewsscheduler",
+      "src_news_scheduler_runschedulednewsonce",
+      "src_news_scheduler_settingsforclaim",
+      "src_news_scheduler_startnewsscheduleclaimheartbeat",
       "src_news_search",
       "src_news_search_publishcheckpointeddraft",
       "src_news_search_runcheckpointednewssearch",
@@ -100,42 +110,38 @@
       "src_news_settings_topic_presets",
       "src_news_settings_unique",
       "src_news_settings_validatecustomtopic",
-      "src_telegram_settings",
-      "src_telegram_settings_button",
-      "src_telegram_settings_callbackdata",
-      "src_telegram_settings_createsettingscallback",
-      "src_telegram_settings_editsettingsmessage",
-      "src_telegram_settings_formatnextrun",
-      "src_telegram_settings_handlesettingscallback",
-      "src_telegram_settings_handlesettingsinput",
-      "src_telegram_settings_intervallabel",
-      "src_telegram_settings_intervals",
-      "src_telegram_settings_issettingsinputreply",
-      "src_telegram_settings_languageentries",
-      "src_telegram_settings_languagelabel",
-      "src_telegram_settings_normalizesettings",
-      "src_telegram_settings_pages",
-      "src_telegram_settings_parsesettingscallback",
-      "src_telegram_settings_parsesettingscommand",
-      "src_telegram_settings_parseversion",
-      "src_telegram_settings_renderappliedsettingstext",
-      "src_telegram_settings_rendersettingskeyboard",
-      "src_telegram_settings_rendersettingstext",
-      "src_telegram_settings_rowsoftwo",
-      "src_telegram_settings_showsettings",
-      "src_telegram_settings_telegrammarkup",
-      "src_telegram_settings_topicentries",
-      "src_telegram_settings_topiclabel",
-      "src_telegram_settings_updatepayload",
+      "src_quiet_hours",
+      "src_quiet_hours_hourformatter",
+      "src_quiet_hours_isquiethoursat",
+      "src_quiet_hours_shoulddeferschedulednews",
+      "src_research_noresearchcandidateserror",
+      "src_research_noresearchcandidateserror_constructor",
+      "src_retry",
+      "src_retry_withretry",
       "test_news_curation_test",
       "test_news_curation_test_candidate",
       "test_news_curation_test_generatestructured",
+      "test_news_scheduler_test",
+      "test_news_scheduler_test_claim",
+      "test_news_scheduler_test_claimduenewsschedule",
+      "test_news_scheduler_test_deliverreviewdraft",
+      "test_news_scheduler_test_fixture",
+      "test_news_scheduler_test_haspendingtelegramreview",
+      "test_news_scheduler_test_notifyadmin",
+      "test_news_scheduler_test_pausenewsscheduleunresolved",
+      "test_news_scheduler_test_publishdraft",
+      "test_news_scheduler_test_renewnewsscheduleclaim",
+      "test_news_scheduler_test_runnews",
+      "test_news_scheduler_test_withaudit",
       "test_news_search_test",
       "test_news_search_test_approvedraft",
       "test_news_search_test_getdraft",
       "test_news_search_test_gettelegramnewscheckpoint",
       "test_news_search_test_savetelegramnewscheckpoint",
-      "test_news_settings_test"
+      "test_news_settings_test",
+      "test_quiet_hours_test",
+      "test_retry_test",
+      "test_telegram_polling_test_error"
     ],
     "2": [
       "src_ai_usage_recordaiusageevents",
@@ -423,6 +429,49 @@
       "test_news_repository_test_query"
     ],
     "8": [
+      "src_telegram_settings",
+      "src_telegram_settings_button",
+      "src_telegram_settings_callbackdata",
+      "src_telegram_settings_createsettingscallback",
+      "src_telegram_settings_editsettingsmessage",
+      "src_telegram_settings_formatnextrun",
+      "src_telegram_settings_handlesettingscallback",
+      "src_telegram_settings_handlesettingsinput",
+      "src_telegram_settings_intervallabel",
+      "src_telegram_settings_intervals",
+      "src_telegram_settings_issettingsinputreply",
+      "src_telegram_settings_languageentries",
+      "src_telegram_settings_languagelabel",
+      "src_telegram_settings_normalizesettings",
+      "src_telegram_settings_pages",
+      "src_telegram_settings_parsesettingscallback",
+      "src_telegram_settings_parsesettingscommand",
+      "src_telegram_settings_parseversion",
+      "src_telegram_settings_renderappliedsettingstext",
+      "src_telegram_settings_rendersettingskeyboard",
+      "src_telegram_settings_rendersettingstext",
+      "src_telegram_settings_rowsoftwo",
+      "src_telegram_settings_showsettings",
+      "src_telegram_settings_telegrammarkup",
+      "src_telegram_settings_topicentries",
+      "src_telegram_settings_topiclabel",
+      "src_telegram_settings_updatepayload",
+      "test_telegram_settings_test",
+      "test_telegram_settings_test_base_row",
+      "test_telegram_settings_test_callbackfixture",
+      "test_telegram_settings_test_claimtelegramupdate",
+      "test_telegram_settings_test_consumetelegramsettingsinput",
+      "test_telegram_settings_test_enqueuenotionauditfinalization",
+      "test_telegram_settings_test_finish",
+      "test_telegram_settings_test_finishtelegramupdate",
+      "test_telegram_settings_test_getdraft",
+      "test_telegram_settings_test_getnewssettings",
+      "test_telegram_settings_test_getorcreatenewssettings",
+      "test_telegram_settings_test_start",
+      "test_telegram_settings_test_updatedrow",
+      "test_telegram_settings_test_updatenewssettings"
+    ],
+    "9": [
       "checks_application_usage_dashboard",
       "checks_application_usage_dashboard_close",
       "checks_application_usage_dashboard_dashboard",
@@ -464,7 +513,49 @@
       "src_usage_usage_row_mappers_providerusagesummarydatabaserow",
       "src_usage_usage_row_mappers_safebigint"
     ],
-    "9": [
+    "10": [
+      "checks_integration_database_module",
+      "checks_integration_database_module_claimsourcediscovery",
+      "checks_integration_database_module_databaseintegrationfixturemodule",
+      "checks_integration_database_module_transactionprobe",
+      "checks_integration_database_module_transactionprobe_claimthenrollback",
+      "checks_integration_database_module_transactionprobe_constructor",
+      "checks_integration_database_module_ts_inject",
+      "checks_integration_database_module_ts_injectable",
+      "checks_persistence_repository_support",
+      "checks_persistence_repository_support_claimsourcediscovery",
+      "checks_persistence_repository_support_fakedatabase",
+      "checks_persistence_repository_support_fakepool",
+      "checks_persistence_repository_support_renderedquery",
+      "checks_persistence_repository_support_repositoryprobe",
+      "checks_persistence_repository_support_repositoryprobe_claim",
+      "checks_persistence_repository_support_repositoryprobe_claiminsiderolledbacktransaction",
+      "checks_persistence_repository_support_repositoryprobe_constructor",
+      "module",
+      "src_catalog_catalog_persistence_module_catalogpersistencemodule",
+      "src_database_repositories_repository_support",
+      "src_database_repositories_repository_support_definepostgresfunction",
+      "src_database_repositories_repository_support_drizzleexecutor",
+      "src_database_repositories_repository_support_drizzletransaction",
+      "src_database_repositories_repository_support_errormessage",
+      "src_database_repositories_repository_support_functionquery",
+      "src_database_repositories_repository_support_functionresultkind",
+      "src_database_repositories_repository_support_postgresfunction",
+      "src_database_repositories_repository_support_postgresrows",
+      "src_database_repositories_repository_support_postgresscalar",
+      "src_database_repositories_repository_support_repositorysupport",
+      "src_database_repositories_repository_support_repositorysupport_constructor",
+      "src_database_repositories_repository_support_repositorysupport_functionrows",
+      "src_database_repositories_repository_support_repositorysupport_functionscalar",
+      "src_database_repositories_repository_support_repositorysupport_one",
+      "src_database_repositories_repository_support_repositorysupport_operation",
+      "src_database_repositories_repository_support_repositorysupport_optionalone",
+      "src_database_repositories_repository_support_repositorysupport_transaction",
+      "src_database_repositories_repository_support_timestamp",
+      "src_database_repositories_repository_support_toisotimestamp",
+      "src_database_repositories_repository_support_tonullableisotimestamp"
+    ],
+    "11": [
       "src_editorial_enrichment",
       "src_editorial_enrichment_candidateusessource",
       "src_editorial_enrichment_candidateusessources",
@@ -504,46 +595,7 @@
       "test_editorial_enrichment_test_searchfact",
       "test_editorial_enrichment_test_similarbaselinedraft"
     ],
-    "10": [
-      "checks_integration_database_module",
-      "checks_integration_database_module_claimsourcediscovery",
-      "checks_integration_database_module_transactionprobe",
-      "checks_integration_database_module_transactionprobe_claimthenrollback",
-      "checks_integration_database_module_transactionprobe_constructor",
-      "checks_integration_database_module_ts_inject",
-      "checks_integration_database_module_ts_injectable",
-      "checks_persistence_repository_support",
-      "checks_persistence_repository_support_claimsourcediscovery",
-      "checks_persistence_repository_support_fakedatabase",
-      "checks_persistence_repository_support_fakepool",
-      "checks_persistence_repository_support_renderedquery",
-      "checks_persistence_repository_support_repositoryprobe",
-      "checks_persistence_repository_support_repositoryprobe_claim",
-      "checks_persistence_repository_support_repositoryprobe_claiminsiderolledbacktransaction",
-      "checks_persistence_repository_support_repositoryprobe_constructor",
-      "src_database_repositories_repository_support",
-      "src_database_repositories_repository_support_definepostgresfunction",
-      "src_database_repositories_repository_support_drizzleexecutor",
-      "src_database_repositories_repository_support_drizzletransaction",
-      "src_database_repositories_repository_support_errormessage",
-      "src_database_repositories_repository_support_functionquery",
-      "src_database_repositories_repository_support_functionresultkind",
-      "src_database_repositories_repository_support_postgresfunction",
-      "src_database_repositories_repository_support_postgresrows",
-      "src_database_repositories_repository_support_postgresscalar",
-      "src_database_repositories_repository_support_repositorysupport",
-      "src_database_repositories_repository_support_repositorysupport_constructor",
-      "src_database_repositories_repository_support_repositorysupport_functionrows",
-      "src_database_repositories_repository_support_repositorysupport_functionscalar",
-      "src_database_repositories_repository_support_repositorysupport_one",
-      "src_database_repositories_repository_support_repositorysupport_operation",
-      "src_database_repositories_repository_support_repositorysupport_optionalone",
-      "src_database_repositories_repository_support_repositorysupport_transaction",
-      "src_database_repositories_repository_support_timestamp",
-      "src_database_repositories_repository_support_toisotimestamp",
-      "src_database_repositories_repository_support_tonullableisotimestamp"
-    ],
-    "11": [
+    "12": [
       "src_draft",
       "src_draft_completedraft",
       "src_draft_editorialenrichmentstate",
@@ -581,9 +633,8 @@
       "test_pipeline_test_searchnews",
       "test_pipeline_test_setintervalimpl"
     ],
-    "12": [
+    "13": [
       "src_news_repository_newsrepository",
-      "src_news_repository_newsrepository_approvedraft",
       "src_news_repository_newsrepository_begintelegramsettingsinput",
       "src_news_repository_newsrepository_blockdraftpublication",
       "src_news_repository_newsrepository_claimdraftforpublication",
@@ -607,7 +658,6 @@
       "src_news_repository_newsrepository_rebindtelegramreviewsession",
       "src_news_repository_newsrepository_recordtelegramnewsjoboutcome",
       "src_news_repository_newsrepository_recordtelegramupdatefailure",
-      "src_news_repository_newsrepository_rejectdraft",
       "src_news_repository_newsrepository_releaserejecteddraftpublication",
       "src_news_repository_newsrepository_renewtelegramreviewsession",
       "src_news_repository_newsrepository_replacearticletopics",
@@ -617,43 +667,6 @@
       "src_news_repository_newsrepository_updatenewsexcludedtopics",
       "src_news_repository_newsrepository_updatenewsfeatureflag",
       "src_news_repository_newsrepository_updatenewssettings"
-    ],
-    "13": [
-      "src_news_scheduler",
-      "src_news_scheduler_deferforquiethours",
-      "src_news_scheduler_deferreddraftresult",
-      "src_news_scheduler_draftforclaim",
-      "src_news_scheduler_errorcode",
-      "src_news_scheduler_executeclaim",
-      "src_news_scheduler_finish",
-      "src_news_scheduler_requiresaved",
-      "src_news_scheduler_runnewsscheduler",
-      "src_news_scheduler_runschedulednewsonce",
-      "src_news_scheduler_settingsforclaim",
-      "src_news_scheduler_startnewsscheduleclaimheartbeat",
-      "src_quiet_hours",
-      "src_quiet_hours_hourformatter",
-      "src_quiet_hours_isquiethoursat",
-      "src_quiet_hours_shoulddeferschedulednews",
-      "src_research_noresearchcandidateserror",
-      "src_research_noresearchcandidateserror_constructor",
-      "src_retry",
-      "src_retry_withretry",
-      "test_news_scheduler_test",
-      "test_news_scheduler_test_claim",
-      "test_news_scheduler_test_claimduenewsschedule",
-      "test_news_scheduler_test_deliverreviewdraft",
-      "test_news_scheduler_test_fixture",
-      "test_news_scheduler_test_haspendingtelegramreview",
-      "test_news_scheduler_test_notifyadmin",
-      "test_news_scheduler_test_pausenewsscheduleunresolved",
-      "test_news_scheduler_test_publishdraft",
-      "test_news_scheduler_test_renewnewsscheduleclaim",
-      "test_news_scheduler_test_runnews",
-      "test_news_scheduler_test_withaudit",
-      "test_quiet_hours_test",
-      "test_retry_test",
-      "test_telegram_polling_test_error"
     ],
     "14": [
       "package_scripts",
@@ -784,17 +797,43 @@
       "test_telegram_labs_test_getorcreatenewssettings"
     ],
     "18": [
+      "src_database_repositories_publication_milestones_repository",
+      "src_database_repositories_publication_milestones_repository_claimpublicationmilestonefunction",
+      "src_database_repositories_publication_milestones_repository_markpublicationmilestonefailedfunction",
+      "src_database_repositories_publication_milestones_repository_markpublicationmilestonesentfunction",
+      "src_database_repositories_publication_milestones_repository_markpublicationmilestoneuncertainfunction",
+      "src_database_repositories_publication_milestones_repository_publicationmilestonesrepository",
+      "src_database_repositories_publication_milestones_repository_publicationmilestonesrepository_claim",
+      "src_database_repositories_publication_milestones_repository_publicationmilestonesrepository_constructor",
+      "src_database_repositories_publication_milestones_repository_publicationmilestonesrepository_markfailed",
+      "src_database_repositories_publication_milestones_repository_publicationmilestonesrepository_marksent",
+      "src_database_repositories_publication_milestones_repository_publicationmilestonesrepository_markuncertain",
+      "src_database_repositories_publication_milestones_repository_publicationmilestonesrepository_reconcilenotsent",
+      "src_database_repositories_publication_milestones_repository_publicationmilestonesrepository_reconcilesent",
+      "src_database_repositories_publication_milestones_repository_publicationmilestonesrepository_retry",
+      "src_database_repositories_publication_milestones_repository_reconcilepublicationmilestonenotsentfunction",
+      "src_database_repositories_publication_milestones_repository_reconcilepublicationmilestonesentfunction",
+      "src_database_repositories_publication_milestones_repository_retrypublicationmilestonefunction",
+      "src_database_repositories_publication_milestones_repository_ts_inject",
+      "src_database_repositories_publication_milestones_repository_ts_injectable",
+      "src_publication_milestones_publication_milestones_contracts_claimpublicationmilestoneinput",
+      "src_publication_milestones_publication_milestones_contracts_markpublicationmilestonefailedinput",
+      "src_publication_milestones_publication_milestones_contracts_markpublicationmilestonesentinput",
+      "src_publication_milestones_publication_milestones_contracts_markpublicationmilestoneuncertaininput",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonerow",
+      "src_publication_milestones_publication_milestones_contracts_reconcilepublicationmilestonesentinput"
+    ],
+    "19": [
       "src_news_repository_newsrepository_failsearchrun",
       "src_news_repository_newsrepository_findpublicationbydraft",
       "src_news_repository_newsrepository_findpublicationpolicyblockbydraft",
       "src_news_repository_newsrepository_findtelegramreviewsessionbydraft",
       "src_news_repository_newsrepository_finishsearchrun",
       "src_news_repository_newsrepository_getdailyusagedashboard",
-      "src_news_repository_newsrepository_getdraft",
       "src_news_repository_newsrepository_gettelegramnewscheckpoint",
-      "src_news_repository_newsrepository_listdrafts",
       "src_news_repository_newsrepository_listenabledarticletags",
       "src_news_repository_newsrepository_listenabledsources",
+      "src_news_repository_newsrepository_listrecentpublishedstories",
       "src_news_repository_newsrepository_listsourcehealth",
       "src_news_repository_newsrepository_marksourcechecked",
       "src_news_repository_newsrepository_marksourcefetchfailure",
@@ -807,9 +846,36 @@
       "src_news_repository_newsrepository_setsourceenabled",
       "src_news_repository_newsrepository_startsearchrun",
       "src_news_repository_newsrepository_upsertdiscoveredsource",
-      "src_news_repository_now"
+      "src_news_repository_now",
+      "src_news_repository_toisotimestamp"
     ],
-    "19": [
+    "20": [
+      "src_publication_milestones_application_publication_milestones_service",
+      "src_publication_milestones_application_publication_milestones_service_publicationmilestonesservice",
+      "src_publication_milestones_application_publication_milestones_service_publicationmilestonesservice_constructor",
+      "src_publication_milestones_application_publication_milestones_service_publicationmilestonesservice_deliver",
+      "src_publication_milestones_application_publication_milestones_service_publicationmilestonesservice_handle",
+      "src_publication_milestones_application_publication_milestones_service_publicationmilestonesservice_onmoduledestroy",
+      "src_publication_milestones_application_publication_milestones_service_publicationmilestonesservice_onmoduleinit",
+      "src_publication_milestones_application_publication_milestones_service_publicationmilestonesservice_reconcilenotsentandretry",
+      "src_publication_milestones_application_publication_milestones_service_publicationmilestonesservice_reconcilesent",
+      "src_publication_milestones_application_publication_milestones_service_publicationmilestonesservice_retry",
+      "src_publication_milestones_application_publication_milestones_service_rooterrormessage",
+      "src_publication_milestones_application_publication_milestones_service_ts_inject",
+      "src_publication_milestones_application_publication_milestones_service_ts_injectable",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonedeliverygateway",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonedeliverygateway_send",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonesmoduleoptions",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonespersistence",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonespersistence_claim",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonespersistence_markfailed",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonespersistence_marksent",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonespersistence_markuncertain",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonespersistence_reconcilenotsent",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonespersistence_reconcilesent",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonespersistence_retry"
+    ],
+    "21": [
       "src_news_repository_newsrepository_finishtelegramupdate",
       "src_telegram_bot",
       "src_telegram_bot_aiprovider",
@@ -834,7 +900,7 @@
       "src_telegram_control_isterminalcontrolerror",
       "src_telegram_control_terminal_control_error_codes"
     ],
-    "20": [
+    "22": [
       "ref_checks_ts",
       "ref_node",
       "ref_scripts_ts",
@@ -856,7 +922,7 @@
       "tsconfig_include",
       "tsconfig_json_ref_src_ts"
     ],
-    "21": [
+    "23": [
       "src_telegram_control",
       "src_telegram_control_admin_statuses",
       "src_telegram_control_answercallback",
@@ -878,7 +944,7 @@
       "src_telegram_control_requireprivatechat",
       "src_telegram_control_updatekind"
     ],
-    "22": [
+    "24": [
       "src_telegram_status",
       "src_telegram_status_dashboard",
       "src_telegram_status_exa_test_cooldowns",
@@ -899,7 +965,7 @@
       "test_telegram_status_test_recordaiusage",
       "test_telegram_status_test_testexaconnection"
     ],
-    "23": [
+    "25": [
       "checks_persistence_database_module",
       "checks_persistence_database_module_consumer_a",
       "checks_persistence_database_module_consumer_b",
@@ -919,7 +985,7 @@
       "src_database_drizzle_client_createdrizzledatabase",
       "src_database_drizzle_client_drizzledatabase"
     ],
-    "24": [
+    "26": [
       "scripts_postgres_contract",
       "scripts_postgres_contract_assertinvariants",
       "scripts_postgres_contract_connectionstring",
@@ -939,7 +1005,7 @@
       "scripts_postgres_contract_sectionhashes",
       "scripts_postgres_contract_sha256"
     ],
-    "25": [
+    "27": [
       "checks_integration_drizzle_sources_repository",
       "checks_persistence_sources_mapper",
       "checks_sources_repository",
@@ -958,7 +1024,7 @@
       "src_database_repositories_sources_repository_sourcetimestampfields",
       "src_database_repositories_sources_repository_upsertdiscoveredsourcefunction"
     ],
-    "26": [
+    "28": [
       "src_news_repository_newsrepository_acquirepipelinelease",
       "src_news_repository_newsrepository_claimsourcediscovery",
       "src_news_repository_newsrepository_completenotionauditbackfill",
@@ -977,7 +1043,26 @@
       "src_news_repository_newsrepository_savenewsscheduledraft",
       "src_news_repository_newsrepository_savenewsschedulepublication"
     ],
-    "27": [
+    "29": [
+      "src_telegram_transport_telegram_bot_api_gateway",
+      "src_telegram_transport_telegram_bot_api_gateway_admin_statuses",
+      "src_telegram_transport_telegram_bot_api_gateway_comparison",
+      "src_telegram_transport_telegram_bot_api_gateway_reviewmarkup",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapicall",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapigateway",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapigateway_answercallback",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapigateway_constructor",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapigateway_disablecontrols",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapigateway_ischanneladmin",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapigateway_restorecontrols",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapigateway_send",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapigateway_sendreview",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapioutcomerenderer",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapioutcomerenderer_constructor",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapioutcomerenderer_message",
+      "src_telegram_transport_telegram_bot_api_gateway_telegrambotapioutcomerenderer_render"
+    ],
+    "30": [
       "ref_checks",
       "ref_dist",
       "ref_src_js",
@@ -995,7 +1080,23 @@
       "tsconfig_build_include",
       "tsconfig_build_json_ref_src_ts"
     ],
-    "28": [
+    "31": [
+      "checks_application_publication_milestones",
+      "checks_application_publication_milestones_claim",
+      "checks_application_publication_milestones_eventbus",
+      "checks_application_publication_milestones_getnewsfeatureflags",
+      "checks_application_publication_milestones_getnewssettings",
+      "checks_application_publication_milestones_handle",
+      "checks_application_publication_milestones_markfailed",
+      "checks_application_publication_milestones_marksent",
+      "checks_application_publication_milestones_markuncertain",
+      "checks_application_publication_milestones_publication",
+      "checks_application_publication_milestones_reconcilenotsent",
+      "checks_application_publication_milestones_reconcilesent",
+      "checks_application_publication_milestones_retry",
+      "checks_application_publication_milestones_send"
+    ],
+    "32": [
       "src_article_tags",
       "src_article_tags_appendtopichashtags",
       "src_article_tags_article_tagging_states",
@@ -1011,7 +1112,7 @@
       "test_article_tags_test",
       "test_article_tags_test_catalog"
     ],
-    "29": [
+    "33": [
       "src_news_repository_newsrepository_createdraft",
       "src_news_repository_newsrepository_createtelegramreviewsession",
       "src_news_repository_newsrepository_enqueuenotionauditbackfill",
@@ -1027,38 +1128,22 @@
       "src_news_repository_placeholders",
       "src_news_repository_selectedentries"
     ],
-    "30": [
-      "test_telegram_settings_test",
-      "test_telegram_settings_test_base_row",
-      "test_telegram_settings_test_callbackfixture",
-      "test_telegram_settings_test_claimtelegramupdate",
-      "test_telegram_settings_test_consumetelegramsettingsinput",
-      "test_telegram_settings_test_enqueuenotionauditfinalization",
-      "test_telegram_settings_test_finish",
-      "test_telegram_settings_test_finishtelegramupdate",
-      "test_telegram_settings_test_getdraft",
-      "test_telegram_settings_test_getnewssettings",
-      "test_telegram_settings_test_getorcreatenewssettings",
-      "test_telegram_settings_test_start",
-      "test_telegram_settings_test_updatedrow",
-      "test_telegram_settings_test_updatenewssettings"
+    "34": [
+      "checks_persistence_publication_milestones",
+      "checks_persistence_publication_milestones_functionpool",
+      "checks_persistence_publication_milestones_functionpool_end",
+      "checks_persistence_publication_milestones_functionpool_query",
+      "checks_persistence_publication_milestones_milestonerow",
+      "checks_persistence_publication_milestones_recordedcall",
+      "src_publication_milestones_publication_milestones_row_mappers",
+      "src_publication_milestones_publication_milestones_row_mappers_aslanguagecode",
+      "src_publication_milestones_publication_milestones_row_mappers_asstate",
+      "src_publication_milestones_publication_milestones_row_mappers_mappublicationmilestonerow",
+      "src_publication_milestones_publication_milestones_row_mappers_publicationmilestonedatabaserow",
+      "src_publication_milestones_publication_milestones_row_mappers_toiso",
+      "src_publication_milestones_publication_milestones_row_mappers_tosafeinteger"
     ],
-    "31": [
-      "checks_integration_database_module_databaseintegrationfixturemodule",
-      "checks_persistence_catalog_persistence_module",
-      "checks_persistence_catalog_persistence_module_catalogconsumermodule",
-      "checks_persistence_catalog_persistence_module_fakepool",
-      "checks_persistence_catalog_persistence_module_fakepool_end",
-      "checks_persistence_catalog_persistence_module_fakepool_query",
-      "checks_persistence_catalog_persistence_module_ts_module",
-      "module",
-      "src_catalog_catalog_persistence_module",
-      "src_catalog_catalog_persistence_module_catalogpersistencemodule",
-      "src_catalog_catalog_persistence_module_catalogpersistenceprovider",
-      "src_catalog_catalog_persistence_tokens",
-      "src_catalog_catalog_persistence_tokens_catalog_persistence"
-    ],
-    "32": [
+    "35": [
       "src_database_repositories_sources_repository_mapsourcerow",
       "src_database_repositories_sources_repository_sourcesrepository",
       "src_database_repositories_sources_repository_sourcesrepository_claimsourcediscovery",
@@ -1073,7 +1158,21 @@
       "src_database_repositories_sources_repository_sourcesrepository_upsertdiscoveredsource",
       "src_database_repositories_sources_repository_sourcesrepository_upsertsource"
     ],
-    "33": [
+    "36": [
+      "db_migrations_20260821133000_add_publication_milestones",
+      "db_migrations_20260821133000_add_publication_milestones_public_claim_publication_milestone",
+      "db_migrations_20260821133000_add_publication_milestones_public_get_or_create_news_feature_flags",
+      "db_migrations_20260821133000_add_publication_milestones_public_mark_publication_milestone_failed",
+      "db_migrations_20260821133000_add_publication_milestones_public_mark_publication_milestone_sent",
+      "db_migrations_20260821133000_add_publication_milestones_public_mark_publication_milestone_uncertain",
+      "db_migrations_20260821133000_add_publication_milestones_public_news_feature_flags",
+      "db_migrations_20260821133000_add_publication_milestones_public_publication_milestones",
+      "db_migrations_20260821133000_add_publication_milestones_public_reconcile_publication_milestone_not_sent",
+      "db_migrations_20260821133000_add_publication_milestones_public_reconcile_publication_milestone_sent",
+      "db_migrations_20260821133000_add_publication_milestones_public_retry_publication_milestone",
+      "db_migrations_20260821133000_add_publication_milestones_public_update_news_feature_flag"
+    ],
+    "37": [
       "src_catalog_catalog_persistence_catalogpersistence",
       "src_catalog_catalog_persistence_catalogpersistence_claimsourcediscovery",
       "src_catalog_catalog_persistence_catalogpersistence_completesourcediscovery",
@@ -1087,7 +1186,19 @@
       "src_catalog_catalog_persistence_catalogpersistence_upsertdiscoveredsource",
       "src_catalog_catalog_persistence_catalogpersistence_upsertsource"
     ],
-    "34": [
+    "38": [
+      "checks_persistence_catalog_persistence_module",
+      "checks_persistence_catalog_persistence_module_catalogconsumermodule",
+      "checks_persistence_catalog_persistence_module_fakepool",
+      "checks_persistence_catalog_persistence_module_fakepool_end",
+      "checks_persistence_catalog_persistence_module_fakepool_query",
+      "checks_persistence_catalog_persistence_module_ts_module",
+      "src_catalog_catalog_persistence_module",
+      "src_catalog_catalog_persistence_module_catalogpersistenceprovider",
+      "src_catalog_catalog_persistence_tokens",
+      "src_catalog_catalog_persistence_tokens_catalog_persistence"
+    ],
+    "39": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260626175510_create_news_memory_schema_public_article_topics",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260626175510_create_news_memory_schema_public_articles",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260626175510_create_news_memory_schema_public_drafts",
@@ -1099,7 +1210,7 @@
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260626175510_create_news_memory_schema_public_topics",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260626175510_create_news_memory_schema_sql"
     ],
-    "35": [
+    "40": [
       "src_telegram_stats",
       "src_telegram_stats_localtime",
       "src_telegram_stats_numeric",
@@ -1111,7 +1222,7 @@
       "test_telegram_stats_test_dashboard",
       "test_telegram_stats_test_getdailyusagedashboard"
     ],
-    "36": [
+    "41": [
       "checks_persistence_usage_reporting",
       "checks_persistence_usage_reporting_providerrow",
       "checks_persistence_usage_reporting_publicationrow",
@@ -1122,7 +1233,7 @@
       "checks_persistence_usage_reporting_usagepool_query",
       "checks_persistence_usage_reporting_usagerow"
     ],
-    "37": [
+    "42": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807190000_add_article_tags_labs_public",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807190000_add_article_tags_labs_public_create_review_draft_with_topics",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807190000_add_article_tags_labs_public_get_news_feature_flags",
@@ -1133,7 +1244,7 @@
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807190000_add_article_tags_labs_public_update_news_feature_flag",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807190000_add_article_tags_labs_sql"
     ],
-    "38": [
+    "43": [
       "scripts_migration_status",
       "scripts_migration_status_argumentslist",
       "scripts_migration_status_connectionstring",
@@ -1144,7 +1255,7 @@
       "scripts_migration_status_requireapplied",
       "scripts_migration_status_root"
     ],
-    "39": [
+    "44": [
       "src_database_database_lifecycle",
       "src_database_database_lifecycle_databaselifecycle",
       "src_database_database_lifecycle_databaselifecycle_close",
@@ -1155,7 +1266,7 @@
       "src_database_database_lifecycle_logger",
       "src_database_database_lifecycle_safeerrorcode"
     ],
-    "40": [
+    "45": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807181000_add_source_health_and_discovery_public_claim_source_discovery",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807181000_add_source_health_and_discovery_public_complete_source_discovery",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807181000_add_source_health_and_discovery_public_mark_source_fetch_failure",
@@ -1165,7 +1276,7 @@
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807181000_add_source_health_and_discovery_public_upsert_discovered_source",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807181000_add_source_health_and_discovery_sql"
     ],
-    "41": [
+    "46": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807210000_add_news_night_pause_public_claim_due_news_schedule",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807210000_add_news_night_pause_public_defer_news_schedule_for_quiet_hours",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807210000_add_news_night_pause_public_finish_news_schedule",
@@ -1175,7 +1286,7 @@
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807210000_add_news_night_pause_public_update_news_settings",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807210000_add_news_night_pause_sql"
     ],
-    "42": [
+    "47": [
       "scripts_migrate",
       "scripts_migrate_checksum",
       "scripts_migrate_connectionstring",
@@ -1184,7 +1295,7 @@
       "scripts_migrate_pool",
       "scripts_migrate_root"
     ],
-    "43": [
+    "48": [
       "src_catalog_catalog_persistence",
       "src_catalog_catalog_persistence_articletagrow",
       "src_catalog_catalog_persistence_completesourcediscoveryinput",
@@ -1193,7 +1304,16 @@
       "src_catalog_catalog_persistence_upsertdiscoveredsourceinput",
       "src_catalog_catalog_persistence_upsertsourceinput"
     ],
-    "44": [
+    "49": [
+      "src_publication_milestones_publication_milestones_contracts",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonedeliveryerror",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonedeliveryerror_constructor",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonedeliveryoutcome",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonedeliveryreceipt",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonedeliveryrequest",
+      "src_publication_milestones_publication_milestones_contracts_publicationmilestonestate"
+    ],
+    "50": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627211631_harden_telegram_control_recovery_public_claim_telegram_update",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627211631_harden_telegram_control_recovery_public_decide_telegram_review_session",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627211631_harden_telegram_control_recovery_public_finish_telegram_update",
@@ -1201,7 +1321,7 @@
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627211631_harden_telegram_control_recovery_public_telegram_updates",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627211631_harden_telegram_control_recovery_sql"
     ],
-    "45": [
+    "51": [
       "scripts_new_migration",
       "scripts_new_migration_migrationname",
       "scripts_new_migration_migrationpath",
@@ -1209,306 +1329,317 @@
       "scripts_new_migration_root",
       "scripts_new_migration_timestamp"
     ],
-    "46": [
+    "52": [
+      "src_drafts_cli_argument",
+      "src_drafts_cli_execute",
+      "src_news_repository_newsrepository_approvedraft",
+      "src_news_repository_newsrepository_getdraft",
+      "src_news_repository_newsrepository_listdrafts",
+      "src_news_repository_newsrepository_rejectdraft"
+    ],
+    "53": [
       "checks_persistence_database_module_fakepool",
       "checks_persistence_database_module_fakepool_constructor",
       "checks_persistence_database_module_fakepool_end",
       "checks_persistence_database_module_fakepool_finishend",
       "checks_persistence_database_module_fakepool_query"
     ],
-    "47": [
+    "54": [
       "ops_deploy",
       "ops_deploy_rollback",
       "ops_deploy_rollback_on_error",
       "ops_deploy_sh__entry",
       "ops_deploy_wait_for_db_healthy"
     ],
-    "48": [
+    "55": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627023000_add_notion_audit_backfill_rpcs_public_claim_notion_audit_backfill",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627023000_add_notion_audit_backfill_rpcs_public_complete_notion_audit_backfill",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627023000_add_notion_audit_backfill_rpcs_public_notion_audit_outbox",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627023000_add_notion_audit_backfill_rpcs_public_retry_notion_audit_backfill",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627023000_add_notion_audit_backfill_rpcs_sql"
     ],
-    "49": [
+    "56": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627120000_add_telegram_admin_control_public_claim_telegram_update",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627120000_add_telegram_admin_control_public_decide_telegram_review_session",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627120000_add_telegram_admin_control_public_telegram_review_sessions",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627120000_add_telegram_admin_control_public_telegram_updates",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627120000_add_telegram_admin_control_sql"
     ],
-    "50": [
+    "57": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807130000_add_news_bot_settings_public_begin_telegram_settings_input",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807130000_add_news_bot_settings_public_update_news_settings",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807130000_add_news_bot_settings_public_valid_news_custom_topics",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807130000_add_news_bot_settings_public_valid_news_topic_codes",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807130000_add_news_bot_settings_sql"
     ],
-    "51": [
+    "58": [
       "src_deployment_notification",
       "src_deployment_notification_main",
       "src_deployment_notification_renderdeploymentnotification",
       "src_deployment_notification_senddeploymentnotifications",
       "test_deployment_notification_test"
     ],
-    "52": [
+    "59": [
       "src_telegram_control_createreviewcallback",
       "src_telegram_control_deliverreviewdraft",
       "src_telegram_control_editorialreviewcomparison",
       "src_telegram_control_reviewmarkup",
       "src_telegram_control_sendeditorialcomparison"
     ],
-    "53": [
+    "60": [
       "test_production_env_validator_test",
       "test_production_env_validator_test_baselines",
       "test_production_env_validator_test_fixture",
       "test_production_env_validator_test_root",
       "test_production_env_validator_test_validator"
     ],
-    "54": [
+    "61": [
       "checks_persistence_catalog_persistence_module_catalogconsumer",
       "checks_persistence_catalog_persistence_module_catalogconsumer_constructor",
       "checks_persistence_catalog_persistence_module_ts_inject",
       "checks_persistence_catalog_persistence_module_ts_injectable"
     ],
-    "55": [
+    "62": [
       "checks_persistence_database_module_persistencefixturemodule",
       "checks_persistence_database_module_testingcontext",
       "checks_persistence_database_module_ts_module",
       "package_scripts_test"
     ],
-    "56": [
+    "63": [
       "ops_sops_production_env",
       "ops_sops_production_env_sh__entry",
       "ops_sops_production_env_usage",
       "ops_sops_production_env_validate_encrypted"
     ],
-    "57": [
+    "64": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011000_add_atomic_draft_workflow_functions_public_approve_draft",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011000_add_atomic_draft_workflow_functions_public_claim_draft_for_publication",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011000_add_atomic_draft_workflow_functions_public_finalize_draft_publication",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011000_add_atomic_draft_workflow_functions_sql"
     ],
-    "58": [
+    "65": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627012000_add_pipeline_leases_public_acquire_pipeline_lease",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627012000_add_pipeline_leases_public_pipeline_leases",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627012000_add_pipeline_leases_public_release_pipeline_lease",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627012000_add_pipeline_leases_sql"
     ],
-    "59": [
+    "66": [
       "test_deploy_script_rollback_test",
       "test_deploy_script_rollback_test_completeenvironment",
       "test_deploy_script_rollback_test_legacyenvironment",
       "test_deploy_script_rollback_test_rundeployment"
     ],
-    "60": [
+    "67": [
       "test_integration_telegram_rpc_integration_test",
       "test_integration_telegram_rpc_integration_test_createreviewfixture",
       "test_integration_telegram_rpc_integration_test_one",
       "test_integration_telegram_rpc_integration_test_scalar"
     ],
-    "61": [
+    "68": [
       "inject",
       "src_database_repositories_sources_repository_sourcesrepository_constructor",
       "src_database_repositories_usage_reporting_repository_usagereportingrepository_constructor"
     ],
-    "62": [
+    "69": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627224500_make_telegram_publication_failures_retryable_public_claim_telegram_update",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627224500_make_telegram_publication_failures_retryable_public_release_rejected_draft_publication",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627224500_make_telegram_publication_failures_retryable_sql"
     ],
-    "63": [
+    "70": [
       "test_sops_production_env_test",
       "test_sops_production_env_test_dotenventries",
       "test_sops_production_env_test_requiredencryptedkeys"
     ],
-    "64": [
+    "71": [
       "ops_notify_deployment",
       "ops_notify_deployment_sh__entry"
     ],
-    "65": [
+    "72": [
       "ops_validate_production_env",
       "ops_validate_production_env_sh__entry"
     ],
-    "66": [
+    "73": [
       "ops_verify_production_runtime",
       "ops_verify_production_runtime_sh__entry"
     ],
-    "67": [
+    "74": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627003000_add_primary_source_flag_public_sources",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627003000_add_primary_source_flag_sql"
     ],
-    "68": [
+    "75": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627010000_harden_draft_publication_idempotency_public_drafts",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627010000_harden_draft_publication_idempotency_sql"
     ],
-    "69": [
+    "76": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011500_add_atomic_draft_rejection_function_public_reject_draft",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011500_add_atomic_draft_rejection_function_sql"
     ],
-    "70": [
+    "77": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627013000_harden_article_deduplication_public_create_article_if_new",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627013000_harden_article_deduplication_sql"
     ],
-    "71": [
+    "78": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627014000_make_article_candidates_resumable_public_create_or_resume_article_candidate",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627014000_make_article_candidates_resumable_sql"
     ],
-    "72": [
+    "79": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627015000_add_publication_recovery_public_reset_draft_publication",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627015000_add_publication_recovery_sql"
     ],
-    "73": [
+    "80": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627020000_add_atomic_review_draft_creation_public_create_review_draft",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627020000_add_atomic_review_draft_creation_sql"
     ],
-    "74": [
+    "81": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627021000_add_notion_audit_outbox_public_notion_audit_outbox",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627021000_add_notion_audit_outbox_sql"
     ],
-    "75": [
+    "82": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627022000_add_pipeline_lease_renewal_public_renew_pipeline_lease",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627022000_add_pipeline_lease_renewal_sql"
     ],
-    "76": [
+    "83": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260629103914_add_telegram_news_request_checkpoints_public_telegram_news_request_checkpoints",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260629103914_add_telegram_news_request_checkpoints_sql"
     ],
-    "77": [
+    "84": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807160000_add_ai_usage_ledger_public_ai_usage_events",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807160000_add_ai_usage_ledger_sql"
     ],
-    "78": [
+    "85": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260809090000_add_three_hour_news_schedule_public_news_bot_settings",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260809090000_add_three_hour_news_schedule_sql"
     ],
-    "79": [
+    "86": [
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_bootstrap_oracle_sh",
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_bootstrap_oracle_sh__entry"
     ],
-    "80": [
+    "87": [
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_configure_db_observer_sh",
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_configure_db_observer_sh__entry"
     ],
-    "81": [
+    "88": [
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_postgres_init_00_create_app_role_sh",
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_postgres_init_00_create_app_role_sh__entry"
     ],
-    "82": [
-      "src_news_repository_newsrepository_listrecentpublishedstories",
-      "src_news_repository_toisotimestamp"
+    "89": [
+      "src_database_schema_publication_milestones",
+      "src_database_schema_publication_milestones_publicationmilestones"
     ],
-    "83": [
+    "90": [
       "test_production_env_cutover_test",
       "test_production_env_cutover_test_validate"
     ],
-    "84": [
+    "91": [
       "test_production_runtime_verifier_test",
       "test_production_runtime_verifier_test_runverifier"
     ],
-    "85": [
+    "92": [
       "checks_emitted_database_module"
     ],
-    "86": [
+    "93": [
       "checks_integration_database_module_ts_module"
     ],
-    "87": [
+    "94": [
+      "checks_integration_publication_milestones"
+    ],
+    "95": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260626175600_add_news_memory_foreign_key_indexes_sql"
     ],
-    "88": [
+    "96": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807111000_seed_approved_primary_sources_sql"
     ],
-    "89": [
+    "97": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807180000_seed_broad_news_sources_sql"
     ],
-    "90": [
+    "98": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260809103000_add_missing_foreign_key_indexes_sql"
     ],
-    "91": [
+    "99": [
       "src_catalog_catalog_persistence_module_ts_module"
     ],
-    "92": [
+    "100": [
       "src_database_repositories_sources_repository_ts_inject"
     ],
-    "93": [
+    "101": [
       "src_database_repositories_sources_repository_ts_injectable"
     ],
-    "94": [
+    "102": [
       "test_deployment_notification_script_test"
     ]
   },
   "cohesion": {
-    "0": 0.053208137715179966,
-    "1": 0.07049180327868852,
+    "0": 0.053830227743271224,
+    "1": 0.05583972719522592,
     "2": 0.09224489795918367,
     "3": 0.07510204081632653,
     "4": 0.07610993657505286,
     "5": 0.10409745293466224,
     "6": 0.046511627906976744,
     "7": 0.08194905869324474,
-    "8": 0.09743589743589744,
-    "9": 0.10953058321479374,
-    "10": 0.08258258258258258,
-    "11": 0.09365079365079365,
-    "12": 0.11092436974789915,
-    "13": 0.09411764705882353,
+    "8": 0.09634146341463415,
+    "9": 0.09743589743589744,
+    "10": 0.07435897435897436,
+    "11": 0.10953058321479374,
+    "12": 0.09365079365079365,
+    "13": 0.11742424242424243,
     "14": 0.0625,
     "15": 0.12413793103448276,
     "16": 0.07586206896551724,
     "17": 0.15608465608465608,
-    "18": 0.12318840579710146,
-    "19": 0.09486166007905138,
-    "20": 0.1,
-    "21": 0.28421052631578947,
-    "22": 0.19298245614035087,
-    "23": 0.1895424836601307,
-    "24": 0.1503267973856209,
-    "25": 0.125,
-    "26": 0.11764705882352941,
+    "18": 0.12,
+    "19": 0.11956521739130435,
+    "20": 0.13043478260869565,
+    "21": 0.09486166007905138,
+    "22": 0.1,
+    "23": 0.28421052631578947,
+    "24": 0.19298245614035087,
+    "25": 0.1895424836601307,
+    "26": 0.1503267973856209,
     "27": 0.125,
-    "28": 0.3516483516483517,
-    "29": 0.15384615384615385,
-    "30": 0.15384615384615385,
-    "31": 0.1794871794871795,
-    "32": 0.2692307692307692,
-    "33": 0.16666666666666666,
-    "34": 0.4444444444444444,
-    "35": 0.4,
-    "36": 0.2222222222222222,
-    "37": 0.25,
+    "28": 0.11764705882352941,
+    "29": 0.15441176470588236,
+    "30": 0.125,
+    "31": 0.14285714285714285,
+    "32": 0.3516483516483517,
+    "33": 0.15384615384615385,
+    "34": 0.23076923076923078,
+    "35": 0.2692307692307692,
+    "36": 0.16666666666666666,
+    "37": 0.16666666666666666,
     "38": 0.2222222222222222,
-    "39": 0.3055555555555556,
-    "40": 0.25,
-    "41": 0.32142857142857145,
-    "42": 0.2857142857142857,
-    "43": 0.2857142857142857,
-    "44": 0.3333333333333333,
-    "45": 0.3333333333333333,
-    "46": 0.4,
-    "47": 0.7,
-    "48": 0.5,
-    "49": 0.5,
-    "50": 0.4,
-    "51": 0.8,
-    "52": 0.4,
+    "39": 0.4444444444444444,
+    "40": 0.4,
+    "41": 0.2222222222222222,
+    "42": 0.25,
+    "43": 0.2222222222222222,
+    "44": 0.3055555555555556,
+    "45": 0.25,
+    "46": 0.32142857142857145,
+    "47": 0.2857142857142857,
+    "48": 0.2857142857142857,
+    "49": 0.2857142857142857,
+    "50": 0.3333333333333333,
+    "51": 0.3333333333333333,
+    "52": 0.3333333333333333,
     "53": 0.4,
-    "54": 0.5,
+    "54": 0.7,
     "55": 0.5,
-    "56": 0.8333333333333334,
-    "57": 0.5,
-    "58": 0.5,
-    "59": 0.5,
-    "60": 0.8333333333333334,
-    "61": 0.6666666666666666,
-    "62": 0.6666666666666666,
-    "63": 0.6666666666666666,
-    "64": 1.0,
-    "65": 1.0,
-    "66": 1.0,
-    "67": 1.0,
-    "68": 1.0,
-    "69": 1.0,
-    "70": 1.0,
+    "56": 0.5,
+    "57": 0.4,
+    "58": 0.8,
+    "59": 0.4,
+    "60": 0.4,
+    "61": 0.5,
+    "62": 0.5,
+    "63": 0.8333333333333334,
+    "64": 0.5,
+    "65": 0.5,
+    "66": 0.5,
+    "67": 0.8333333333333334,
+    "68": 0.6666666666666666,
+    "69": 0.6666666666666666,
+    "70": 0.6666666666666666,
     "71": 1.0,
     "72": 1.0,
     "73": 1.0,
@@ -1532,7 +1663,15 @@
     "91": 1.0,
     "92": 1.0,
     "93": 1.0,
-    "94": 1.0
+    "94": 1.0,
+    "95": 1.0,
+    "96": 1.0,
+    "97": 1.0,
+    "98": 1.0,
+    "99": 1.0,
+    "100": 1.0,
+    "101": 1.0,
+    "102": 1.0
   },
   "gods": [
     {
@@ -1571,6 +1710,11 @@
       "degree": 14
     },
     {
+      "id": "src_publication_milestones_publication_milestones_row_mappers_mappublicationmilestonerow",
+      "label": "mapPublicationMilestoneRow()",
+      "degree": 14
+    },
+    {
       "id": "src_safe_fetch_assertpublichttpurl",
       "label": "assertPublicHttpUrl()",
       "degree": 13
@@ -1579,11 +1723,6 @@
       "id": "src_research_runresearch",
       "label": "runResearch()",
       "degree": 13
-    },
-    {
-      "id": "src_notion_audit_withnotionaudit",
-      "label": "withNotionAudit()",
-      "degree": 12
     }
   ],
   "surprises": [
