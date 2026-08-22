@@ -10,8 +10,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migrationDirectory = path.join(root, "db", "migrations");
 const contractPath = path.join(root, "db", "contracts", "postgres-17.json");
 const requiredCounts = {
-  tables: 25,
-  foreignKeys: 29,
+  tables: 26,
+  foreignKeys: 30,
   functionNames: 59,
   functionSignatures: 61,
 };
@@ -19,6 +19,7 @@ const protectedRoles = new Set(["PUBLIC", "anon", "authenticated"]);
 
 function parseArguments(values) {
   let outputPath = null;
+  let writeContract = false;
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
     if (value === "--output") {
@@ -27,9 +28,13 @@ function parseArguments(values) {
       index += 1;
       continue;
     }
+    if (value === "--write-contract") {
+      writeContract = true;
+      continue;
+    }
     throw new Error(`Unknown argument: ${value}`);
   }
-  return { outputPath };
+  return { outputPath, writeContract };
 }
 
 const normalizeExpression = (value) =>
@@ -497,7 +502,7 @@ function sectionHashes(inventory) {
   );
 }
 
-const { outputPath } = parseArguments(process.argv.slice(2));
+const { outputPath, writeContract } = parseArguments(process.argv.slice(2));
 const connectionString = process.env.DATABASE_URL?.trim();
 if (!connectionString) throw new Error("DATABASE_URL is required");
 
@@ -520,6 +525,10 @@ try {
     await writeFile(resolvedOutput, `${JSON.stringify(inventory, null, 2)}\n`, {
       mode: 0o600,
     });
+  }
+
+  if (writeContract) {
+    await writeFile(contractPath, `${JSON.stringify(actualContract, null, 2)}\n`);
   }
 
   const expectedContract = JSON.parse(await readFile(contractPath, "utf8"));

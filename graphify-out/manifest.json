@@ -5,9 +5,9 @@
     "semantic_hash": "05935c0919496bb0c417d1d59d36442d"
   },
   "checks/drizzle-schema.ts": {
-    "mtime": 1787391166.482974,
-    "ast_hash": "bcd9ad74ab1dc7d705670ec19ec41a2c",
-    "semantic_hash": "bcd9ad74ab1dc7d705670ec19ec41a2c"
+    "mtime": 1787395744.9009447,
+    "ast_hash": "cd3f105bb324d167613a5e6eb02461c8",
+    "semantic_hash": "cd3f105bb324d167613a5e6eb02461c8"
   },
   "checks/integration/drizzle-sources-repository.ts": {
     "mtime": 1787391166.487747,
@@ -280,9 +280,9 @@
     "semantic_hash": "1afd88938375263e20ec53fc15f18f06"
   },
   "src/database/schema/registry.ts": {
-    "mtime": 1787391166.553085,
-    "ast_hash": "446276fbfd0a1b60e298c514f4bfd691",
-    "semantic_hash": "446276fbfd0a1b60e298c514f4bfd691"
+    "mtime": 1787395737.6453402,
+    "ast_hash": "75cc54f11d5420b77ab92de0d48acbf5",
+    "semantic_hash": "75cc54f11d5420b77ab92de0d48acbf5"
   },
   "src/database/schema/research.ts": {
     "mtime": 1787391538.6378546,
@@ -490,9 +490,9 @@
     "semantic_hash": "99936b6800112f29babd8d2af943782e"
   },
   "test/ai-provider.test.js": {
-    "mtime": 1787394634.3772569,
-    "ast_hash": "c8db9538c1352643e2b0e8a13943f658",
-    "semantic_hash": "c8db9538c1352643e2b0e8a13943f658"
+    "mtime": 1787394668.5165262,
+    "ast_hash": "d9d979ee223d6ce39cd4b9bb651bf124",
+    "semantic_hash": "d9d979ee223d6ce39cd4b9bb651bf124"
   },
   "test/ai-usage.test.js": {
     "mtime": 1787391166.598512,
@@ -885,14 +885,14 @@
     "semantic_hash": "49dcd75b50557272175fa5f2b4b30c1d"
   },
   "db/contracts/postgres-17.json": {
-    "mtime": 1787391166.5041656,
-    "ast_hash": "94222ceeaa19e7868375597bb915d6a8",
-    "semantic_hash": "94222ceeaa19e7868375597bb915d6a8"
+    "mtime": 1787396244.9442286,
+    "ast_hash": "66abe68f66a7005ef536a48382c01171",
+    "semantic_hash": "66abe68f66a7005ef536a48382c01171"
   },
   "scripts/postgres-contract.mjs": {
-    "mtime": 1787391166.5398595,
-    "ast_hash": "f12dd694ace10ffe2204da2bee888cfc",
-    "semantic_hash": "f12dd694ace10ffe2204da2bee888cfc"
+    "mtime": 1787396233.5820987,
+    "ast_hash": "f0c10964ec1874afc87d396e8c4a618f",
+    "semantic_hash": "f0c10964ec1874afc87d396e8c4a618f"
   },
   "src/database/database-lifecycle.ts": {
     "mtime": 1787391166.546661,

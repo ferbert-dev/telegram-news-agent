@@ -10,6 +10,7 @@ test("Drizzle snapshot covers every current PostgreSQL table", () => {
   const names = configs.map((config) => config.name).sort();
 
   assert.deepEqual(names, [
+    "ai_provider_attempts",
     "ai_usage_events",
     "article_story_decisions",
     "article_topics",
@@ -56,7 +57,7 @@ test("Drizzle snapshot preserves RLS and foreign-key coverage", () => {
       (count, config) => count + config.foreignKeys.length,
       0,
     ),
-    29,
+    30,
   );
 });
 
