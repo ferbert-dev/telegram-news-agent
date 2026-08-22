@@ -1,4 +1,10 @@
 import type { RecordAiUsageInput } from "../usage/usage-persistence.contracts.js";
+import type { JsonObject } from "../database/schema/common.js";
+
+export type ProviderUsageEvent = Omit<RecordAiUsageInput, "pricingSnapshot"> & {
+  pricing?: JsonObject | null;
+  pricingSnapshot?: JsonObject | null;
+};
 
 export type SourceDiscoveryItem = {
   name: string;
@@ -10,7 +16,7 @@ export type SourceDiscoveryResponse = {
   provider: "openai" | "gemini" | "exa";
   model: string | null;
   items: SourceDiscoveryItem[];
-  usageEvents: RecordAiUsageInput[];
+  usageEvents: ProviderUsageEvent[];
 };
 
 export type NewsDiscoveryItem = {
@@ -25,7 +31,7 @@ export type NewsDiscoveryResponse = {
   provider: "openai" | "gemini" | "exa";
   model: string | null;
   items: NewsDiscoveryItem[];
-  usageEvents: RecordAiUsageInput[];
+  usageEvents: ProviderUsageEvent[];
 };
 
 export interface SourceDiscoveryProvider {
@@ -47,7 +53,7 @@ export interface SourceDiscoveryProvider {
 }
 
 export interface SourceAcquisitionTransport {
-  fetch(url: URL, init: RequestInit): Promise<Response>;
+  fetchPinned(url: URL, init: RequestInit, addresses: DnsAddress[]): Promise<Response>;
 }
 
 export type DnsAddress = { address: string; family: 4 | 6 };
@@ -92,7 +98,7 @@ export type NewsSearchResult = {
   provider: "openai" | "gemini" | "exa";
   model: string | null;
   items: NewsDiscoveryEntry[];
-  usageEvents: RecordAiUsageInput[];
+  usageEvents: ProviderUsageEvent[];
 };
 
 export type FeedDiscoveryResult = {
@@ -103,7 +109,7 @@ export type FeedDiscoveryResult = {
   sources: Array<{ source: Record<string, unknown>; entries: FeedEntry[] }>;
   failures?: Array<{ feed_url: string; error_code: string }>;
   error?: string;
-  usageEvents: RecordAiUsageInput[];
+  usageEvents: ProviderUsageEvent[];
 };
 
 export interface SourceAcquisition {

@@ -4,13 +4,14 @@ import { CatalogPersistenceModule } from "../catalog/catalog-persistence.module.
 import { UsagePersistenceModule } from "../usage/usage-persistence.module.js";
 import type { SourceAcquisitionClock, SourceAcquisitionDns, SourceAcquisitionTransport, SourceDiscoveryProvider } from "./source-acquisition.contracts.js";
 import { SourceAcquisitionGateway } from "./source-acquisition.gateway.js";
+import { PinnedSourceHttpTransport } from "./source-acquisition.http.js";
 import { SOURCE_ACQUISITION, SOURCE_ACQUISITION_CLOCK, SOURCE_ACQUISITION_DNS, SOURCE_ACQUISITION_TRANSPORT, SOURCE_DISCOVERY_PROVIDER } from "./source-acquisition.tokens.js";
 
 @Module({})
 export class SourceAcquisitionModule {
   static register(
     provider: SourceDiscoveryProvider | null,
-    transport: SourceAcquisitionTransport = { fetch },
+    transport: SourceAcquisitionTransport = new PinnedSourceHttpTransport(),
     dns: SourceAcquisitionDns = { lookup: async (hostname) => (await lookup(hostname, { all:true, verbatim:true })) as Array<{address:string;family:4|6}> },
     clock: SourceAcquisitionClock = {
       now: () => new Date(),

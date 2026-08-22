@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Test } from "@nestjs/testing";
 
 import { SourceAcquisitionGateway } from "../../src/research/source-acquisition.gateway.js";
+import { SourceAcquisitionModule } from "../../src/research/source-acquisition.module.js";
+import { SOURCE_ACQUISITION } from "../../src/research/source-acquisition.tokens.js";
+import { CATALOG_PERSISTENCE } from "../../src/catalog/catalog-persistence.tokens.js";
+import { USAGE_REPORTING_PERSISTENCE } from "../../src/usage/usage-persistence.tokens.js";
 
 const RSS = `<?xml version="1.0"?><rss version="2.0"><channel><item><title>Story</title><link>https://publisher.test/a?utm_source=x&amp;b=2&amp;a=1</link><description>Summary</description></item></channel></rss>`;
 const dns = { async lookup() { return [{ address: "93.184.216.34", family: 4 as const }]; } };
@@ -15,7 +20,7 @@ function service(overrides: Record<string, unknown> = {}) {
     async markSourceFetchFailure(id: string, code: string) { calls.push(["failure", id, code]); return {} as never; },
   };
   const usage = { async recordAiUsage(input: unknown) { calls.push(["usage", input]); if (overrides.usageFailure) throw overrides.usageFailure; return {} as never; } };
-  const transport = (overrides.transport as never) ?? { async fetch(url: URL) { calls.push(["fetch", url.toString()]); return new Response(RSS, { status:200 }); } };
+  const transport = (overrides.transport as never) ?? { async fetchPinned(url: URL, _init: RequestInit, addresses: unknown[]) { calls.push(["fetch", url.toString(), addresses]); return new Response(RSS, { status:200 }); } };
   const clock = { now: () => new Date("2026-08-22T10:00:00.000Z"), async sleep(delayMs: number) { calls.push(["sleep", delayMs]); } };
   return { calls, value: new SourceAcquisitionGateway(catalog as never, usage as never, transport, dns, clock, (overrides.provider as never) ?? null) };
 }
@@ -25,11 +30,16 @@ test("typed acquisition preserves feed normalization and blocks hostile redirect
   const [entry] = await value.fetchFeed("https://publisher.test/feed.xml");
   assert.equal(entry.canonicalUrl, "https://publisher.test/a?a=1&b=2");
 
-  const hostile = new SourceAcquisitionGateway({} as never, {} as never, { async fetch() { return new Response(null, { status:302, headers:{ location:"https://private.test/x" } }); } }, { async lookup(hostname: string) { return [{ address: hostname === "private.test" ? "127.0.0.1" : "93.184.216.34", family:4 as const }]; } }, { now: () => new Date(), async sleep() {} }, null);
+  const hostile = new SourceAcquisitionGateway({} as never, {} as never, { async fetchPinned() { return new Response(null, { status:302, headers:{ location:"https://private.test/x" } }); } }, { async lookup(hostname: string) { return [{ address: hostname === "private.test" ? "127.0.0.1" : "93.184.216.34", family:4 as const }]; } }, { now: () => new Date(), async sleep() {} }, null);
   await assert.rejects(hostile.fetchFeed("https://publisher.test/feed.xml"), /not allowed/);
 
-  const mapped = new SourceAcquisitionGateway({} as never, {} as never, { async fetch() { throw new Error("network must not be reached"); } }, { async lookup() { return [{ address:"::ffff:7f00:1", family:6 as const }]; } }, { now: () => new Date(), async sleep() {} }, null);
+  const mapped = new SourceAcquisitionGateway({} as never, {} as never, { async fetchPinned() { throw new Error("network must not be reached"); } }, { async lookup() { return [{ address:"::ffff:7f00:1", family:6 as const }]; } }, { now: () => new Date(), async sleep() {} }, null);
   await assert.rejects(mapped.fetchFeed("https://publisher.test/feed.xml"), /not allowed/);
+
+  const pinned: unknown[][] = [];
+  const rebinding = service({ transport:{ async fetchPinned(_url:URL,_init:RequestInit,addresses:unknown[]){pinned.push(addresses);return new Response(RSS,{status:200});} } });
+  await rebinding.value.fetchFeed("https://publisher.test/feed.xml");
+  assert.deepEqual(pinned, [[{ address:"93.184.216.34", family:4 }]]);
 });
 
 test("typed source health retries and preserves success/failure error identity", async () => {
@@ -38,7 +48,7 @@ test("typed source health retries and preserves success/failure error identity",
   assert.deepEqual(success.calls.at(-1), ["success", "source-1"]);
 
   const failure = new Error("Feed request failed with HTTP 503");
-  const failed = service({ transport: { async fetch() { return new Response("down", { status:503 }); } } });
+  const failed = service({ transport: { async fetchPinned() { return new Response("down", { status:503 }); } } });
   await assert.rejects(
     failed.value.fetchSourceFeed({ sourceId:"source-2", feedUrl:"https://publisher.test/feed.xml" }),
     (error) => error instanceof Error && error.message === failure.message,
@@ -46,7 +56,7 @@ test("typed source health retries and preserves success/failure error identity",
   assert.deepEqual(failed.calls.filter((call) => (call as unknown[])[0] === "sleep"), [["sleep", 300], ["sleep", 600]]);
   assert.deepEqual(failed.calls.at(-1), ["failure", "source-2", "http_503"]);
 
-  const reddit = service({ transport: { async fetch() { return new Response(RSS, { status:200 }); } } });
+  const reddit = service({ transport: { async fetchPinned() { return new Response(RSS, { status:200 }); } } });
   await reddit.value.fetchSource({ sourceId:"source-3", sourceType:"reddit", feedUrl:"https://publisher.test/feed.xml" });
   assert.deepEqual(reddit.calls.at(-1), ["success", "source-3"]);
 });
@@ -55,7 +65,7 @@ test("typed news discovery normalizes provider output, rejects unsafe literals, 
   const provider = {
     async searchNews(input: unknown) {
       assert.deepEqual(input, { query:"science", windowHours:48, limit:8, languageCode:"en", topicCodes:["science"] });
-      return { provider:"exa" as const, model:"exa-test", usageEvents:[{ provider:"exa", model:"exa-test", operation:"news_search" }], items:[
+      return { provider:"exa" as const, model:"exa-test", usageEvents:[{ provider:"exa", model:"exa-test", operation:"news_search", pricing:{ source:"provider-pricing" } }], items:[
         { title:"Discovery", url:"https://publisher.test/story?utm_source=x", summary:"Summary", publishedAt:"2026-08-22T09:00:00Z" },
         { title:"Unsafe", url:"http://127.0.0.1/private", summary:"No" },
       ] };
@@ -69,6 +79,15 @@ test("typed news discovery normalizes provider output, rejects unsafe literals, 
   const usageCall = calls.find((call) => (call as [string, unknown])[0] === "usage");
   const usageInput = (usageCall as [string, unknown] | undefined)?.[1] as { searchRunId?: string | null };
   assert.equal(usageInput?.searchRunId, "run-1");
+  assert.deepEqual((usageInput as { pricingSnapshot?: unknown }).pricingSnapshot, { source:"provider-pricing" });
+});
+
+test("typed GDELT query preserves every legacy topic mapping", async () => {
+  let requested:URL|undefined;
+  const { value }=service({transport:{async fetchPinned(url:URL){requested=new URL(url);return new Response(JSON.stringify({articles:[]}),{status:200,headers:{"content-type":"application/json"}});}}});
+  await value.fetchGdelt({topicCodes:["world","nature","animals","history","culture","society"]});
+  const query=requested?.searchParams.get("query")??"";
+  for(const term of ["international crisis","climate change","wildlife","archaeological discovery","cultural heritage","public health"])assert.match(query,new RegExp(term));
 });
 
 test("typed feed discovery claims before provider use, records usage, validates before upsert, and completes once", async () => {
@@ -79,4 +98,12 @@ test("typed feed discovery claims before provider use, records usage, validates 
   assert.equal(result.sources.length, 1);
   assert.deepEqual((calls as Array<[string]>).map(([name]) => name), ["claim", "usage", "fetch", "upsert", "complete"]);
   assert.equal(((calls.find((call) => (call as unknown[])[0] === "upsert") as unknown[])[1] as { discoveryMetadata: { discovered_at: string } }).discoveryMetadata.discovered_at, "2026-08-22T10:00:00.000Z");
+});
+
+test("SourceAcquisitionModule resolves its replaceable facade in a Nest testing context", async () => {
+  const previous=process.env.DATABASE_URL;process.env.DATABASE_URL="postgresql://test:test@127.0.0.1:1/test";
+  const catalog={async claimSourceDiscovery(){return false;}};
+  const usage={async recordAiUsage(){return {} as never;}};
+  const moduleRef=await Test.createTestingModule({imports:[SourceAcquisitionModule.register(null,{async fetchPinned(){return new Response(RSS);}},dns,{now:()=>new Date(),async sleep(){}})]}).overrideProvider(CATALOG_PERSISTENCE).useValue(catalog).overrideProvider(USAGE_REPORTING_PERSISTENCE).useValue(usage).compile();
+  try{assert.ok(moduleRef.get(SOURCE_ACQUISITION));}finally{await moduleRef.close();if(previous===undefined)delete process.env.DATABASE_URL;else process.env.DATABASE_URL=previous;}
 });
