@@ -20,6 +20,7 @@ test("Drizzle snapshot covers every current PostgreSQL table", () => {
     "news_feature_flags",
     "notion_audit_outbox",
     "pipeline_leases",
+    "publication_milestones",
     "publication_policy_blocks",
     "published_posts",
     "raw_contents",
@@ -57,7 +58,7 @@ test("Drizzle snapshot preserves RLS and foreign-key coverage", () => {
       (count, config) => count + config.foreignKeys.length,
       0,
     ),
-    30,
+    32,
   );
 });
 

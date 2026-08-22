@@ -10,10 +10,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migrationDirectory = path.join(root, "db", "migrations");
 const contractPath = path.join(root, "db", "contracts", "postgres-17.json");
 const requiredCounts = {
-  tables: 26,
-  foreignKeys: 30,
-  functionNames: 59,
-  functionSignatures: 61,
+  tables: 27,
+  foreignKeys: 32,
+  functionNames: 66,
+  functionSignatures: 68,
 };
 const protectedRoles = new Set(["PUBLIC", "anon", "authenticated"]);
 

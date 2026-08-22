@@ -7,6 +7,7 @@ import type {
   EditorialPersistence,
   PublicationPath,
   PublicationPolicyClassification,
+  PublishedPostRow,
 } from "../editorial-persistence.contracts.js";
 import { EDITORIAL_PERSISTENCE } from "../editorial-persistence.tokens.js";
 import type { NewsSettingsPersistence } from "../../settings/settings.contracts.js";
@@ -14,14 +15,19 @@ import { NEWS_SETTINGS_REPOSITORY } from "../../settings/settings.tokens.js";
 import type { UsageReportingPersistence } from "../../usage/usage-persistence.contracts.js";
 import { USAGE_REPORTING_PERSISTENCE } from "../../usage/usage-persistence.tokens.js";
 import type {
+  ArticlePublishedEventPublisher,
   EditorialPublicationGateway,
   ExcludedTopicPolicyDecision,
   ExcludedTopicPublicationPolicy,
   PublishApprovedDraftInput,
   PublishApprovedDraftResult,
 } from "../editorial-application.contracts.js";
-import { PublicationDeliveryError } from "../editorial-application.contracts.js";
 import {
+  NOOP_ARTICLE_PUBLISHED_EVENT_PUBLISHER,
+  PublicationDeliveryError,
+} from "../editorial-application.contracts.js";
+import {
+  ARTICLE_PUBLISHED_EVENT_PUBLISHER,
   EDITORIAL_PUBLICATION_GATEWAY,
   EXCLUDED_TOPIC_PUBLICATION_POLICY,
 } from "../editorial-application.tokens.js";
@@ -73,7 +79,32 @@ export class PublishApprovedDraftUseCase {
     private readonly policy: ExcludedTopicPublicationPolicy,
     @Inject(EDITORIAL_PUBLICATION_GATEWAY)
     private readonly gateway: EditorialPublicationGateway,
+    @Inject(ARTICLE_PUBLISHED_EVENT_PUBLISHER)
+    private readonly articlePublished: ArticlePublishedEventPublisher =
+      NOOP_ARTICLE_PUBLISHED_EVENT_PUBLISHER,
   ) {}
+
+  private async publishArticlePublished(
+    publication: PublishedPostRow,
+    draftId: string,
+    publicationPath: PublicationPath,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    try {
+      await this.articlePublished.publish(
+        {
+          draftId,
+          articleId: publication.article_id,
+          publicationPath,
+          publication,
+        },
+        signal,
+      );
+    } catch {
+      // Publication is authoritative. An idempotent retry replays this event;
+      // the standalone Nest runtime still requires a durable outbox at cutover.
+    }
+  }
 
   private async recordUsage(
     decision: ExcludedTopicPolicyDecision,
@@ -105,6 +136,12 @@ export class PublishApprovedDraftUseCase {
     signal?.throwIfAborted();
     const existing = await this.editorial.findPublicationByDraft(draftId);
     if (existing) {
+      await this.publishArticlePublished(
+        existing,
+        draftId,
+        publicationPath,
+        signal,
+      );
       return {
         status: "already_published",
         publication: existing,
@@ -330,6 +367,12 @@ export class PublishApprovedDraftUseCase {
       if (publication === undefined) {
         throw new Error("Publication receipt was not persisted");
       }
+      await this.publishArticlePublished(
+        publication,
+        draftId,
+        publicationPath,
+        signal,
+      );
       return {
         status: "published",
         publication,

@@ -935,29 +935,29 @@
       "src_telegram_transport_telegram_legacy_feature_gateways_telegramlegacystatusgateway_execute"
     ],
     "24": [
-      "checks_integration_legacy_persistence_facade",
-      "checks_integration_legacy_persistence_facade_canonical",
+      "checks_persistence_research_persistence",
+      "checks_persistence_research_persistence_articlerow",
+      "checks_persistence_research_persistence_articletopicrow",
+      "checks_persistence_research_persistence_query",
+      "checks_persistence_research_persistence_rawcontentrow",
+      "checks_persistence_research_persistence_recordedcall",
+      "checks_persistence_research_persistence_researchconsumermodule",
+      "checks_persistence_research_persistence_researchpool",
+      "checks_persistence_research_persistence_researchpool_end",
+      "checks_persistence_research_persistence_researchpool_query",
+      "checks_persistence_research_persistence_searchrunrow",
+      "checks_persistence_research_persistence_ts_module",
       "src_ai_provider_attempts_persistence_tokens",
       "src_ai_provider_attempts_persistence_tokens_ai_provider_attempts_persistence",
-      "src_database_repositories_ai_provider_attempts_repository",
-      "src_database_repositories_ai_provider_attempts_repository_aiproviderattemptsrepository",
-      "src_database_repositories_ai_provider_attempts_repository_aiproviderattemptsrepository_completeaiproviderattempt",
-      "src_database_repositories_ai_provider_attempts_repository_aiproviderattemptsrepository_constructor",
-      "src_database_repositories_ai_provider_attempts_repository_aiproviderattemptsrepository_getlatestaiproviderattempthealth",
-      "src_database_repositories_ai_provider_attempts_repository_aiproviderattemptsrepository_startaiproviderattempt",
-      "src_database_repositories_ai_provider_attempts_repository_ts_inject",
-      "src_database_repositories_ai_provider_attempts_repository_ts_injectable",
-      "src_persistence_legacy_persistence_contracts_legacypersistence",
-      "src_persistence_legacy_persistence_contracts_legacypersistence_claimtelegramupdate",
-      "src_persistence_legacy_persistence_contracts_legacypersistence_finishtelegramupdate",
-      "src_persistence_legacy_persistence_contracts_legacypersistence_recordtelegramupdatefailure",
       "src_persistence_legacy_persistence_facade",
       "src_persistence_legacy_persistence_facade_legacypersistencefacade_completeaiproviderattempt",
       "src_persistence_legacy_persistence_facade_legacypersistencefacade_getlatestaiproviderattempthealth",
       "src_persistence_legacy_persistence_facade_legacypersistencefacade_startaiproviderattempt",
       "src_research_research_persistence_module",
       "src_research_research_persistence_module_aiproviderattemptspersistenceprovider",
-      "src_research_research_persistence_module_researchpersistenceprovider"
+      "src_research_research_persistence_module_researchpersistencemodule",
+      "src_research_research_persistence_module_researchpersistenceprovider",
+      "src_research_research_persistence_module_ts_module"
     ],
     "25": [
       "src_drafts_cli",
@@ -1131,26 +1131,6 @@
       "src_database_drizzle_client_drizzledatabase"
     ],
     "33": [
-      "checks_persistence_research_persistence",
-      "checks_persistence_research_persistence_articlerow",
-      "checks_persistence_research_persistence_articletopicrow",
-      "checks_persistence_research_persistence_query",
-      "checks_persistence_research_persistence_rawcontentrow",
-      "checks_persistence_research_persistence_recordedcall",
-      "checks_persistence_research_persistence_researchconsumer",
-      "checks_persistence_research_persistence_researchconsumer_constructor",
-      "checks_persistence_research_persistence_researchconsumermodule",
-      "checks_persistence_research_persistence_researchpool",
-      "checks_persistence_research_persistence_researchpool_end",
-      "checks_persistence_research_persistence_researchpool_query",
-      "checks_persistence_research_persistence_searchrunrow",
-      "checks_persistence_research_persistence_ts_inject",
-      "checks_persistence_research_persistence_ts_injectable",
-      "checks_persistence_research_persistence_ts_module",
-      "src_research_research_persistence_module_researchpersistencemodule",
-      "src_research_research_persistence_module_ts_module"
-    ],
-    "34": [
       "scripts_postgres_contract",
       "scripts_postgres_contract_assertinvariants",
       "scripts_postgres_contract_connectionstring",
@@ -1170,7 +1150,7 @@
       "scripts_postgres_contract_sectionhashes",
       "scripts_postgres_contract_sha256"
     ],
-    "35": [
+    "34": [
       "checks_integration_drizzle_sources_repository",
       "checks_persistence_sources_mapper",
       "checks_sources_repository",
@@ -1189,7 +1169,7 @@
       "src_database_repositories_sources_repository_sourcetimestampfields",
       "src_database_repositories_sources_repository_upsertdiscoveredsourcefunction"
     ],
-    "36": [
+    "35": [
       "src_ai_provider_attempts_providerdiagnosticerror",
       "src_ai_provider_attempts_providerdiagnosticerror_constructor",
       "src_gemini_provider",
@@ -1208,7 +1188,7 @@
       "test_provider_adapters_test_status",
       "test_provider_adapters_test_status_json_schema"
     ],
-    "37": [
+    "36": [
       "src_news_repository_newsrepository_acquirepipelinelease",
       "src_news_repository_newsrepository_claimsourcediscovery",
       "src_news_repository_newsrepository_completenotionauditbackfill",
@@ -1227,7 +1207,7 @@
       "src_news_repository_newsrepository_savenewsscheduledraft",
       "src_news_repository_newsrepository_savenewsschedulepublication"
     ],
-    "38": [
+    "37": [
       "src_retry",
       "src_retry_withretry",
       "src_telegram_polling",
@@ -1246,7 +1226,7 @@
       "test_telegram_polling_test_renewpipelinelease",
       "test_telegram_polling_test_warn"
     ],
-    "39": [
+    "38": [
       "src_telegram_application_handle_telegram_control_update_use_case_handletelegramcontrolupdateusecase",
       "src_telegram_application_handle_telegram_control_update_use_case_handletelegramcontrolupdateusecase_constructor",
       "src_telegram_application_handle_telegram_control_update_use_case_handletelegramcontrolupdateusecase_execute",
@@ -1265,7 +1245,7 @@
       "src_telegram_telegram_application_contracts_telegramreviewdecisionapplicationport",
       "src_telegram_telegram_application_contracts_telegramreviewdecisionapplicationport_execute"
     ],
-    "40": [
+    "39": [
       "ref_checks",
       "ref_dist",
       "ref_src_js",
@@ -1283,7 +1263,7 @@
       "tsconfig_build_include",
       "tsconfig_build_json_ref_src_ts"
     ],
-    "41": [
+    "40": [
       "src_send_message",
       "src_send_message_main",
       "src_send_message_parsearguments",
@@ -1301,7 +1281,7 @@
       "test_telegram_test",
       "test_telegram_test_json"
     ],
-    "42": [
+    "41": [
       "src_telegram_settings_issettingsinputreply",
       "src_telegram_settings_parsesettingscommand",
       "test_telegram_settings_test",
@@ -1319,7 +1299,7 @@
       "test_telegram_settings_test_updatedrow",
       "test_telegram_settings_test_updatenewssettings"
     ],
-    "43": [
+    "42": [
       "src_telegram_telegram_application_contracts",
       "src_telegram_telegram_application_contracts_isterminaltelegramcontrolerror",
       "src_telegram_telegram_application_contracts_restorereviewcontrolsresult",
@@ -1337,7 +1317,7 @@
       "src_telegram_telegram_application_contracts_telegramreviewpresentationgateway_sendreview",
       "src_telegram_telegram_application_contracts_terminal_codes"
     ],
-    "44": [
+    "43": [
       "checks_emitted_telegram_control_application",
       "checks_emitted_telegram_control_application_answercallback",
       "checks_emitted_telegram_control_application_application",
@@ -1354,7 +1334,7 @@
       "checks_emitted_telegram_control_application_transaction",
       "checks_emitted_telegram_control_application_unused"
     ],
-    "45": [
+    "44": [
       "src_pipeline_cli",
       "src_pipeline_cli_approvalpolicy",
       "src_pipeline_cli_args",
@@ -1371,14 +1351,14 @@
       "test_workflow_test",
       "test_workflow_test_fixture"
     ],
-    "46": [
+    "45": [
       "src_research_research_gateway_contracts",
-      "src_research_research_gateway_contracts_researchaigateway",
-      "src_research_research_gateway_contracts_researchaigateway_generate",
       "src_research_research_gateway_contracts_researchairequest",
       "src_research_research_gateway_contracts_researchairesponse",
       "src_research_research_gateway_contracts_researchexecutioncandidate",
       "src_research_research_gateway_contracts_researchexecutionsource",
+      "src_research_research_gateway_contracts_researchfetchgateway",
+      "src_research_research_gateway_contracts_researchfetchgateway_fetch",
       "src_research_research_gateway_contracts_researchfetchrequest",
       "src_research_research_gateway_contracts_researchfetchresponse",
       "src_research_research_gateway_contracts_researchjsonvalue",
@@ -1388,7 +1368,7 @@
       "src_research_research_gateway_contracts_researchsearchrequest",
       "src_research_research_gateway_contracts_researchsearchresponse"
     ],
-    "47": [
+    "46": [
       "checks_application_catalog_research_research",
       "checks_application_catalog_research_research_article",
       "checks_application_catalog_research_research_execute",
@@ -1401,10 +1381,10 @@
       "checks_application_catalog_research_research_search",
       "checks_application_catalog_research_research_source",
       "checks_application_catalog_research_research_usage",
-      "src_research_research_gateway_contracts_researchfetchgateway",
-      "src_research_research_gateway_contracts_researchfetchgateway_fetch"
+      "src_research_research_gateway_contracts_researchaigateway",
+      "src_research_research_gateway_contracts_researchaigateway_generate"
     ],
-    "48": [
+    "47": [
       "checks_emitted_catalog_research_application",
       "checks_emitted_catalog_research_application_abort",
       "checks_emitted_catalog_research_application_adapter",
@@ -1419,6 +1399,22 @@
       "checks_emitted_catalog_research_application_source",
       "checks_emitted_catalog_research_application_usage",
       "checks_emitted_catalog_research_application_usecase"
+    ],
+    "48": [
+      "checks_integration_legacy_persistence_facade",
+      "checks_integration_legacy_persistence_facade_canonical",
+      "src_database_repositories_ai_provider_attempts_repository",
+      "src_database_repositories_ai_provider_attempts_repository_aiproviderattemptsrepository",
+      "src_database_repositories_ai_provider_attempts_repository_aiproviderattemptsrepository_completeaiproviderattempt",
+      "src_database_repositories_ai_provider_attempts_repository_aiproviderattemptsrepository_constructor",
+      "src_database_repositories_ai_provider_attempts_repository_aiproviderattemptsrepository_getlatestaiproviderattempthealth",
+      "src_database_repositories_ai_provider_attempts_repository_aiproviderattemptsrepository_startaiproviderattempt",
+      "src_database_repositories_ai_provider_attempts_repository_ts_inject",
+      "src_database_repositories_ai_provider_attempts_repository_ts_injectable",
+      "src_persistence_legacy_persistence_contracts_legacypersistence",
+      "src_persistence_legacy_persistence_contracts_legacypersistence_claimtelegramupdate",
+      "src_persistence_legacy_persistence_contracts_legacypersistence_finishtelegramupdate",
+      "src_persistence_legacy_persistence_contracts_legacypersistence_recordtelegramupdatefailure"
     ],
     "49": [
       "src_article_tags",
@@ -1912,186 +1908,192 @@
       "package_scripts_test"
     ],
     "95": [
+      "checks_persistence_research_persistence_researchconsumer",
+      "checks_persistence_research_persistence_researchconsumer_constructor",
+      "checks_persistence_research_persistence_ts_inject",
+      "checks_persistence_research_persistence_ts_injectable"
+    ],
+    "96": [
       "ops_sops_production_env",
       "ops_sops_production_env_sh__entry",
       "ops_sops_production_env_usage",
       "ops_sops_production_env_validate_encrypted"
     ],
-    "96": [
+    "97": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011000_add_atomic_draft_workflow_functions_public_approve_draft",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011000_add_atomic_draft_workflow_functions_public_claim_draft_for_publication",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011000_add_atomic_draft_workflow_functions_public_finalize_draft_publication",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011000_add_atomic_draft_workflow_functions_sql"
     ],
-    "97": [
+    "98": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627012000_add_pipeline_leases_public_acquire_pipeline_lease",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627012000_add_pipeline_leases_public_pipeline_leases",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627012000_add_pipeline_leases_public_release_pipeline_lease",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627012000_add_pipeline_leases_sql"
     ],
-    "98": [
+    "99": [
       "src_ai_feed_discovery",
       "src_ai_feed_discovery_feed_discovery_json_schema",
       "src_ai_feed_discovery_feeddiscovery",
       "src_ai_feed_discovery_httpurl"
     ],
-    "99": [
+    "100": [
       "src_ai_news_discovery",
       "src_ai_news_discovery_directarticleurl",
       "src_ai_news_discovery_news_discovery_json_schema",
       "src_ai_news_discovery_newsdiscovery"
     ],
-    "100": [
+    "101": [
       "test_deploy_script_rollback_test",
       "test_deploy_script_rollback_test_completeenvironment",
       "test_deploy_script_rollback_test_legacyenvironment",
       "test_deploy_script_rollback_test_rundeployment"
     ],
-    "101": [
+    "102": [
       "test_integration_telegram_rpc_integration_test",
       "test_integration_telegram_rpc_integration_test_createreviewfixture",
       "test_integration_telegram_rpc_integration_test_one",
       "test_integration_telegram_rpc_integration_test_scalar"
     ],
-    "102": [
+    "103": [
       "inject",
       "src_database_repositories_sources_repository_sourcesrepository_constructor",
       "src_database_repositories_usage_reporting_repository_usagereportingrepository_constructor"
     ],
-    "103": [
+    "104": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627224500_make_telegram_publication_failures_retryable_public_claim_telegram_update",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627224500_make_telegram_publication_failures_retryable_public_release_rejected_draft_publication",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627224500_make_telegram_publication_failures_retryable_sql"
     ],
-    "104": [
+    "105": [
       "test_sops_production_env_test",
       "test_sops_production_env_test_dotenventries",
       "test_sops_production_env_test_requiredencryptedkeys"
     ],
-    "105": [
+    "106": [
       "db_migrations_20260822090000_add_ai_provider_attempts",
       "db_migrations_20260822090000_add_ai_provider_attempts_public_ai_provider_attempts"
     ],
-    "106": [
+    "107": [
       "ops_notify_deployment",
       "ops_notify_deployment_sh__entry"
     ],
-    "107": [
+    "108": [
       "ops_validate_production_env",
       "ops_validate_production_env_sh__entry"
     ],
-    "108": [
+    "109": [
       "ops_verify_production_runtime",
       "ops_verify_production_runtime_sh__entry"
     ],
-    "109": [
+    "110": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627003000_add_primary_source_flag_public_sources",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627003000_add_primary_source_flag_sql"
     ],
-    "110": [
+    "111": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627010000_harden_draft_publication_idempotency_public_drafts",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627010000_harden_draft_publication_idempotency_sql"
     ],
-    "111": [
+    "112": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011500_add_atomic_draft_rejection_function_public_reject_draft",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627011500_add_atomic_draft_rejection_function_sql"
     ],
-    "112": [
+    "113": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627013000_harden_article_deduplication_public_create_article_if_new",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627013000_harden_article_deduplication_sql"
     ],
-    "113": [
+    "114": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627014000_make_article_candidates_resumable_public_create_or_resume_article_candidate",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627014000_make_article_candidates_resumable_sql"
     ],
-    "114": [
+    "115": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627015000_add_publication_recovery_public_reset_draft_publication",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627015000_add_publication_recovery_sql"
     ],
-    "115": [
+    "116": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627020000_add_atomic_review_draft_creation_public_create_review_draft",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627020000_add_atomic_review_draft_creation_sql"
     ],
-    "116": [
+    "117": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627021000_add_notion_audit_outbox_public_notion_audit_outbox",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627021000_add_notion_audit_outbox_sql"
     ],
-    "117": [
+    "118": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627022000_add_pipeline_lease_renewal_public_renew_pipeline_lease",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260627022000_add_pipeline_lease_renewal_sql"
     ],
-    "118": [
+    "119": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260629103914_add_telegram_news_request_checkpoints_public_telegram_news_request_checkpoints",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260629103914_add_telegram_news_request_checkpoints_sql"
     ],
-    "119": [
+    "120": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807160000_add_ai_usage_ledger_public_ai_usage_events",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807160000_add_ai_usage_ledger_sql"
     ],
-    "120": [
+    "121": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260809090000_add_three_hour_news_schedule_public_news_bot_settings",
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260809090000_add_three_hour_news_schedule_sql"
     ],
-    "121": [
+    "122": [
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_bootstrap_oracle_sh",
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_bootstrap_oracle_sh__entry"
     ],
-    "122": [
+    "123": [
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_configure_db_observer_sh",
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_configure_db_observer_sh__entry"
     ],
-    "123": [
+    "124": [
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_postgres_init_00_create_app_role_sh",
       "private_tmp_telegram_news_agent_workflow_pljmik_ops_postgres_init_00_create_app_role_sh__entry"
     ],
-    "124": [
+    "125": [
       "src_news_repository_newsrepository_listrecentpublishedstories",
       "src_news_repository_toisotimestamp"
     ],
-    "125": [
+    "126": [
       "src_persistence_legacy_persistence_facade_legacypersistencefacade_constructor",
       "src_persistence_legacy_persistence_facade_ts_inject"
     ],
-    "126": [
+    "127": [
       "src_telegram_control_controlerror",
       "src_telegram_control_controlerror_constructor"
     ],
-    "127": [
+    "128": [
       "test_production_env_cutover_test",
       "test_production_env_cutover_test_validate"
     ],
-    "128": [
+    "129": [
       "test_production_runtime_verifier_test",
       "test_production_runtime_verifier_test_runverifier"
     ],
-    "129": [
+    "130": [
       "checks_emitted_database_module"
     ],
-    "130": [
+    "131": [
       "checks_integration_database_module_ts_module"
     ],
-    "131": [
+    "132": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260626175600_add_news_memory_foreign_key_indexes_sql"
     ],
-    "132": [
+    "133": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807111000_seed_approved_primary_sources_sql"
     ],
-    "133": [
+    "134": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260807180000_seed_broad_news_sources_sql"
     ],
-    "134": [
+    "135": [
       "private_tmp_telegram_news_agent_workflow_pljmik_db_migrations_20260809103000_add_missing_foreign_key_indexes_sql"
     ],
-    "135": [
+    "136": [
       "src_catalog_catalog_persistence_module_ts_module"
     ],
-    "136": [
+    "137": [
       "src_database_repositories_sources_repository_ts_inject"
     ],
-    "137": [
+    "138": [
       "src_database_repositories_sources_repository_ts_injectable"
     ],
-    "138": [
+    "139": [
       "test_deployment_notification_script_test"
     ]
   },
@@ -2120,7 +2122,7 @@
     "21": 0.17333333333333334,
     "22": 0.18840579710144928,
     "23": 0.13405797101449277,
-    "24": 0.11067193675889328,
+    "24": 0.1067193675889328,
     "25": 0.14285714285714285,
     "26": 0.1,
     "27": 0.1,
@@ -2129,22 +2131,22 @@
     "30": 0.19298245614035087,
     "31": 0.16993464052287582,
     "32": 0.1895424836601307,
-    "33": 0.1111111111111111,
-    "34": 0.1503267973856209,
-    "35": 0.125,
-    "36": 0.16911764705882354,
-    "37": 0.11764705882352941,
-    "38": 0.18382352941176472,
-    "39": 0.19852941176470587,
-    "40": 0.125,
-    "41": 0.25,
+    "33": 0.1503267973856209,
+    "34": 0.125,
+    "35": 0.16911764705882354,
+    "36": 0.11764705882352941,
+    "37": 0.18382352941176472,
+    "38": 0.19852941176470587,
+    "39": 0.125,
+    "40": 0.25,
+    "41": 0.13333333333333333,
     "42": 0.13333333333333333,
     "43": 0.13333333333333333,
-    "44": 0.13333333333333333,
-    "45": 0.17142857142857143,
-    "46": 0.13333333333333333,
+    "44": 0.17142857142857143,
+    "45": 0.13333333333333333,
+    "46": 0.14285714285714285,
     "47": 0.14285714285714285,
-    "48": 0.14285714285714285,
+    "48": 0.15384615384615385,
     "49": 0.3516483516483517,
     "50": 0.15384615384615385,
     "51": 0.31868131868131866,
@@ -2191,17 +2193,17 @@
     "92": 0.4,
     "93": 0.5,
     "94": 0.5,
-    "95": 0.8333333333333334,
-    "96": 0.5,
+    "95": 0.5,
+    "96": 0.8333333333333334,
     "97": 0.5,
     "98": 0.5,
     "99": 0.5,
     "100": 0.5,
-    "101": 0.8333333333333334,
-    "102": 0.6666666666666666,
+    "101": 0.5,
+    "102": 0.8333333333333334,
     "103": 0.6666666666666666,
     "104": 0.6666666666666666,
-    "105": 1.0,
+    "105": 0.6666666666666666,
     "106": 1.0,
     "107": 1.0,
     "108": 1.0,
@@ -2234,7 +2236,8 @@
     "135": 1.0,
     "136": 1.0,
     "137": 1.0,
-    "138": 1.0
+    "138": 1.0,
+    "139": 1.0
   },
   "gods": [
     {

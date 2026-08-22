@@ -125,7 +125,7 @@ test(
       });
       assert.deepEqual(
         flags.map((flag) => flag.feature_key),
-        ["article_tags", "editorial_enrichment"],
+        ["article_tags", "editorial_enrichment", "publication_milestones"],
       );
       const articleTagsFlag = flags.find(
         (flag) => flag.feature_key === "article_tags",
@@ -133,8 +133,12 @@ test(
       const editorialFlag = flags.find(
         (flag) => flag.feature_key === "editorial_enrichment",
       );
+      const publicationMilestonesFlag = flags.find(
+        (flag) => flag.feature_key === "publication_milestones",
+      );
       assert.ok(articleTagsFlag);
       assert.ok(editorialFlag);
+      assert.ok(publicationMilestonesFlag);
       assert.equal(articleTagsFlag.state, "off");
 
       const enabledFlag = await service.updateNewsFeatureFlag({
@@ -159,6 +163,7 @@ test(
       assert.deepEqual(await service.getNewsFeatureFlags(channelId), [
         enabledFlag,
         editorialFlag,
+        publicationMilestonesFlag,
       ]);
 
       const input = await service.beginTelegramSettingsInput({

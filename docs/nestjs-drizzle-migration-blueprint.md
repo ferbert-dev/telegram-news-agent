@@ -174,6 +174,11 @@ facade imports persistence modules only.
 - Telegram is a transport adapter. Research and editorial core code do not import Telegram.
 - OpenAI and Gemini remain behind the existing AI-provider interface.
 - The first Nest runtime uses `createApplicationContext`; no HTTP listener is added.
+- Optional feature modules subscribe to neutral integration events and never
+  become imports of the editorial core. `PublicationMilestonesModule` is the
+  first implementation: it is default-off, Nest-only before cutover, and its
+  `ArticlePublished` replay must move from idempotent-request replay to a durable
+  PostgreSQL outbox before production activation.
 
 ## Atomic PostgreSQL boundary
 

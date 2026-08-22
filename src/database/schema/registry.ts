@@ -13,6 +13,7 @@ import {
   pipelineLeases,
   schemaMigrations,
 } from "./operations.js";
+import { publicationMilestones } from "./publication-milestones.js";
 import { publicationPolicyBlocks } from "./publication-policy.js";
 import {
   aiUsageEvents,
@@ -49,6 +50,7 @@ export const databaseTables = [
   newsFeatureFlags,
   notionAuditOutbox,
   pipelineLeases,
+  publicationMilestones,
   publicationPolicyBlocks,
   publishedPosts,
   rawContents,

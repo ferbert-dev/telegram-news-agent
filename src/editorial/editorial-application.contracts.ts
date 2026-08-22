@@ -1,6 +1,7 @@
 import type {
   CreateReviewDraftInput,
   DraftRow,
+  PublicationPath,
   PublishedPostRow,
 } from "./editorial-persistence.contracts.js";
 import type { ArticleRow } from "../research/research-persistence.contracts.js";
@@ -80,6 +81,26 @@ export interface EditorialPublicationGateway {
   ): Promise<EditorialPublicationReceipt>;
 }
 
+export type ArticlePublishedEvent = {
+  draftId: string;
+  articleId: string;
+  publicationPath: PublicationPath;
+  publication: PublishedPostRow;
+};
+
+export interface ArticlePublishedEventSubscriber {
+  handle(event: ArticlePublishedEvent, signal?: AbortSignal): Promise<void>;
+}
+
+export interface ArticlePublishedEventPublisher {
+  publish(event: ArticlePublishedEvent, signal?: AbortSignal): Promise<void>;
+}
+
+export interface ArticlePublishedEventBus
+  extends ArticlePublishedEventPublisher {
+  subscribe(subscriber: ArticlePublishedEventSubscriber): () => void;
+}
+
 export type PublicationDeliveryOutcome = "rejected" | "uncertain";
 
 /** Transport adapters use this error to distinguish a definitive rejection. */
@@ -93,6 +114,11 @@ export class PublicationDeliveryError extends Error {
     this.name = "PublicationDeliveryError";
   }
 }
+
+export const NOOP_ARTICLE_PUBLISHED_EVENT_PUBLISHER: ArticlePublishedEventPublisher =
+  {
+    async publish(): Promise<void> {},
+  };
 
 export type ExcludedTopicPolicyInput = {
   draftId: string;

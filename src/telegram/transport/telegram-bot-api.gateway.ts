@@ -1,4 +1,8 @@
 import type { DraftRow } from "../../editorial/editorial-persistence.contracts.js";
+import {
+  PublicationMilestoneDeliveryError,
+  type PublicationMilestoneDeliveryGateway,
+} from "../../publication-milestones/publication-milestones.contracts.js";
 import type {
   TelegramAdminAuthorizationGateway,
   TelegramControlOutcome,
@@ -90,7 +94,10 @@ function comparison(draft: DraftRow): {
 
 /** Concrete outbound adapter. It owns Telegram API shapes, not application policy. */
 export class TelegramBotApiGateway
-  implements TelegramAdminAuthorizationGateway, TelegramReviewPresentationGateway
+  implements
+    TelegramAdminAuthorizationGateway,
+    TelegramReviewPresentationGateway,
+    PublicationMilestoneDeliveryGateway
 {
   constructor(
     private readonly token: string,
@@ -190,6 +197,30 @@ export class TelegramBotApiGateway
       throw new Error("Telegram review response has no message id");
     }
     return { messageId };
+  }
+
+  async send(input: {
+    channelId: string;
+    text: string;
+  }): Promise<{ messageId: number }> {
+    try {
+      const sent = await this.callTelegram(this.token, "sendMessage", {
+        chat_id: input.channelId || this.channelId,
+        text: input.text,
+        disable_web_page_preview: true,
+      });
+      const messageId = Number(sent.message_id);
+      if (!Number.isSafeInteger(messageId) || messageId <= 0) {
+        throw new Error("Telegram milestone response has no message id");
+      }
+      return { messageId };
+    } catch (error) {
+      throw new PublicationMilestoneDeliveryError(
+        "Telegram milestone delivery outcome is uncertain",
+        "uncertain",
+        { cause: error },
+      );
+    }
   }
 }
 

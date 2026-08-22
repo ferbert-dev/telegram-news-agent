@@ -75,7 +75,7 @@ const settingsRow: NewsSettingsDatabaseRow = {
 
 const featureFlagRow: NewsFeatureFlagDatabaseRow = {
   telegram_channel_id: "@channel",
-  feature_key: "article_tags",
+  feature_key: "publication_milestones",
   state: "off",
   config: { threshold: 0.75 },
   version: 1,
@@ -103,7 +103,7 @@ test("settings DTO mappers preserve snake_case values and canonicalize database 
   assert.deepEqual(settings.topic_codes, ["world", "nature"]);
 
   const feature = mapNewsFeatureFlagRow(featureFlagRow);
-  assert.equal(feature.feature_key, "article_tags");
+  assert.equal(feature.feature_key, "publication_milestones");
   assert.equal(feature.updated_by, 700_000_000_002);
   assert.equal(feature.created_at, canonicalTimestamp);
   assert.equal(feature.config, featureFlagRow.config);
@@ -229,12 +229,12 @@ test("settings mutations retain parameterized PostgreSQL function boundaries", a
     "off",
   );
   assert.equal(
-    await features.updateNewsFeatureFlag({
-      channelId: "@channel",
-      featureKey: "article_tags",
-      state: "collect",
-      updatedBy: 7,
-      expectedVersion: 1,
+      await features.updateNewsFeatureFlag({
+        channelId: "@channel",
+        featureKey: "publication_milestones",
+        state: "collect",
+        updatedBy: 7,
+        expectedVersion: 1,
     }),
     null,
   );
@@ -288,7 +288,7 @@ test("settings mutations retain parameterized PostgreSQL function boundaries", a
     },
     {
       text: 'select * from "public"."update_news_feature_flag"($1, $2, $3, $4, $5)',
-      values: ["@channel", "article_tags", "collect", 7, 1],
+      values: ["@channel", "publication_milestones", "collect", 7, 1],
     },
     {
       text: 'select * from "public"."begin_telegram_settings_input"($1, $2, $3, $4)',
@@ -355,7 +355,7 @@ test("settings reads use typed Drizzle selections instead of PostgreSQL function
   );
   assert.equal(
     (await features.getNewsFeatureFlags(" @channel "))[0].feature_key,
-    "article_tags",
+    "publication_milestones",
   );
   assert.deepEqual(selectedTables, [newsBotSettings, newsFeatureFlags]);
 });
