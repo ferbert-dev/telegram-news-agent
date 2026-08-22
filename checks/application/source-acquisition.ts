@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import { createServer } from "node:http";
 import test from "node:test";
 import { Test } from "@nestjs/testing";
 
 import { SourceAcquisitionGateway } from "../../src/research/source-acquisition.gateway.js";
+import { PinnedSourceHttpTransport } from "../../src/research/source-acquisition.http.js";
 import { SourceAcquisitionModule } from "../../src/research/source-acquisition.module.js";
 import { SOURCE_ACQUISITION } from "../../src/research/source-acquisition.tokens.js";
 import { CATALOG_PERSISTENCE } from "../../src/catalog/catalog-persistence.tokens.js";
@@ -40,6 +43,17 @@ test("typed acquisition preserves feed normalization and blocks hostile redirect
   const rebinding = service({ transport:{ async fetchPinned(_url:URL,_init:RequestInit,addresses:unknown[]){pinned.push(addresses);return new Response(RSS,{status:200});} } });
   await rebinding.value.fetchFeed("https://publisher.test/feed.xml");
   assert.deepEqual(pinned, [[{ address:"93.184.216.34", family:4 }]]);
+});
+
+test("native source transport connects to the validated address without a second DNS lookup", async (context) => {
+  let expectedHost="";
+  const server=createServer((request,response)=>{assert.equal(request.headers.host,expectedHost);response.writeHead(200,{"content-type":"application/xml"});response.end(RSS);});
+  server.listen(0,"127.0.0.1");await once(server,"listening");
+  context.after(()=>new Promise<void>((resolve,reject)=>server.close((error)=>error?reject(error):resolve())));
+  const address=server.address();assert.ok(address&&typeof address==="object");
+  expectedHost=`rebind.invalid:${address.port}`;
+  const response=await new PinnedSourceHttpTransport().fetchPinned(new URL(`http://${expectedHost}/feed.xml`),{headers:{accept:"application/xml"}},[{address:"127.0.0.1",family:4}]);
+  assert.equal(response.status,200);assert.match(await response.text(),/<rss/);
 });
 
 test("typed source health retries and preserves success/failure error identity", async () => {
