@@ -258,10 +258,11 @@ bounded Exa search, observes the shared daily cap, records a zero-token usage
 event, and has a five-minute per-admin cooldown.
 
 Provider attempts are recorded separately from the billing ledger with safe,
-redacted operational metadata only. Normal fallback operations retry one
-transient provider failure before trying the next configured provider; one-shot
-structured generation retains its existing one-call budget. This branch is not
-deployed or activated.
+redacted operational metadata only. Normal fallback operations make up to
+three attempts per configured provider for transient failures, using two
+exponential jittered delays within one 30-second operation deadline, before
+trying the next configured provider. One-shot structured generation retains
+its existing one-call budget. This branch is not deployed or activated.
 
 Send `/labs` in the private admin chat to control experimental features without
 redeploying the bot. Article tags have three versioned per-channel states:
