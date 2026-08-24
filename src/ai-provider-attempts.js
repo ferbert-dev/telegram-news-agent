@@ -9,6 +9,7 @@ const TRANSIENT_ERROR_CODES = new Set([
 const SAFE_ERROR_CODES = new Set([
   "authentication_failed",
   "quota_exhausted",
+  "invalid_schema",
   "timeout",
   "rate_limited",
   "network_error",
@@ -72,8 +73,16 @@ export function classifySafeProviderError(error) {
   const explicit = getProviderErrorCode(error);
   const normalized = normalizeCode(explicit);
   if (normalized && QUOTA_ERROR_CODES.has(normalized)) return "quota_exhausted";
+  if (normalized === "invalid_json_schema" || normalized === "invalid_schema") return "invalid_schema";
   if (SAFE_ERROR_CODES.has(explicit)) return explicit;
   const status = safeStatus(error?.status ?? error?.statusCode);
+  if (
+    status === 400 &&
+    (error?.error?.param === "text.format.schema" ||
+      error?.param === "text.format.schema")
+  ) {
+    return "invalid_schema";
+  }
   if (status === 401 || status === 403) return "authentication_failed";
   if (status === 402) return "quota_exhausted";
   if (status === 408) return "timeout";

@@ -18,6 +18,32 @@ const OPENAI_REASONING_EFFORTS = new Set([
   "xhigh",
 ]);
 
+function sanitizeOpenAiSchema(value) {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeOpenAiSchema(item));
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key, item]) => key !== "format" || item !== "uri")
+      .map(([key, item]) => [key, sanitizeOpenAiSchema(item)]),
+  );
+}
+
+function openAiTextFormat(zodSchema, schemaName) {
+  const format = zodTextFormat(zodSchema, schemaName);
+  const descriptors = Object.getOwnPropertyDescriptors(format);
+  const sanitized = Object.defineProperties({}, descriptors);
+  Object.defineProperty(sanitized, "schema", {
+    ...descriptors.schema,
+    value: sanitizeOpenAiSchema(format.schema),
+  });
+  return sanitized;
+}
+
 function responseSourceUrls(response) {
   const urls = [];
   for (const item of response.output ?? []) {
@@ -70,6 +96,7 @@ export function createOpenAiProvider(
       zodSchema,
       schemaName,
       usageOperation = "structured_generation",
+      signal,
     }) {
       const response = await openai.responses.parse({
         model: config.model,
@@ -80,9 +107,9 @@ export function createOpenAiProvider(
           { role: "user", content: JSON.stringify(input) },
         ],
         text: {
-          format: zodTextFormat(zodSchema, schemaName),
+          format: openAiTextFormat(zodSchema, schemaName),
         },
-      });
+      }, signal ? { signal } : undefined);
       const usage = openAiUsageEvent(response, { model: config.model, operation: usageOperation });
       if (!response.output_parsed) {
         throw providerDiagnosticError("structured_output_missing", {
@@ -110,6 +137,7 @@ export function createOpenAiProvider(
       topicCodes = [],
       customTopics = [],
       excludedTopics = [],
+      signal,
     }) {
       const languageName = LANGUAGE_OPTIONS[languageCode]?.name ?? "English";
       const hasExcludedTopics = excludedTopics.length > 0;
@@ -149,9 +177,9 @@ export function createOpenAiProvider(
           },
         ],
         text: {
-          format: zodTextFormat(NewsDiscovery, "recent_news_discovery"),
+          format: openAiTextFormat(NewsDiscovery, "recent_news_discovery"),
         },
-      });
+      }, signal ? { signal } : undefined);
       if (!response.output_parsed) {
         throw new Error("OpenAI web search returned no structured response");
       }
@@ -173,6 +201,7 @@ export function createOpenAiProvider(
       customTopics = [],
       languageCode = "en",
       limit = 8,
+      signal,
     }) {
       const languageName = LANGUAGE_OPTIONS[languageCode]?.name ?? "English";
       const response = await openai.responses.parse({
@@ -204,9 +233,9 @@ export function createOpenAiProvider(
           },
         ],
         text: {
-          format: zodTextFormat(FeedDiscovery, "rss_feed_discovery"),
+          format: openAiTextFormat(FeedDiscovery, "rss_feed_discovery"),
         },
-      });
+      }, signal ? { signal } : undefined);
       if (!response.output_parsed) {
         throw new Error("OpenAI feed search returned no structured response");
       }
@@ -223,7 +252,7 @@ export function createOpenAiProvider(
       };
     },
 
-    async searchFact({ query, expectedClaim, languageCode = "en" }) {
+    async searchFact({ query, expectedClaim, languageCode = "en", signal }) {
       const languageName = LANGUAGE_OPTIONS[languageCode]?.name ?? "English";
       const response = await openai.responses.parse({
         model: config.model,
@@ -250,9 +279,9 @@ export function createOpenAiProvider(
           },
         ],
         text: {
-          format: zodTextFormat(FactSearchEvidence, "editorial_fact_search"),
+          format: openAiTextFormat(FactSearchEvidence, "editorial_fact_search"),
         },
-      });
+      }, signal ? { signal } : undefined);
       const evidence = groundedFactEvidence(
         response.output_parsed ?? { fact: null },
         responseSourceUrls(response),

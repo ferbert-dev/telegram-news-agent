@@ -63,8 +63,8 @@ test("OpenAI adapter uses Responses structured output and web search", async () 
   const calls = [];
   const client = {
     responses: {
-      async parse(request) {
-        calls.push(request);
+      async parse(request, options) {
+        calls.push({ request, options });
         return request.tools
           ? {
               id: "resp_search",
@@ -133,33 +133,115 @@ test("OpenAI adapter uses Responses structured output and web search", async () 
   assert.equal(generated.usageEvents[0].inputTokens, 50);
   assert.equal(discovered.usageEvents[0].webSearchCalls, 1);
   assert.equal(discovered.usageEvents[0].estimatedCostUsd, 0.0105275);
-  assert.equal(calls[0].store, false);
-  assert.deepEqual(calls[0].reasoning, { effort: "medium" });
-  assert.deepEqual(calls[1].tools, [
+  assert.equal(calls[0].request.store, false);
+  assert.deepEqual(calls[0].request.reasoning, { effort: "medium" });
+  assert.deepEqual(calls[1].request.tools, [
     {
       type: "web_search",
       search_context_size: "low",
       external_web_access: true,
     },
   ]);
-  assert.equal(calls[1].tool_choice, "required");
-  assert.deepEqual(calls[1].include, ["web_search_call.action.sources"]);
-  assert.deepEqual(calls[1].reasoning, { effort: "medium" });
-  assert.equal(calls[1].max_tool_calls, 1);
-  assert.doesNotMatch(calls[1].input[0].content, /recent AI news/);
-  assert.match(calls[1].input[0].content, /subject labels only/);
-  assert.match(calls[1].input[0].content, /German/);
-  assert.deepEqual(JSON.parse(calls[1].input[1].content).topicCodes, [
+  assert.equal(calls[1].request.tool_choice, "required");
+  assert.deepEqual(calls[1].request.include, ["web_search_call.action.sources"]);
+  assert.deepEqual(calls[1].request.reasoning, { effort: "medium" });
+  assert.equal(calls[1].request.max_tool_calls, 1);
+  assert.doesNotMatch(calls[1].request.input[0].content, /recent AI news/);
+  assert.match(calls[1].request.input[0].content, /subject labels only/);
+  assert.match(calls[1].request.input[0].content, /German/);
+  assert.deepEqual(JSON.parse(calls[1].request.input[1].content).topicCodes, [
     "nature",
     "animals",
   ]);
-  assert.deepEqual(JSON.parse(calls[1].input[1].content).excludedTopics, [
+  assert.deepEqual(JSON.parse(calls[1].request.input[1].content).excludedTopics, [
     {
       code: "war_conflict",
       description:
         "War, armed conflict, combat operations, military attacks, and their direct consequences.",
     },
   ]);
+});
+
+test("OpenAI request payload is serialized without uri format in the schema", async () => {
+  const calls = [];
+  const Draft = z.object({
+    story: z.object({
+      title: z.string(),
+      sourceUrl: z.string().url(),
+    }),
+    references: z.array(
+      z.object({
+        text: z.string(),
+        url: z.string().url(),
+      }),
+    ),
+  });
+
+  const hasUriFormat = (value) => {
+    if (value === null || value === undefined) return false;
+    if (typeof value !== "object") return false;
+    if (Array.isArray(value)) {
+      return value.some((entry) => hasUriFormat(entry));
+    }
+    if (value.format === "uri") return true;
+    return Object.values(value).some((entry) => hasUriFormat(entry));
+  };
+
+  const client = {
+    responses: {
+      async parse(request, options) {
+        calls.push({ request, options });
+        return {
+          id: "resp_draft",
+          usage: {
+            input_tokens: 50,
+            input_tokens_details: { cached_tokens: 1 },
+            output_tokens: 10,
+            output_tokens_details: { reasoning_tokens: 0 },
+          },
+          output_parsed: {
+            story: {
+              title: "Test story",
+              sourceUrl: "https://example.com/story",
+            },
+            references: [{ text: "Ref", url: "https://example.com/ref" }],
+          },
+        };
+      },
+    },
+  };
+
+  const provider = createOpenAiProvider(
+    {
+      apiKey: "test-key",
+      model: "gpt-5.4-2026-03-05",
+      reasoningEffort: "medium",
+    },
+    { client },
+  );
+  const generated = await provider.generateStructured({
+    systemInstruction: "Return draft payload.",
+    input: { draft: "present" },
+    zodSchema: Draft,
+    schemaName: "editorial_draft",
+  });
+
+  const format = calls[0].request.text.format;
+  const serializedSchema = format.schema;
+  assert.equal(generated.value.story.sourceUrl, "https://example.com/story");
+  assert.equal(hasUriFormat(serializedSchema), false);
+  assert.ok(serializedSchema.type);
+  assert.equal(typeof format.$parseRaw, "function");
+  assert.throws(
+    () =>
+      format.$parseRaw(
+        JSON.stringify({
+          story: { title: "Test story", sourceUrl: "not-a-url" },
+          references: [{ text: "Ref", url: "https://example.com/ref" }],
+        }),
+      ),
+    /Invalid URL/,
+  );
 });
 
 test("Gemini adapter uses structured JSON generation and Google Search", async () => {
