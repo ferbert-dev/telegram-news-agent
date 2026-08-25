@@ -13,9 +13,14 @@ const PRIMARY_URL = "https://example.com/full-article";
 const SEARCH_URL = "https://agency.example.gov/decision";
 const PRIMARY_TEXT =
   "The team reduced the battery charging time from sixty minutes to fifteen minutes. The authors said the result was measured in a controlled laboratory test.";
+const DEFAULT_HEADLINE = "A battery result that changes the clock";
 
 function draft({ searched = false } = {}) {
   const claims = [
+    {
+      text: DEFAULT_HEADLINE,
+      sourceUrl: PRIMARY_URL,
+    },
     {
       text: "The team cut charging time from sixty minutes to fifteen.",
       sourceUrl: PRIMARY_URL,
@@ -30,7 +35,7 @@ function draft({ searched = false } = {}) {
     sourceUrls.push(SEARCH_URL);
   }
   return {
-    headline: "A battery result that changes the clock",
+    headline: DEFAULT_HEADLINE,
     telegramText:
       "A battery result that changes the clock\n\nA quarter-hour result puts the long charging stop under pressure. In a controlled laboratory test, the team cut battery charging time from sixty minutes to fifteen, turning a full hour into a short pause. If that speed survives outside the lab, drivers could spend less time waiting and more charging stops could fit into ordinary trips. The measurement therefore points to a practical change in how quickly a battery might return to use. For now, however, the authors have reported only controlled laboratory conditions, so real-world performance remains unknown." +
       (searched
@@ -75,8 +80,14 @@ function editorialFields(targetDraft, readerAngle) {
   };
 }
 
-function evidenceMap({ searched = false } = {}) {
+function evidenceMap({ searched = false, headline = DEFAULT_HEADLINE } = {}) {
   const entries = [
+    {
+      claim: headline,
+      sourceUrl: PRIMARY_URL,
+      evidenceExcerpt:
+        "reduced the battery charging time from sixty minutes to fifteen minutes",
+    },
     {
       claim: "The team cut charging time from sixty minutes to fifteen.",
       sourceUrl: PRIMARY_URL,
@@ -120,11 +131,17 @@ function similarBaselineDraft() {
 }
 
 function retryDraft() {
+  const base = draft();
+  const headline = "Fifteen minutes could redraw the charging stop";
   return {
-    ...draft(),
-    headline: "Fifteen minutes could redraw the charging stop",
+    ...base,
+    headline,
     telegramText:
       "Fifteen minutes could redraw the charging stop\n\nA one-hour charging wait collapsed to fifteen minutes in the laboratory. The team reduced battery charging time from sixty minutes to fifteen under controlled conditions. The result makes a short charging pause easier to imagine: if the same speed holds outside the lab, a driver could spend less time waiting during an ordinary trip. That could change when and where people choose to recharge, especially on journeys where every stop adds friction. The experiment has not yet shown that the result will survive real roads, different batteries, or repeated daily use.",
+    claims: [
+      { text: headline, sourceUrl: PRIMARY_URL },
+      ...base.claims.slice(1),
+    ],
   };
 }
 
@@ -166,18 +183,20 @@ test("editorial fact evidence must cite a URL returned by the search tool", () =
 test("editorial evidence map requires exact source excerpts for every claim", () => {
   assert.equal(
     validateEditorialEvidenceMap(draft(), evidenceMap(), evidence).length,
-    1,
+    2,
   );
   assert.throws(
     () =>
       validateEditorialEvidenceMap(
         draft(),
-        [
-          {
-            ...evidenceMap()[0],
-            evidenceExcerpt: "A paraphrase that is not in the source.",
-          },
-        ],
+        evidenceMap().map((entry, index) =>
+          index === 0
+            ? {
+                ...entry,
+                evidenceExcerpt: "A paraphrase that is not in the source.",
+              }
+            : entry,
+        ),
         evidence,
       ),
     /not present in its source/,
@@ -594,7 +613,7 @@ test("a failed optional fact search keeps the source-grounded enriched draft", a
 
   assert.equal(generations, 1);
   assert.equal(result.search.status, "failed");
-  assert.equal(result.draft.claims.length, 1);
+  assert.equal(result.draft.claims.length, 2);
 });
 
 test("editorial enrichment retries once when the first attempt is too similar", async () => {
@@ -614,7 +633,9 @@ test("editorial enrichment retries once when the first attempt is too similar", 
                 : "The charging result could make stops shorter.",
             ),
             draft: retry ? retryDraft() : draft(),
-            evidenceMap: evidenceMap(),
+            evidenceMap: evidenceMap({
+              headline: (retry ? retryDraft() : draft()).headline,
+            }),
             factRequest: null,
           },
           provider: "openai",
