@@ -1,24 +1,21 @@
 # Current Status
 
-Last verified: 2026-08-21
-
-Branch-local, not deployed: `codex/ai-provider-attempts` adds durable, redacted
-AI provider-attempt diagnostics, bounded transient retry, scheduler failure
-alerts, and private status/inspection visibility. It is not activated in
-production until migration, review, and release gates complete.
+Last verified: 2026-08-26
 
 ## Production
 
 | Item | Verified state |
 | --- | --- |
 | Service | Healthy on Oracle |
-| Main and deployed SHA | `f0afa2ecdb889024f454e6d1aa6fad15dd53faff` |
-| Container image | `ghcr.io/ferbert-dev/telegram-news-agent:f0afa2ecdb889024f454e6d1aa6fad15dd53faff` |
+| Production runtime SHA | `721ff791332635350c0869a2333ed00b33f27057` |
+| Container image | `ghcr.io/ferbert-dev/telegram-news-agent:721ff791332635350c0869a2333ed00b33f27057` (version `v0.1.0+721ff79`) |
 | Telegram | Polling active, webhook disabled, channel access valid, zero pending updates at inspection |
+| Runtime entrypoint | `src/telegram-bot.js`; the additive Nest poller is present in the image but not activated |
+| Container health | Running; restart count 0; OOM false |
 | Database | PostgreSQL authoritative; runtime connection and migrations verified |
 | AI providers | Exa, OpenAI, and Gemini configured |
-| Release message | Private notification `v0.1.0+f0afa2e` accepted by Telegram |
-| Release evidence | [deploy workflow](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/32487728082), [post-deploy inspection](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/32488170635) |
+| Release message | Private notification `v0.1.0+721ff79` accepted by Telegram |
+| Release evidence | [exact-head CI](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/32902791374), [deploy workflow](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/32903263629), [read-only production inspection](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/32903971749), [database verification](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/32904062788) |
 
 ## What Is Shipped
 
@@ -33,6 +30,7 @@ production until migration, review, and release gates complete.
 - SOPS-encrypted production configuration, hash-aware environment promotion, immutable GHCR images, health gates, and rollback.
 - Private, idempotent deployment-version notifications after successful production verification.
 - Typed Drizzle repositories and NestJS modules operating alongside the current legacy entrypoint.
+- A finite-lifecycle Nest Telegram polling worker with lease, heartbeat, claim/finalize, offset-fencing, and cancellation paths is shipped additively; it is not activated in production.
 - An optional `PublicationMilestonesModule` implements deterministic every-50th-
   article audience messages behind a default-off per-channel flag. It is not
   wired into the legacy production entrypoint and remains inactive until the
