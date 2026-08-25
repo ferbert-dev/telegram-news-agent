@@ -1,6 +1,9 @@
 export type RuntimeWorker = {
   readonly name: string;
-  start(shutdownSignal: AbortSignal): Promise<void>;
+  start(
+    shutdownSignal: AbortSignal,
+    reportFatal?: (error: unknown) => Promise<void>,
+  ): Promise<void>;
   stop(): Promise<void>;
 };
 
@@ -184,7 +187,9 @@ export class RuntimeCoordinator {
         return;
       }
       this.attemptedWorkers.push(worker);
-      const startPromise = Promise.resolve().then(() => worker.start(this.stopSignal));
+      const startPromise = Promise.resolve().then(() =>
+        worker.start(this.stopSignal, (error) => this.reportFatal(error)),
+      );
       observe(startPromise);
       await startPromise;
       if (this.stopSignal.aborted) {

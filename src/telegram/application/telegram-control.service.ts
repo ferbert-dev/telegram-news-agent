@@ -17,7 +17,8 @@ export class TelegramControlService implements TelegramControlApplicationPort {
   handle(
     request: TelegramControlRequest,
     present: (outcome: TelegramControlOutcome) => Promise<void>,
+    signal?: AbortSignal,
   ): Promise<TelegramControlOutcome> {
-    return this.handler.execute(request, present);
+    return this.handler.execute(request, present, signal);
   }
 }

@@ -15,10 +15,11 @@ export class HandleTelegramSettingsUseCase {
     private readonly settings: TelegramControlFeatureGateway,
   ) {}
 
-  execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
     if (request.route.kind !== "settings") {
       throw new TelegramControlError("malformed_command", "Expected settings route");
     }
-    return this.settings.execute(request);
+    return this.settings.execute(request, signal);
   }
 }

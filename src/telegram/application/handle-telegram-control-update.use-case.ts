@@ -53,7 +53,9 @@ export class HandleTelegramControlUpdateUseCase
   async execute(
     request: TelegramControlRequest,
     present: (outcome: TelegramControlOutcome) => Promise<void>,
+    signal?: AbortSignal,
   ): Promise<TelegramControlOutcome> {
+    this.throwIfAborted(signal);
     this.validateClaimEnvelope(request);
     return this.audit.run(
       {
@@ -78,10 +80,14 @@ export class HandleTelegramControlUpdateUseCase
         if (!claim.claim_token) throw new Error("Claimed update has no claim token");
 
         try {
+          this.throwIfAborted(signal);
           this.validateRequest(request);
-          await this.requireAdmin(request);
-          const outcome = await this.route(request, claim.claim_token);
+          await this.requireAdmin(request, signal);
+          this.throwIfAborted(signal);
+          const outcome = await this.route(request, claim.claim_token, signal);
+          this.throwIfAborted(signal);
           await present(outcome);
+          this.throwIfAborted(signal);
           const finished = await this.updates.finishTelegramUpdate({
             updateId: request.updateId,
             claimToken: claim.claim_token,
@@ -92,19 +98,37 @@ export class HandleTelegramControlUpdateUseCase
           }
           return outcome;
         } catch (error) {
-          const code = error instanceof TelegramControlError
-            ? error.code
+          const retryableError = signal?.aborted
+            ? new TelegramControlError("update_claim_lost", "Telegram update was cancelled", {
+              cause: error,
+            })
+            : error;
+          const code = retryableError instanceof TelegramControlError
+            ? retryableError.code
             : "internal_error";
-          await this.updates.finishTelegramUpdate({
+          const finished = await this.updates.finishTelegramUpdate({
             updateId: request.updateId,
             claimToken: claim.claim_token,
-            status: isTerminalTelegramControlError(error) ? "completed" : "failed",
+            status: isTerminalTelegramControlError(retryableError) ? "completed" : "failed",
             errorCode: code,
           }).catch(() => false);
-          throw error;
+          if (!finished) {
+            throw new TelegramControlError(
+              "update_claim_lost",
+              "Update claim could not be finished",
+              { cause: retryableError },
+            );
+          }
+          throw retryableError;
         }
       },
     );
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new TelegramControlError("update_claim_lost", "Telegram update was cancelled");
+    }
   }
 
   private validateClaimEnvelope(request: TelegramControlRequest): void {
@@ -175,14 +199,16 @@ export class HandleTelegramControlUpdateUseCase
     }
   }
 
-  private async requireAdmin(request: TelegramControlRequest): Promise<void> {
+  private async requireAdmin(request: TelegramControlRequest, signal?: AbortSignal): Promise<void> {
     let allowed: boolean;
     try {
       allowed = await this.authorization.isChannelAdmin(
         request.channelId,
         request.actorId,
+        signal,
       );
     } catch (error) {
+      this.throwIfAborted(signal);
       throw new TelegramControlError(
         "authorization_unavailable",
         "Authorization failed",
@@ -197,20 +223,21 @@ export class HandleTelegramControlUpdateUseCase
   private route(
     request: TelegramControlRequest,
     updateClaimToken: string,
+    signal?: AbortSignal,
   ): Promise<TelegramControlOutcome> {
     switch (request.route.kind) {
       case "news":
-        return this.news.execute(request, updateClaimToken);
+        return this.news.execute(request, updateClaimToken, signal);
       case "review":
-        return this.review.execute(request);
+        return this.review.execute(request, signal);
       case "settings":
-        return this.settings.execute(request);
+        return this.settings.execute(request, signal);
       case "labs":
-        return this.labs.execute(request);
+        return this.labs.execute(request, signal);
       case "stats":
-        return this.stats.execute(request);
+        return this.stats.execute(request, signal);
       case "status":
-        return this.status.execute(request);
+        return this.status.execute(request, signal);
       case "malformed":
         throw new TelegramControlError(request.route.errorCode, "Malformed callback");
     }
