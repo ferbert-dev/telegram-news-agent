@@ -165,7 +165,7 @@ test("generateDraft stores a review draft and advances article state", async () 
     async createReviewDraft(draft) {
       writes.push(draft);
       assert.equal(draft.status, "review");
-      assert.match(draft.body, /Found and prepared for you by Mikhail Honest/);
+      assert.match(draft.body, /Found and prepared for you by Michail Honest/);
       assert.match(draft.body, /Source:\nhttps:\/\/example\.com\/primary$/);
       return { id: "draft-1", ...draft };
     },
@@ -705,7 +705,7 @@ test("enabled mode appends deterministic localized catalog hashtags at the end",
 
   assert.match(
     stored.body,
-    /Für Sie gefunden und aufbereitet von Mikhail Honest\n\nSource:\nhttps:\/\/example\.com\/primary\n\n#Wissenschaft #WorldNews$/,
+    /Für Sie gefunden und aufbereitet von Michail Honest\n\nSource:\nhttps:\/\/example\.com\/primary\n\n#Wissenschaft #WorldNews$/,
   );
   assert.doesNotMatch(stored.body, /#Nature/);
   assert.deepEqual(stored.topic_assignments, [
@@ -982,7 +982,7 @@ test("generateDraft requests German output without changing grounding rules", as
   assert.doesNotMatch(request.systemInstruction, /AI news channel/);
   assert.match(
     stored.body,
-    /Für Sie gefunden und aufbereitet von Mikhail Honest/,
+    /Für Sie gefunden und aufbereitet von Michail Honest/,
   );
   const notes = JSON.parse(stored.reviewer_notes);
   assert.equal(notes.language_code, "de");
@@ -1033,5 +1033,5 @@ test("unverified warning prefix is localized for Ukrainian output", async () => 
   });
 
   assert.match(result.saved.body, /^НЕПЕРЕВІРЕНИЙ ТРЕНД/);
-  assert.match(result.saved.body, /Знайшов і підготував для вас: Mykhailo Chesnyi/);
+  assert.match(result.saved.body, /Знайшов і підготував для вас: Michail Honest/);
 });

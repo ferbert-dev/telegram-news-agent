@@ -6,9 +6,9 @@ export const DEFAULT_NEWS_EDITOR = Object.freeze({
 });
 
 const DEFAULT_EDITOR_LOCALIZED_NAMES = Object.freeze({
-  en: "Mikhail Honest",
-  de: "Mikhail Honest",
-  uk: "Mykhailo Chesnyi",
+  en: "Michail Honest",
+  de: "Michail Honest",
+  uk: "Michail Honest",
 });
 
 const BYLINE = Object.freeze({

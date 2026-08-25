@@ -277,10 +277,11 @@ feature until the tag history has been evaluated.
 
 New drafts include a localized editorial credit and store the stable
 `NEWS_EDITOR_KEY` plus canonical `NEWS_EDITOR_NAME` in draft/publication metadata.
-The default editor is rendered as `Mikhail Honest` in English and German articles
-and as `Mykhailo Chesnyi` in Ukrainian articles. A custom configured editor name
-is rendered unchanged; changing both environment values later adds a distinct
-editor identity without rewriting historical posts.
+The default editor is rendered with the fixed pseudonym `Michail Honest` in
+English, German, and Ukrainian articles; only the surrounding byline phrase is
+localized. A custom configured editor name is rendered unchanged; changing both
+environment values later adds a distinct editor identity without rewriting
+historical posts.
 
 The embedded scheduler polls for due database rows and atomically claims one
 run at a time. It rereads a complete configuration snapshot before each search,

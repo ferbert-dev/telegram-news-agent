@@ -19,13 +19,13 @@ test("default editor is configurable without accepting multiline names", () => {
   );
 });
 
-test("the default editor name is localized for every supported article language", () => {
-  assert.equal(getEditorDisplayName(DEFAULT_NEWS_EDITOR, "en"), "Mikhail Honest");
-  assert.equal(getEditorDisplayName(DEFAULT_NEWS_EDITOR, "de"), "Mikhail Honest");
-  assert.equal(getEditorDisplayName(DEFAULT_NEWS_EDITOR, "uk"), "Mykhailo Chesnyi");
+test("the default editor pseudonym is fixed for every supported article language", () => {
+  assert.equal(getEditorDisplayName(DEFAULT_NEWS_EDITOR, "en"), "Michail Honest");
+  assert.equal(getEditorDisplayName(DEFAULT_NEWS_EDITOR, "de"), "Michail Honest");
+  assert.equal(getEditorDisplayName(DEFAULT_NEWS_EDITOR, "uk"), "Michail Honest");
   assert.equal(
     getEditorDisplayName(DEFAULT_NEWS_EDITOR, "unsupported"),
-    "Mikhail Honest",
+    "Michail Honest",
   );
   assert.equal(
     getEditorDisplayName({ key: "anna", name: "Anna Beispiel" }, "uk"),
@@ -38,17 +38,17 @@ test("localized editor credit appears before sources and remains idempotent", ()
     {
       languageCode: "en",
       text: "Headline\n\nNews text.\n\nSources:\nhttps://example.com",
-      expected: "Found and prepared for you by Mikhail Honest\n\nSources:",
+      expected: "Found and prepared for you by Michail Honest\n\nSources:",
     },
     {
       languageCode: "de",
       text: "Überschrift\n\nNachricht.\n\nQuellen:\nhttps://example.com",
-      expected: "Für Sie gefunden und aufbereitet von Mikhail Honest\n\nQuellen:",
+      expected: "Für Sie gefunden und aufbereitet von Michail Honest\n\nQuellen:",
     },
     {
       languageCode: "uk",
       text: "Заголовок\n\nТекст новини.\n\nДжерела:\nhttps://example.com",
-      expected: "Знайшов і підготував для вас: Mykhailo Chesnyi\n\nДжерела:",
+      expected: "Знайшов і підготував для вас: Michail Honest\n\nДжерела:",
     },
   ];
 
