@@ -15,7 +15,10 @@ export type TelegramBotApiCall = (
   token: string,
   method: string,
   payload: Record<string, unknown>,
+  options?: { signal?: AbortSignal },
 ) => Promise<Record<string, unknown>>;
+
+const throwIfAborted = (signal?: AbortSignal): void => signal?.throwIfAborted();
 
 const ADMIN_STATUSES = new Set(["creator", "administrator"]);
 
@@ -117,13 +120,15 @@ export class TelegramBotApiGateway
     chatId: number;
     messageId: number;
     sessionId: string;
+    signal?: AbortSignal;
   }): Promise<"available" | "missing"> {
     try {
+      throwIfAborted(input.signal);
       await this.callTelegram(this.token, "editMessageReplyMarkup", {
         chat_id: input.chatId,
         message_id: input.messageId,
         reply_markup: reviewMarkup(input.sessionId),
-      });
+      }, { signal: input.signal });
       return "available";
     } catch (error) {
       return /message is not modified/i.test(
@@ -134,24 +139,27 @@ export class TelegramBotApiGateway
     }
   }
 
-  async disableControls(input: { chatId: number; messageId: number }): Promise<void> {
+  async disableControls(input: { chatId: number; messageId: number; signal?: AbortSignal }): Promise<void> {
+    throwIfAborted(input.signal);
     await this.callTelegram(this.token, "editMessageReplyMarkup", {
       chat_id: input.chatId,
       message_id: input.messageId,
       reply_markup: { inline_keyboard: [] },
-    });
+    }, { signal: input.signal });
   }
 
   async answerCallback(input: {
     callbackId: string;
     text: string;
     showAlert?: boolean;
+    signal?: AbortSignal;
   }): Promise<void> {
+    throwIfAborted(input.signal);
     await this.callTelegram(this.token, "answerCallbackQuery", {
       callback_query_id: input.callbackId,
       text: input.text,
       show_alert: input.showAlert ?? false,
-    });
+    }, { signal: input.signal });
   }
 
   async sendReview(input: {
@@ -159,6 +167,7 @@ export class TelegramBotApiGateway
     sessionId: string;
     preview: string;
     draft: DraftRow;
+    signal?: AbortSignal;
   }): Promise<{ messageId: number }> {
     const alternate = comparison(input.draft);
     if (alternate) {
@@ -167,31 +176,35 @@ export class TelegramBotApiGateway
       const text = `${heading}\n\n${alternate.body}\n\n${footer}`;
       try {
         if (text.length <= 4096) {
+          throwIfAborted(input.signal);
           await this.callTelegram(this.token, "sendMessage", {
             chat_id: input.chatId,
             text,
             disable_web_page_preview: true,
-          });
+          }, { signal: input.signal });
         } else {
+          throwIfAborted(input.signal);
           await this.callTelegram(this.token, "sendMessage", {
             chat_id: input.chatId,
             text: `${heading}. The following message is the alternative.\n\n${footer}`,
-          });
+          }, { signal: input.signal });
+          throwIfAborted(input.signal);
           await this.callTelegram(this.token, "sendMessage", {
             chat_id: input.chatId,
             text: alternate.body,
             disable_web_page_preview: true,
-          });
+          }, { signal: input.signal });
         }
       } catch {
         // Comparison is additive and cannot hide the selected review draft.
       }
     }
+    throwIfAborted(input.signal);
     const sent = await this.callTelegram(this.token, "sendMessage", {
       chat_id: input.chatId,
       text: input.preview,
       reply_markup: reviewMarkup(input.sessionId),
-    });
+    }, { signal: input.signal });
     const messageId = Number(sent.message_id);
     if (!Number.isSafeInteger(messageId)) {
       throw new Error("Telegram review response has no message id");
@@ -234,13 +247,15 @@ export class TelegramBotApiOutcomeRenderer implements TelegramControlOutcomeRend
   async render(
     request: TelegramControlRequest,
     outcome: TelegramControlOutcome,
+    signal?: AbortSignal,
   ): Promise<void> {
     const text = this.message(request, outcome);
     if (!text) return;
+    throwIfAborted(signal);
     const send = this.callTelegram(this.token, "sendMessage", {
       chat_id: request.chatId,
       text,
-    }).then(() => undefined);
+    }, { signal }).then(() => undefined);
     if (
       outcome.status === "blocked_by_policy" &&
       outcome.publicationPath === "manual_review"

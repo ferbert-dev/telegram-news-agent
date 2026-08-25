@@ -12,6 +12,7 @@ export interface TelegramControlOutcomeRenderer {
   render(
     request: TelegramControlRequest,
     outcome: TelegramControlOutcome,
+    signal?: AbortSignal,
   ): Promise<void>;
 }
 
@@ -38,7 +39,7 @@ export class TelegramControlTransportHandler {
     if (!request) return { handled: false };
     const outcome = await this.application.handle(
       request,
-      (semanticOutcome) => this.renderer.render(request, semanticOutcome),
+      (semanticOutcome) => this.renderer.render(request, semanticOutcome, options.signal),
       options.signal,
     );
     return { handled: true, outcome };

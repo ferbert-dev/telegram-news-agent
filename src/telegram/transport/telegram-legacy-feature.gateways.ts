@@ -71,6 +71,16 @@ function callback(request: TelegramControlRequest, payload: CallbackPayload) {
   };
 }
 
+function abortableTelegramCall(
+  callTelegram: TelegramBotApiCall,
+  signal?: AbortSignal,
+): TelegramBotApiCall {
+  return async (token, method, payload) => {
+    signal?.throwIfAborted();
+    return callTelegram(token, method, payload, { signal });
+  };
+}
+
 /** Reuses the verified legacy settings transport until its typed UI slice is extracted. */
 export class TelegramLegacySettingsGateway implements TelegramControlFeatureGateway {
   constructor(
@@ -85,7 +95,9 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
     },
   ) {}
 
-  async execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
+    const callTelegram = abortableTelegramCall(this.callTelegram, signal);
     if (request.route.kind !== "settings") {
       throw new TelegramControlError("malformed_command", "Expected settings route");
     }
@@ -96,7 +108,7 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
         chatId: request.chatId,
         userId: request.actorId,
         repository: this.repository,
-        callTelegram: this.callTelegram,
+        callTelegram,
       });
       return { status: "settings_ready", result };
     }
@@ -110,7 +122,7 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
           channelId: this.channelId,
           userId: request.actorId,
           repository: this.repository,
-          callTelegram: this.callTelegram,
+          callTelegram,
         },
       );
       return { status: "settings_updated", result };
@@ -135,7 +147,7 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
         channelId: this.channelId,
         userId: request.actorId,
         repository: this.repository,
-        callTelegram: this.callTelegram,
+        callTelegram,
       },
     );
     return { status: "settings_updated", result };
@@ -155,7 +167,9 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
     },
   ) {}
 
-  async execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
+    const callTelegram = abortableTelegramCall(this.callTelegram, signal);
     if (request.route.kind !== "labs") {
       throw new TelegramControlError("malformed_command", "Expected Labs route");
     }
@@ -166,7 +180,7 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
         chatId: request.chatId,
         userId: request.actorId,
         repository: this.repository,
-        callTelegram: this.callTelegram,
+        callTelegram,
       });
       return { status: "labs_ready", result };
     }
@@ -179,7 +193,7 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
         channelId: this.channelId,
         userId: request.actorId,
         repository: this.repository,
-        callTelegram: this.callTelegram,
+        callTelegram,
       },
     );
     return { status: "labs_updated", result };
@@ -197,7 +211,8 @@ export class TelegramLegacyStatsGateway implements TelegramControlFeatureGateway
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
     if (request.route.kind !== "stats") {
       throw new TelegramControlError("malformed_command", "Expected stats route");
     }
@@ -206,7 +221,7 @@ export class TelegramLegacyStatsGateway implements TelegramControlFeatureGateway
       channelId: this.channelId,
       chatId: request.chatId,
       repository: this.repository,
-      callTelegram: this.callTelegram,
+      callTelegram: abortableTelegramCall(this.callTelegram, signal),
       now: this.now,
     });
     return { status: "stats_ready", dashboard };
@@ -232,7 +247,9 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
     private readonly cooldownStore: Map<string, number> = new Map(),
   ) {}
 
-  async execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
+    const callTelegram = abortableTelegramCall(this.callTelegram, signal);
     if (request.route.kind !== "status") {
       throw new TelegramControlError("malformed_command", "Expected status route");
     }
@@ -242,7 +259,7 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
         channelId: this.channelId,
         chatId: request.chatId,
         repository: this.repository,
-        callTelegram: this.callTelegram,
+        callTelegram,
         providerNames: this.providerNames,
         appVersion: this.appVersion,
         now: this.now,
@@ -258,7 +275,7 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
         token: this.token,
         channelId: this.channelId,
         repository: this.repository,
-        callTelegram: this.callTelegram,
+        callTelegram,
         aiProvider: this.aiProvider,
         providerNames: this.providerNames,
         appVersion: this.appVersion,

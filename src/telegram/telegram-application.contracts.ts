@@ -54,7 +54,7 @@ export interface TelegramAdminAuthorizationGateway {
 }
 
 export interface TelegramControlFeatureGateway {
-  execute(request: TelegramControlRequest): Promise<TelegramControlOutcome>;
+  execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome>;
 }
 
 export type RestoreReviewControlsResult = "available" | "missing";
@@ -65,18 +65,21 @@ export interface TelegramReviewPresentationGateway {
     chatId: number;
     messageId: number;
     sessionId: string;
+    signal?: AbortSignal;
   }): Promise<RestoreReviewControlsResult>;
-  disableControls(input: { chatId: number; messageId: number }): Promise<void>;
+  disableControls(input: { chatId: number; messageId: number; signal?: AbortSignal }): Promise<void>;
   answerCallback(input: {
     callbackId: string;
     text: string;
     showAlert?: boolean;
+    signal?: AbortSignal;
   }): Promise<void>;
   sendReview(input: {
     chatId: number;
     sessionId: string;
     preview: string;
     draft: DraftRow;
+    signal?: AbortSignal;
   }): Promise<{ messageId: number }>;
 }
 
@@ -92,11 +95,12 @@ export interface TelegramNewsApplicationPort {
   execute(
     request: TelegramControlRequest,
     updateClaimToken: string,
+    signal?: AbortSignal,
   ): Promise<TelegramControlOutcome>;
 }
 
 export interface TelegramReviewDecisionApplicationPort {
-  execute(request: TelegramControlRequest): Promise<TelegramControlOutcome>;
+  execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome>;
 }
 
 export interface TelegramControlApplicationPort {

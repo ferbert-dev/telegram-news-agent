@@ -48,7 +48,9 @@ export class RunTelegramNewsUseCase implements TelegramNewsApplicationPort {
   async execute(
     request: TelegramControlRequest,
     updateClaimToken: string,
+    signal?: AbortSignal,
   ): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
     if (request.route.kind !== "news") {
       throw new TelegramControlError("malformed_command", "News route required");
     }
@@ -60,6 +62,7 @@ export class RunTelegramNewsUseCase implements TelegramNewsApplicationPort {
       reviewChatId: request.chatId,
       updatedBy: request.actorId,
     });
+    signal?.throwIfAborted();
     if (!settings) throw new Error("News settings are unavailable");
 
     const job = await this.jobs.enqueueTelegramNewsJob({

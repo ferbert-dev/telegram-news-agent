@@ -331,7 +331,12 @@ export async function pollTelegramUpdates(options: {
       );
       waitingLogged = true;
     }
-    await sleepImpl(leaseAcquireRetryMs, undefined, { signal });
+    try {
+      await sleepImpl(leaseAcquireRetryMs, undefined, { signal });
+    } catch (error) {
+      if (signal.aborted) return;
+      throw error;
+    }
   }
 
   // A coordinator may already be draining while this worker is waiting for a
@@ -611,6 +616,9 @@ export async function pollTelegramUpdates(options: {
         continue;
       }
     }
+  } catch (error) {
+    if (signal.aborted) return;
+    throw error;
   } finally {
     signal.removeEventListener("abort", abortOperation);
     leaseController.abort();

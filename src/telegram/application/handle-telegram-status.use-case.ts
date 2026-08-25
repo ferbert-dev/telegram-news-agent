@@ -15,10 +15,11 @@ export class HandleTelegramStatusUseCase {
     private readonly status: TelegramControlFeatureGateway,
   ) {}
 
-  execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
     if (request.route.kind !== "status") {
       throw new TelegramControlError("malformed_command", "Expected status route");
     }
-    return this.status.execute(request);
+    return this.status.execute(request, signal);
   }
 }

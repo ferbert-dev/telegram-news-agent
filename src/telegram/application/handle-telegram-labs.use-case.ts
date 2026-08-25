@@ -15,10 +15,11 @@ export class HandleTelegramLabsUseCase {
     private readonly labs: TelegramControlFeatureGateway,
   ) {}
 
-  execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
     if (request.route.kind !== "labs") {
       throw new TelegramControlError("malformed_command", "Expected labs route");
     }
-    return this.labs.execute(request);
+    return this.labs.execute(request, signal);
   }
 }

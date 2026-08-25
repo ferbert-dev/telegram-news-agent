@@ -509,3 +509,44 @@ test("two polling workers share the atomic lease port and only one becomes ready
   assert.equal(owner, null);
   assert.equal(releases, 1);
 });
+
+test("own AbortError during lease, poll, and update retry sleeps completes cleanly", async () => {
+  const abortingSleep = (controller: AbortController) => async () => {
+    controller.abort("runtime-stop");
+    throw new DOMException("aborted", "AbortError");
+  };
+
+  const leaseController = new AbortController();
+  await pollTelegramUpdates({
+    token: "token", leaseName: "telegram-control-poller", ownerId: "lease",
+    updates: createUpdatesPersistence().updates,
+    transport: { handle: async () => ({ handled: true }) },
+    callTelegram: async () => { throw new Error("must not poll"); },
+    leaseApplication: { acquire: async () => false, renew: async () => true, release: async () => true },
+    sleepImpl: abortingSleep(leaseController), signal: leaseController.signal,
+  });
+
+  for (const mode of ["poll", "update"] as const) {
+    const controller = new AbortController();
+    let releases = 0;
+    const updates = createUpdatesPersistence();
+    await pollTelegramUpdates({
+      token: "token", leaseName: "telegram-control-poller", ownerId: mode,
+      updates: updates.updates,
+      transport: { handle: async () => {
+        if (mode === "update") throw new Error("retry update");
+        return { handled: true };
+      } },
+      callTelegram: async () => {
+        if (mode === "poll") throw new Error("retry poll");
+        return [{ update_id: 22, message: { text: "x" } }];
+      },
+      leaseApplication: {
+        acquire: async () => true, renew: async () => true,
+        release: async () => { releases += 1; return true; },
+      },
+      sleepImpl: abortingSleep(controller), signal: controller.signal,
+    });
+    assert.equal(releases, 1);
+  }
+});

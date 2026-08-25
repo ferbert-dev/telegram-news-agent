@@ -84,7 +84,7 @@ export class HandleTelegramControlUpdateUseCase
           this.validateRequest(request);
           await this.requireAdmin(request);
           this.throwIfAborted(signal);
-          const outcome = await this.route(request, claim.claim_token);
+          const outcome = await this.route(request, claim.claim_token, signal);
           this.throwIfAborted(signal);
           await present(outcome);
           this.throwIfAborted(signal);
@@ -216,20 +216,21 @@ export class HandleTelegramControlUpdateUseCase
   private route(
     request: TelegramControlRequest,
     updateClaimToken: string,
+    signal?: AbortSignal,
   ): Promise<TelegramControlOutcome> {
     switch (request.route.kind) {
       case "news":
-        return this.news.execute(request, updateClaimToken);
+        return this.news.execute(request, updateClaimToken, signal);
       case "review":
-        return this.review.execute(request);
+        return this.review.execute(request, signal);
       case "settings":
-        return this.settings.execute(request);
+        return this.settings.execute(request, signal);
       case "labs":
-        return this.labs.execute(request);
+        return this.labs.execute(request, signal);
       case "stats":
-        return this.stats.execute(request);
+        return this.stats.execute(request, signal);
       case "status":
-        return this.status.execute(request);
+        return this.status.execute(request, signal);
       case "malformed":
         throw new TelegramControlError(request.route.errorCode, "Malformed callback");
     }
