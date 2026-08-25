@@ -21,7 +21,7 @@ operator controls, Oracle deployment, and auditable agent engineering.
 | Area | Current state |
 | --- | --- |
 | Runtime | Oracle-hosted Node.js service with PostgreSQL-backed polling and scheduling |
-| Release | [`f0afa2e`](https://github.com/ferbert-dev/telegram-news-agent/commit/f0afa2ecdb889024f454e6d1aa6fad15dd53faff), deployed and independently inspected on 2026-08-21 |
+| Release | [`721ff79`](https://github.com/ferbert-dev/telegram-news-agent/commit/721ff791332635350c0869a2333ed00b33f27057), deployed and independently inspected on 2026-08-26; production still runs `src/telegram-bot.js` |
 | Research | RSS/Atom, Google News resolution, GDELT, and bounded Exa detail/fact search |
 | AI | OpenAI and Gemini structured generation with Exa as the retrieval-first research provider |
 | Control | Private Telegram `/news`, `/settings`, `/labs`, `/stats`, and `/status` workflows |

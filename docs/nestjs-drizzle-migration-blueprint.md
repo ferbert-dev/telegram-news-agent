@@ -262,6 +262,39 @@ The additive NestJS runtime foundation now uses `NestFactory.createApplicationCo
 
 This foundation is intentionally not a production composition root. It registers no Telegram poller, scheduler, durable news worker, readiness protocol, or Docker command, and `src/telegram-bot.js` remains the production entrypoint until the later worker, packaging, parity, and cutover gates pass.
 
+### Verified Telegram polling worker
+
+The additive Nest polling worker is implemented and included in the deployed
+image, but is not activated by the production composition root. Its lifecycle
+is finite and cancellation-aware: startup acquires the Telegram control lease,
+sets up the background polling loop, and becomes ready after lease acquisition
+and loop setup. Shutdown stops new claims, cancels the active request, and
+releases the lease. `stop()` is idempotent and safe before, during, or after
+`start()`.
+
+The worker uses the `telegram-control-poller` lease with a 60-second TTL, a
+20-second heartbeat interval, and a 70-second PostgreSQL lease-acquire timeout.
+An HTTP 409 from Telegram `getUpdates` is fatal rather than retried as a
+transient condition. Update claim/finalize uses claim-token compare-and-set;
+lease renew/release is separately owner-fenced. The persisted offset advances
+only after `finishTelegramUpdate` returns `true`, preventing a stale worker from
+acknowledging another worker's updates. The polling request has a real
+cancellation path, including aborting an in-flight request during shutdown.
+
+Review delivery is two-phase: Telegram sends the preview without inline
+controls; the returned message id is durably created or rebound to a review
+session; only then does `restoreControls` activate the buttons. An ambiguous
+response can therefore leave only an inert preview. These are shipped worker
+guarantees, not proof of production activation or full Nest runtime parity.
+
+Remaining gates are the scheduler worker and readiness contract, emitted-build
+and container smoke evidence, clean-database and runtime parity for manual and
+scheduled flows, rollback rehearsal, and a separately authorized one-poller
+cutover. Until those gates pass, production continues to run
+`src/telegram-bot.js`; the legacy runtime and rollback path must remain
+available. Full Nest runtime activation and legacy retirement are plans, not
+shipped behavior.
+
 ## Verification matrix
 
 | Gate | Required evidence |
