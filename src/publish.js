@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 
 import { evaluateFinalPublicationPolicy } from "./publication-policy.js";
-import { sendTelegramMessage, TelegramError } from "./telegram.js";
+import {
+  boldArticleTitleEntities,
+  sendTelegramMessage,
+  TelegramError,
+} from "./telegram.js";
 
 function editorFromDraft(draft) {
   try {
@@ -176,6 +180,7 @@ export async function publishApprovedDraft({
       channelId,
       text: claimedDraft.body,
       disableNotification: false,
+      entities: boldArticleTitleEntities(claimedDraft.body),
     });
   } catch (error) {
     if (error instanceof TelegramError) {

@@ -94,6 +94,21 @@ test("validateGroundedDraft deterministically appends validated source URLs", ()
   );
 });
 
+test("validateGroundedDraft inserts the structured headline as the first article line", () => {
+  const result = validateGroundedDraft(
+    structuredDraft({
+      headline: "The small change that could reshape research",
+      telegramText: `A grounded summary explains what changed.\n\nSources:\n${SOURCE_URL}`,
+    }),
+    [{ url: SOURCE_URL, primary: true }],
+  );
+
+  assert.equal(
+    result.telegramText,
+    `The small change that could reshape research\n\nA grounded summary explains what changed.\n\nSources:\n${SOURCE_URL}`,
+  );
+});
+
 test("validateGroundedDraft appends localized source headings", () => {
   const result = validateGroundedDraft(
     structuredDraft({
@@ -157,6 +172,11 @@ test("generateDraft stores a review draft and advances article state", async () 
     models: {
       async generateContent(request) {
         assert.equal(request.model, "gemini-2.5-flash");
+        assert.match(request.config.systemInstruction, /hook\s+headline/);
+        assert.match(
+          request.config.systemInstruction,
+          /begin telegramText with that exact headline/,
+        );
         return { text: JSON.stringify(structuredDraft()) };
       },
     },
@@ -302,7 +322,7 @@ ${SOURCE_URL}`;
     if (state === "enabled") {
       assert.match(stored.body, /changes the clock/);
       assert.equal(stored.model, "configured-editor-model");
-      assert.match(stored.prompt_version, /editorial-enrichment-v2$/);
+      assert.match(stored.prompt_version, /editorial-enrichment-v3$/);
     } else {
       assert.match(stored.body, /AI agents move forward/);
       assert.equal(stored.model, "configured-baseline-model");
@@ -835,7 +855,7 @@ test("generateDraft labels explicitly allowed community evidence as unverified",
   });
 
   assert.match(result.saved.body, /^UNVERIFIED TREND/);
-  assert.equal(result.saved.prompt_version, "telegram-unverified-trend-v2");
+  assert.equal(result.saved.prompt_version, "telegram-unverified-trend-v3");
 });
 
 test("generateDraft labels extracted web reporting without a rumor prefix", async () => {
@@ -878,7 +898,7 @@ test("generateDraft labels extracted web reporting without a rumor prefix", asyn
   });
 
   assert.doesNotMatch(result.saved.body, /^UNVERIFIED TREND/);
-  assert.equal(result.saved.prompt_version, "telegram-web-grounded-v1");
+  assert.equal(result.saved.prompt_version, "telegram-web-grounded-v2");
   assert.equal(
     JSON.parse(stored.reviewer_notes).verification_status,
     "web_source",
@@ -924,7 +944,7 @@ test("generateDraft records blocked-page web search evidence separately", async 
   assert.doesNotMatch(result.saved.body, /^UNVERIFIED TREND/);
   assert.equal(
     result.saved.prompt_version,
-    "telegram-web-search-grounded-v1",
+    "telegram-web-search-grounded-v2",
   );
   assert.equal(
     JSON.parse(stored.reviewer_notes).verification_status,

@@ -30,8 +30,15 @@ test("LegacyEditorialPublicationGateway maps a successful send into a typed rece
   let sendArgs: unknown;
   const dependencies: LegacyEditorialPublicationGatewayDependencies = {
     token: "legacy-token",
-    sendMessage: async (token, channelId, text, disableNotification, signal) => {
-      sendArgs = { token, channelId, text, disableNotification, signal };
+    sendMessage: async (
+      token,
+      channelId,
+      text,
+      disableNotification,
+      signal,
+      entities,
+    ) => {
+      sendArgs = { token, channelId, text, disableNotification, signal, entities };
       return { message_id: "82", date: 1720000000 };
     },
   };
@@ -47,6 +54,13 @@ test("LegacyEditorialPublicationGateway maps a successful send into a typed rece
     text: BASE_INPUT.content.text,
     disableNotification: false,
     signal: undefined,
+    entities: [
+      {
+        type: "bold",
+        offset: 0,
+        length: BASE_INPUT.content.text.length,
+      },
+    ],
   });
   assert.deepEqual(receipt, { messageId: 82, messageDate: 1720000000 });
 });

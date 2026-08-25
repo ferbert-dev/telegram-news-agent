@@ -34,6 +34,7 @@ and records it in the usage ledger.
 ## Portfolio Highlights
 
 - Evidence-grounded editorial enrichment with claim-to-source mapping.
+- Reader-focused factual hook titles rendered in bold on every new article.
 - RSS/GDELT-first discovery that reserves web search for bounded recovery and
   material article details.
 - OpenAI, Gemini, and Exa provider fallback with per-operation usage accounting.

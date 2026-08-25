@@ -28,9 +28,10 @@ Use only the supplied primary-source evidence. Do not add facts from memory.
 Write like one person explaining the news to another person. Use clear B1-level
 language, short sentences, common words, and no marketing language or technical
 jargon unless it is essential. Write 60-100 words and no more than five
-sentences, excluding the source URL lines. Open with a short, factual hook that
-explains why this matters to readers, then include:
-- a plain-text headline
+sentences, excluding the source URL lines. Create a concise, factual hook
+headline that makes readers curious without exaggeration or clickbait. Return
+it in headline and begin telegramText with that exact headline on its own first
+line. Then include:
 - what happened
 - why it matters in everyday language
 - one clear caveat about uncertainty or source limitations
@@ -43,10 +44,12 @@ The supplied evidence is an unverified community post or rumor. Do not add facts
 from memory and do not present its claims as confirmed. Write like one person
 explaining the discussion to another person. Use clear B1-level language, short
 sentences, and common words. Write 60-100 words and no more than five sentences,
-excluding source URL lines. Start with a short, factual hook. Explain what
-people are discussing, why it may matter if true, and what proof is still
-missing. Attribute every claim to the community source. Include a strong caveat
-and source URLs.`;
+excluding source URL lines. Create a concise, factual hook headline that makes
+readers curious without presenting the rumor as confirmed. Return it in
+headline and begin telegramText with that exact headline on its own first line.
+Then explain what people are discussing, why it may matter if true, and what
+proof is still missing. Attribute every claim to the community source. Include
+a strong caveat and source URLs.`;
 
 const WEB_SOURCE_SYSTEM_PROMPT = `You are the editor of a concise general-interest news channel.
 The supplied evidence was extracted from a direct web article found through
@@ -54,10 +57,12 @@ live internet search. It may be reputable reporting, but it is not necessarily
 a first-party announcement. Use only the supplied article evidence and do not
 add facts from memory. Attribute claims to the named publisher. Use clear B1-level
 language, short sentences, common words, and no marketing language. Write 60-100
-words and no more than five sentences, excluding source URL lines. Start with a
-short, factual hook, then explain what happened, why it matters, and one clear
-caveat about source limitations. Include the direct article URL at the end. Do
-not call the report independently verified.`;
+words and no more than five sentences, excluding source URL lines. Create a
+concise, factual hook headline that makes readers curious without exaggeration
+or clickbait. Return it in headline and begin telegramText with that exact
+headline on its own first line. Then explain what happened, why it matters, and
+one clear caveat about source limitations. Include the direct article URL at
+the end. Do not call the report independently verified.`;
 
 const WEB_SEARCH_SUMMARY_SYSTEM_PROMPT = `You are the editor of a concise general-interest news channel.
 The supplied evidence is a web-grounded summary returned by live internet
@@ -65,10 +70,12 @@ search because the publisher page could not be extracted. Use only the supplied
 summary and do not add facts from memory. Attribute every claim to the named
 publisher and link the direct article URL. Use clear B1-level language, short
 sentences, and common words. Write 60-100 words and no more than five sentences,
-excluding source URL lines. Start with a short, factual hook, then explain what
-was reported and why it may matter. Include a clear caveat that the publisher
-page could not be independently read by this bot. Do not present the report as
-independently verified.`;
+excluding source URL lines. Create a concise, factual hook headline that makes
+readers curious without exaggeration or clickbait. Return it in headline and
+begin telegramText with that exact headline on its own first line. Then explain
+what was reported and why it may matter. Include a clear caveat that the
+publisher page could not be independently read by this bot. Do not present the
+report as independently verified.`;
 
 const SOURCE_HEADINGS = Object.freeze({
   en: "Sources",
@@ -103,6 +110,19 @@ function proseMetrics(text) {
   return { words, sentences };
 }
 
+function withHeadlineFirst(telegramText, headline) {
+  const normalizedHeadline = String(headline ?? "").trim();
+  if (!normalizedHeadline) {
+    throw new Error("Draft headline is required");
+  }
+  const normalizedText = String(telegramText ?? "").trim();
+  const [firstLine] = normalizedText.split(/\r?\n/u, 1);
+  if (firstLine.trim() === normalizedHeadline) {
+    return `${normalizedHeadline}${normalizedText.slice(firstLine.length)}`;
+  }
+  return `${normalizedHeadline}\n\n${normalizedText}`;
+}
+
 function editorialEnrichmentState(value) {
   const state = value?.state;
   return state === "collect" || state === "enabled" ? state : "off";
@@ -118,13 +138,24 @@ function completeDraft({
 }) {
   const unverifiedPrefix = UNVERIFIED_PREFIXES[languageCode];
   const draft = unverified
-    ? TelegramDraft.parse({
-        ...grounded,
-        topicTags,
-        telegramText: grounded.telegramText.startsWith(unverifiedPrefix)
-          ? grounded.telegramText
-          : `${unverifiedPrefix}\n\n${grounded.telegramText}`,
-      })
+    ? (() => {
+        const headline = Array.from(
+          grounded.headline.startsWith(unverifiedPrefix)
+            ? grounded.headline
+            : `${unverifiedPrefix}: ${grounded.headline}`,
+        )
+          .slice(0, 120)
+          .join("");
+        const prose = grounded.telegramText.slice(
+          grounded.telegramText.split(/\r?\n/u, 1)[0].length,
+        );
+        return TelegramDraft.parse({
+          ...grounded,
+          headline,
+          topicTags,
+          telegramText: `${headline}${prose}`,
+        });
+      })()
     : TelegramDraft.parse({ ...grounded, topicTags });
   const creditedDraft = TelegramDraft.parse({
     ...draft,
@@ -180,9 +211,10 @@ export function validateGroundedDraft(
   const missingUrls = sourceUrls.filter(
     (sourceUrl) => !parsed.telegramText.includes(sourceUrl),
   );
+  const titledText = withHeadlineFirst(parsed.telegramText, parsed.headline);
   const telegramText = missingUrls.length
-    ? `${parsed.telegramText.trim()}\n\n${SOURCE_HEADINGS[languageCode]}:\n${missingUrls.join("\n")}`
-    : parsed.telegramText;
+    ? `${titledText}\n\n${SOURCE_HEADINGS[languageCode]}:\n${missingUrls.join("\n")}`
+    : titledText;
   const normalized = TelegramDraft.parse({
     ...parsed,
     telegramText,
@@ -433,12 +465,12 @@ export async function generateDraft({
     selectedVersion === "enriched" ? enrichment.model : generated.model;
 
   const promptVersion = unverified
-    ? "telegram-unverified-trend-v2"
+    ? "telegram-unverified-trend-v3"
     : verificationStatus === "web_search_summary"
-      ? "telegram-web-search-grounded-v1"
+      ? "telegram-web-search-grounded-v2"
       : verificationStatus === "web_source"
-        ? "telegram-web-grounded-v1"
-        : "telegram-grounded-v2";
+        ? "telegram-web-grounded-v2"
+        : "telegram-grounded-v3";
 
   const saved = await repository.createReviewDraft({
     article_id: article.id,
@@ -447,7 +479,7 @@ export async function generateDraft({
     model: selectedModel,
     prompt_version:
       selectedVersion === "enriched"
-        ? `${promptVersion}+editorial-enrichment-v2`
+        ? `${promptVersion}+editorial-enrichment-v3`
         : promptVersion,
     reviewer_notes: JSON.stringify({
       headline: completedDraft.headline,
