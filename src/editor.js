@@ -5,6 +5,12 @@ export const DEFAULT_NEWS_EDITOR = Object.freeze({
   name: "Михаил Онест",
 });
 
+const DEFAULT_EDITOR_LOCALIZED_NAMES = Object.freeze({
+  en: "Michail Honest",
+  de: "Michail Honest",
+  uk: "Michail Honest",
+});
+
 const BYLINE = Object.freeze({
   en: (name) => `Found and prepared for you by ${name}`,
   uk: (name) => `Знайшов і підготував для вас: ${name}`,
@@ -23,8 +29,19 @@ export function getNewsEditor(env = process.env) {
   return Object.freeze({ key, name });
 }
 
+export function getEditorDisplayName(editor, languageCode = "en") {
+  const isDefaultEditor =
+    editor.key === DEFAULT_NEWS_EDITOR.key && editor.name === DEFAULT_NEWS_EDITOR.name;
+  return isDefaultEditor
+    ? (DEFAULT_EDITOR_LOCALIZED_NAMES[languageCode] ??
+        DEFAULT_EDITOR_LOCALIZED_NAMES.en)
+    : editor.name;
+}
+
 export function appendEditorCredit(text, editor, languageCode = "en") {
-  const byline = (BYLINE[languageCode] ?? BYLINE.en)(editor.name);
+  const byline = (BYLINE[languageCode] ?? BYLINE.en)(
+    getEditorDisplayName(editor, languageCode),
+  );
   if (text.includes(byline)) return text;
   const sourceHeading = /\n\s*(Sources?|Quellen?|Джерела|Джерело):\s*\n/iu;
   const match = sourceHeading.exec(text);
