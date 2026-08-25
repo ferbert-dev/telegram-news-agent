@@ -175,6 +175,10 @@ test("runPipeline researches and creates a review draft without publishing", asy
               "New model\n\nVerified report.\n\nSource: https://example.com/news",
             claims: [
               {
+                text: "New model",
+                sourceUrl: "https://example.com/news",
+              },
+              {
                 text: "A model was announced.",
                 sourceUrl: "https://example.com/news",
               },
@@ -281,6 +285,10 @@ test("runPipeline carries configured topics and language through research and dr
           telegramText:
             "Neue Forschung\n\nEine Quelle meldet neue Forschung.\n\nQuellen:\nhttps://example.com/news",
           claims: [
+            {
+              text: "Neue Forschung",
+              sourceUrl: "https://example.com/news",
+            },
             {
               text: "Eine Quelle meldet neue Forschung.",
               sourceUrl: "https://example.com/news",

@@ -73,15 +73,30 @@ export function validateMessage(text) {
   return text.trim();
 }
 
+export function boldArticleTitleEntities(text) {
+  const validatedText = validateMessage(text);
+  const lineBreak = validatedText.indexOf("\n");
+  const firstLine = validatedText
+    .slice(0, lineBreak === -1 ? undefined : lineBreak)
+    .replace(/\r$/u, "");
+  return firstLine
+    ? [{ type: "bold", offset: 0, length: firstLine.length }]
+    : [];
+}
+
 export async function sendTelegramMessage({
   token,
   channelId,
   text,
   disableNotification = false,
+  entities,
 }) {
-  return callTelegram(token, "sendMessage", {
+  const validatedText = validateMessage(text);
+  const body = {
     chat_id: channelId,
-    text: validateMessage(text),
+    text: validatedText,
     disable_notification: disableNotification,
-  });
+  };
+  if (entities?.length) body.entities = entities;
+  return callTelegram(token, "sendMessage", body);
 }

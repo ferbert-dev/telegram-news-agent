@@ -116,9 +116,16 @@ test("publishApprovedDraft classifies and meters exact outbound content before t
     channelId: "@channel",
     draftId: POLICY_DRAFT.id,
     publicationPath: "manual_review",
-    sendMessage: async ({ text }) => {
+    sendMessage: async ({ text, entities }) => {
       calls.push("send");
       assert.equal(text, POLICY_DRAFT.body);
+      assert.deepEqual(entities, [
+        {
+          type: "bold",
+          offset: 0,
+          length: POLICY_DRAFT.body.split("\n", 1)[0].length,
+        },
+      ]);
       return { message_id: 42, date: 123 };
     },
   });

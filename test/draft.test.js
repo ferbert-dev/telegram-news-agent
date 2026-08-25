@@ -21,10 +21,15 @@ Source:
 ${SOURCE_URL}`;
 
 function structuredDraft(overrides = {}) {
+  const headline = overrides.headline ?? "AI agents move forward";
   return {
-    headline: "AI agents move forward",
+    headline,
     telegramText: TELEGRAM_TEXT,
-    claims: [
+    claims: overrides.claims ?? [
+      {
+        text: headline,
+        sourceUrl: SOURCE_URL,
+      },
       {
         text: "A primary source announced a new AI agent.",
         sourceUrl: SOURCE_URL,
@@ -94,6 +99,40 @@ test("validateGroundedDraft deterministically appends validated source URLs", ()
   );
 });
 
+test("validateGroundedDraft inserts the structured headline as the first article line", () => {
+  const result = validateGroundedDraft(
+    structuredDraft({
+      headline: "The small change that could reshape research",
+      telegramText: `A grounded summary explains what changed.\n\nSources:\n${SOURCE_URL}`,
+    }),
+    [{ url: SOURCE_URL, primary: true }],
+  );
+
+  assert.equal(
+    result.telegramText,
+    `The small change that could reshape research\n\nA grounded summary explains what changed.\n\nSources:\n${SOURCE_URL}`,
+  );
+});
+
+test("validateGroundedDraft rejects a headline without an exact source-linked claim", () => {
+  assert.throws(
+    () =>
+      validateGroundedDraft(
+        structuredDraft({
+          headline: "Scientists confirm an unsupported cure",
+          claims: [
+            {
+              text: "A primary source announced a new AI agent.",
+              sourceUrl: SOURCE_URL,
+            },
+          ],
+        }),
+        [{ url: SOURCE_URL, primary: true }],
+      ),
+    /headline must be an exact source-linked claim/,
+  );
+});
+
 test("validateGroundedDraft appends localized source headings", () => {
   const result = validateGroundedDraft(
     structuredDraft({
@@ -157,6 +196,15 @@ test("generateDraft stores a review draft and advances article state", async () 
     models: {
       async generateContent(request) {
         assert.equal(request.model, "gemini-2.5-flash");
+        assert.match(request.config.systemInstruction, /hook\s+headline/);
+        assert.match(
+          request.config.systemInstruction,
+          /begin telegramText with that exact headline/,
+        );
+        assert.match(
+          request.config.systemInstruction,
+          /exact headline as one claims item/,
+        );
         return { text: JSON.stringify(structuredDraft()) };
       },
     },
@@ -249,6 +297,12 @@ ${SOURCE_URL}`;
               }),
               evidenceMap: [
                 {
+                  claim: "A result that changes the clock",
+                  sourceUrl: SOURCE_URL,
+                  evidenceExcerpt:
+                    "A primary source announced a new AI agent.",
+                },
+                {
                   claim: "A primary source announced a new AI agent.",
                   sourceUrl: SOURCE_URL,
                   evidenceExcerpt:
@@ -302,7 +356,7 @@ ${SOURCE_URL}`;
     if (state === "enabled") {
       assert.match(stored.body, /changes the clock/);
       assert.equal(stored.model, "configured-editor-model");
-      assert.match(stored.prompt_version, /editorial-enrichment-v2$/);
+      assert.match(stored.prompt_version, /editorial-enrichment-v4$/);
     } else {
       assert.match(stored.body, /AI agents move forward/);
       assert.equal(stored.model, "configured-baseline-model");
@@ -835,7 +889,7 @@ test("generateDraft labels explicitly allowed community evidence as unverified",
   });
 
   assert.match(result.saved.body, /^UNVERIFIED TREND/);
-  assert.equal(result.saved.prompt_version, "telegram-unverified-trend-v2");
+  assert.equal(result.saved.prompt_version, "telegram-unverified-trend-v4");
 });
 
 test("generateDraft labels extracted web reporting without a rumor prefix", async () => {
@@ -878,7 +932,7 @@ test("generateDraft labels extracted web reporting without a rumor prefix", asyn
   });
 
   assert.doesNotMatch(result.saved.body, /^UNVERIFIED TREND/);
-  assert.equal(result.saved.prompt_version, "telegram-web-grounded-v1");
+  assert.equal(result.saved.prompt_version, "telegram-web-grounded-v3");
   assert.equal(
     JSON.parse(stored.reviewer_notes).verification_status,
     "web_source",
@@ -924,7 +978,7 @@ test("generateDraft records blocked-page web search evidence separately", async 
   assert.doesNotMatch(result.saved.body, /^UNVERIFIED TREND/);
   assert.equal(
     result.saved.prompt_version,
-    "telegram-web-search-grounded-v1",
+    "telegram-web-search-grounded-v3",
   );
   assert.equal(
     JSON.parse(stored.reviewer_notes).verification_status,
@@ -939,6 +993,10 @@ test("generateDraft requests German output without changing grounding rules", as
     headline: "Neue Entdeckung",
     telegramText: `Neue Entdeckung\n\nEine Quelle meldet eine Entdeckung.\n\nQuellen:\n${SOURCE_URL}`,
     claims: [
+      {
+        text: "Neue Entdeckung",
+        sourceUrl: SOURCE_URL,
+      },
       {
         text: "Eine Quelle meldet eine Entdeckung.",
         sourceUrl: SOURCE_URL,
@@ -995,6 +1053,10 @@ test("unverified warning prefix is localized for Ukrainian output", async () => 
             telegramText: `Неперевірена новина\n\nСпільнота обговорює можливу подію.\n\nДжерела:\n${SOURCE_URL}`,
             claims: [
               {
+                text: "Неперевірена новина",
+                sourceUrl: SOURCE_URL,
+              },
+              {
                 text: "Спільнота обговорює можливу подію.",
                 sourceUrl: SOURCE_URL,
               },
@@ -1029,4 +1091,47 @@ test("unverified warning prefix is localized for Ukrainian output", async () => 
   });
 
   assert.match(result.saved.body, /^НЕПЕРЕВІРЕНИЙ ТРЕНД/);
+});
+
+test("unverified headline prefix stays within the UTF-16 contract for emoji", async () => {
+  const headline = "🚀".repeat(55);
+  const result = await generateDraft({
+    aiProvider: {
+      async generateStructured() {
+        return {
+          value: structuredDraft({
+            headline,
+            telegramText: `${headline}\n\nA community source discusses a possible event.\n\nSources:\n${SOURCE_URL}`,
+            claims: [{ text: headline, sourceUrl: SOURCE_URL }],
+          }),
+          provider: "openai",
+          model: "gpt-5.4-2026-03-05",
+        };
+      },
+    },
+    repository: {
+      async createReviewDraft(draft) {
+        return { id: "draft-emoji-rumor", ...draft };
+      },
+    },
+    article: {
+      id: "article-emoji-rumor",
+      title: "Emoji rumor",
+      canonical_url: SOURCE_URL,
+    },
+    evidence: [
+      {
+        url: SOURCE_URL,
+        primary: false,
+        verificationStatus: "unverified_community",
+        text: "Community claim",
+      },
+    ],
+    allowUnverified: true,
+  });
+
+  const notes = JSON.parse(result.saved.reviewer_notes);
+  assert.equal(notes.headline.length, 120);
+  assert.doesNotMatch(notes.headline, /[\uD800-\uDBFF]$/u);
+  assert.match(result.saved.body, /^UNVERIFIED TREND:/u);
 });

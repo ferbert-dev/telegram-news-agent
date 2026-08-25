@@ -4,7 +4,12 @@ import {
   type EditorialPublicationRequest,
   PublicationDeliveryError,
 } from "./editorial-application.contracts.js";
-import { TelegramError, callTelegram, validateMessage } from "../telegram.js";
+import {
+  boldArticleTitleEntities,
+  TelegramError,
+  callTelegram,
+  validateMessage,
+} from "../telegram.js";
 
 type LegacyPublicationDependencies = {
   token: string;
@@ -16,6 +21,7 @@ type SendMessage = (
   text: string,
   disableNotification: boolean,
   signal?: AbortSignal,
+  entities?: Array<{ type: string; offset: number; length: number }>,
 ) => Promise<{
   message_id?: unknown;
   date?: number | null;
@@ -27,6 +33,7 @@ async function defaultSendMessage(
   text: string,
   disableNotification: boolean,
   signal?: AbortSignal,
+  entities?: Array<{ type: string; offset: number; length: number }>,
 ) {
   // Preserve the legacy local rejection boundary while sending the exact
   // content that the application classified and atomically claimed.
@@ -43,6 +50,7 @@ async function defaultSendMessage(
       chat_id: channelId,
       text,
       disable_notification: disableNotification,
+      ...(entities?.length ? { entities } : {}),
     },
     signal ? { signal } : undefined,
   ) as Promise<{ message_id?: unknown; date?: number | null }>;
@@ -78,6 +86,7 @@ export class LegacyEditorialPublicationGateway
         request.text,
         request.disableNotification,
         signal,
+        boldArticleTitleEntities(request.text),
       );
       const messageId = Number(sent?.message_id);
       if (!Number.isSafeInteger(messageId) || messageId <= 0) {

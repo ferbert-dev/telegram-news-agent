@@ -89,6 +89,10 @@ function fixture() {
               telegramText: "Article\n\nhttps://example.com/news",
               claims: [
                 {
+                  text: "Article",
+                  sourceUrl: "https://example.com/news",
+                },
+                {
                   text: "A primary source published an update.",
                   sourceUrl: "https://example.com/news",
                 },

@@ -1,11 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  boldArticleTitleEntities,
   callTelegram,
   TELEGRAM_MESSAGE_MAX_LENGTH,
   TelegramError,
   validateMessage,
 } from "../src/telegram.js";
+
+test("boldArticleTitleEntities bolds the first line using Telegram UTF-16 offsets", () => {
+  const title = "🚀 Новина, яку варто прочитати";
+  assert.deepEqual(
+    boldArticleTitleEntities(`${title}\n\nОсновний текст.`),
+    [{ type: "bold", offset: 0, length: title.length }],
+  );
+});
 
 test("validateMessage trims valid text", () => {
   assert.equal(validateMessage("  AI news update  "), "AI news update");
