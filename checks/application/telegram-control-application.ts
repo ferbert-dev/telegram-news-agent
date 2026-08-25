@@ -23,7 +23,10 @@ import type {
   TelegramReviewSessionsPersistence,
   TelegramUpdatesPersistence,
 } from "../../src/telegram/telegram-persistence.contracts.js";
-import type { EditorialWorkflowApplicationPort } from "../../src/editorial/editorial-application.contracts.js";
+import type {
+  EditorialWorkflowApplicationPort,
+  PublishApprovedDraftInput,
+} from "../../src/editorial/editorial-application.contracts.js";
 import type {
   DraftRow,
   EditorialPersistence,
@@ -808,4 +811,28 @@ test("winning review controls stay disabled across reject, definitive publish fa
     );
     assert.deepEqual(calls, ["decision", "disable", "answer:Publishing...", "publish"]);
   }
+
+  calls.length = 0;
+  const controller = new AbortController();
+  let receivedSignal: AbortSignal | undefined;
+  const unresolved = new DecideTelegramReviewUseCase(
+    decision("publish"),
+    asWorkflow({
+      async publishApprovedDraft(input: PublishApprovedDraftInput) {
+        calls.push("publish");
+        receivedSignal = input.signal;
+        controller.abort("telegram-send-started");
+        throw new Error(
+          "Publication outcome is unresolved; draft remains in publishing state for manual reconciliation",
+        );
+      },
+    }),
+    presentation,
+  );
+  await assert.rejects(
+    unresolved.execute(request("publish"), controller.signal),
+    (error) => error instanceof TelegramControlError && error.code === "publication_unresolved",
+  );
+  assert.strictEqual(receivedSignal, controller.signal);
+  assert.deepEqual(calls, ["decision", "disable", "answer:Publishing...", "publish"]);
 });
