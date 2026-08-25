@@ -275,10 +275,12 @@ public hashtag text. Labs changes apply immediately and `Done & close` removes
 the inline keyboard. Story connections are intentionally left as a planned V2
 feature until the tag history has been evaluated.
 
-New drafts include a localized editorial credit for `NEWS_EDITOR_NAME` and store
-the stable `NEWS_EDITOR_KEY` in draft/publication metadata. The defaults identify
-the first editor as `Михаил Онест`; changing both environment values later adds
-a distinct editor identity without rewriting historical posts.
+New drafts include a localized editorial credit and store the stable
+`NEWS_EDITOR_KEY` plus canonical `NEWS_EDITOR_NAME` in draft/publication metadata.
+The default editor is rendered as `Mikhail Honest` in English and German articles
+and as `Mykhailo Chesnyi` in Ukrainian articles. A custom configured editor name
+is rendered unchanged; changing both environment values later adds a distinct
+editor identity without rewriting historical posts.
 
 The embedded scheduler polls for due database rows and atomically claims one
 run at a time. It rereads a complete configuration snapshot before each search,
