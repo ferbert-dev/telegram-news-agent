@@ -15,10 +15,11 @@ export class GetTelegramStatsUseCase {
     private readonly stats: TelegramControlFeatureGateway,
   ) {}
 
-  execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
     if (request.route.kind !== "stats") {
       throw new TelegramControlError("malformed_command", "Expected stats route");
     }
-    return this.stats.execute(request);
+    return this.stats.execute(request, signal);
   }
 }

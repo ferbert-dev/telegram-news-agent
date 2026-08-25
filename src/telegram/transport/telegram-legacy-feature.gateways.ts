@@ -71,6 +71,44 @@ function callback(request: TelegramControlRequest, payload: CallbackPayload) {
   };
 }
 
+function abortableTelegramCall(
+  callTelegram: TelegramBotApiCall,
+  signal?: AbortSignal,
+): TelegramBotApiCall {
+  return async (token, method, payload) => {
+    signal?.throwIfAborted();
+    return callTelegram(token, method, payload, { signal });
+  };
+}
+
+function abortableDependency<T extends object>(dependency: T, signal?: AbortSignal): T {
+  if (!signal) return dependency;
+  return new Proxy(dependency, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        signal.throwIfAborted();
+        const result = value.apply(target, args);
+        if (!result || typeof (result as Promise<unknown>).then !== "function") {
+          signal.throwIfAborted();
+          return result;
+        }
+        return (result as Promise<unknown>).then(
+          (resolved) => {
+            signal.throwIfAborted();
+            return resolved;
+          },
+          (error) => {
+            signal.throwIfAborted();
+            throw error;
+          },
+        );
+      };
+    },
+  });
+}
+
 /** Reuses the verified legacy settings transport until its typed UI slice is extracted. */
 export class TelegramLegacySettingsGateway implements TelegramControlFeatureGateway {
   constructor(
@@ -85,7 +123,10 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
     },
   ) {}
 
-  async execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
+    const callTelegram = abortableTelegramCall(this.callTelegram, signal);
+    const repository = abortableDependency(this.repository, signal);
     if (request.route.kind !== "settings") {
       throw new TelegramControlError("malformed_command", "Expected settings route");
     }
@@ -95,9 +136,10 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
         channelId: this.channelId,
         chatId: request.chatId,
         userId: request.actorId,
-        repository: this.repository,
-        callTelegram: this.callTelegram,
+        repository,
+        callTelegram,
       });
+      signal?.throwIfAborted();
       return { status: "settings_ready", result };
     }
     if (request.route.action === "callback") {
@@ -109,10 +151,11 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
           token: this.token,
           channelId: this.channelId,
           userId: request.actorId,
-          repository: this.repository,
-          callTelegram: this.callTelegram,
+          repository,
+          callTelegram,
         },
       );
+      signal?.throwIfAborted();
       return { status: "settings_updated", result };
     }
     const payload = request.route.payload as Partial<SettingsInputPayload> | undefined;
@@ -134,10 +177,11 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
         token: this.token,
         channelId: this.channelId,
         userId: request.actorId,
-        repository: this.repository,
-        callTelegram: this.callTelegram,
+        repository,
+        callTelegram,
       },
     );
+    signal?.throwIfAborted();
     return { status: "settings_updated", result };
   }
 }
@@ -155,7 +199,10 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
     },
   ) {}
 
-  async execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
+    const callTelegram = abortableTelegramCall(this.callTelegram, signal);
+    const repository = abortableDependency(this.repository, signal);
     if (request.route.kind !== "labs") {
       throw new TelegramControlError("malformed_command", "Expected Labs route");
     }
@@ -165,9 +212,10 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
         channelId: this.channelId,
         chatId: request.chatId,
         userId: request.actorId,
-        repository: this.repository,
-        callTelegram: this.callTelegram,
+        repository,
+        callTelegram,
       });
+      signal?.throwIfAborted();
       return { status: "labs_ready", result };
     }
     const payload = callbackPayload(request.route.payload);
@@ -178,10 +226,11 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
         token: this.token,
         channelId: this.channelId,
         userId: request.actorId,
-        repository: this.repository,
-        callTelegram: this.callTelegram,
+        repository,
+        callTelegram,
       },
     );
+    signal?.throwIfAborted();
     return { status: "labs_updated", result };
   }
 }
@@ -197,7 +246,8 @@ export class TelegramLegacyStatsGateway implements TelegramControlFeatureGateway
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
     if (request.route.kind !== "stats") {
       throw new TelegramControlError("malformed_command", "Expected stats route");
     }
@@ -205,10 +255,11 @@ export class TelegramLegacyStatsGateway implements TelegramControlFeatureGateway
       token: this.token,
       channelId: this.channelId,
       chatId: request.chatId,
-      repository: this.repository,
-      callTelegram: this.callTelegram,
+      repository: abortableDependency(this.repository, signal),
+      callTelegram: abortableTelegramCall(this.callTelegram, signal),
       now: this.now,
     });
+    signal?.throwIfAborted();
     return { status: "stats_ready", dashboard };
   }
 }
@@ -232,7 +283,10 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
     private readonly cooldownStore: Map<string, number> = new Map(),
   ) {}
 
-  async execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
+    const callTelegram = abortableTelegramCall(this.callTelegram, signal);
+    const repository = abortableDependency(this.repository, signal);
     if (request.route.kind !== "status") {
       throw new TelegramControlError("malformed_command", "Expected status route");
     }
@@ -241,13 +295,14 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
         token: this.token,
         channelId: this.channelId,
         chatId: request.chatId,
-        repository: this.repository,
-        callTelegram: this.callTelegram,
+        repository,
+        callTelegram,
         providerNames: this.providerNames,
         appVersion: this.appVersion,
         now: this.now,
         timeZone: this.timeZone,
       });
+      signal?.throwIfAborted();
       return { status: "status_ready", dashboard };
     }
     const payload = callbackPayload(request.route.payload);
@@ -257,16 +312,17 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
       {
         token: this.token,
         channelId: this.channelId,
-        repository: this.repository,
-        callTelegram: this.callTelegram,
-        aiProvider: this.aiProvider,
+        repository,
+        callTelegram,
+        aiProvider: abortableDependency(this.aiProvider, signal),
         providerNames: this.providerNames,
         appVersion: this.appVersion,
         now: this.now,
         timeZone: this.timeZone,
-        cooldownStore: this.cooldownStore,
+        cooldownStore: abortableDependency(this.cooldownStore, signal),
       },
     );
+    signal?.throwIfAborted();
     return { status: "status_updated", result };
   }
 }

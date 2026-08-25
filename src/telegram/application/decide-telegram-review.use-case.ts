@@ -28,10 +28,12 @@ export class DecideTelegramReviewUseCase
     private readonly presentation: TelegramReviewPresentationGateway,
   ) {}
 
-  async execute(request: TelegramControlRequest): Promise<TelegramControlOutcome> {
+  async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
+    signal?.throwIfAborted();
     if (request.route.kind !== "review") {
       throw new TelegramControlError("malformed_callback", "Review route required");
     }
+    signal?.throwIfAborted();
     const route = request.route;
     let decision;
     try {
@@ -60,6 +62,7 @@ export class DecideTelegramReviewUseCase
         route.callbackId,
         "This draft was already rejected.",
         true,
+        signal,
       );
       return {
         status: "already_decided",
@@ -72,10 +75,11 @@ export class DecideTelegramReviewUseCase
       await this.presentation.disableControls({
         chatId: request.chatId,
         messageId: route.messageId,
+        signal,
       }).catch(() => undefined);
     }
     if (decision.decision === "reject") {
-      await this.answer(route.callbackId, "Draft rejected. Nothing was published.");
+      await this.answer(route.callbackId, "Draft rejected. Nothing was published.", false, signal);
       return {
         status: "rejected",
         draftId: decision.draft_id,
@@ -87,14 +91,18 @@ export class DecideTelegramReviewUseCase
     await this.answer(
       route.callbackId,
       decision.decision_won ? "Publishing..." : "Resuming publication...",
+      false,
+      signal,
     );
 
     let publication;
     try {
+      signal?.throwIfAborted();
       publication = await this.editorial.publishApprovedDraft({
         draftId: decision.draft_id,
         channelId: request.channelId,
         publicationPath: "manual_review",
+        signal,
       });
     } catch (error) {
       if (/unresolved/i.test(error instanceof Error ? error.message : "")) {
@@ -130,8 +138,14 @@ export class DecideTelegramReviewUseCase
     callbackId: string,
     text: string,
     showAlert = false,
+    signal?: AbortSignal,
   ): Promise<void> {
-    await this.presentation.answerCallback({ callbackId, text, showAlert })
-      .catch(() => undefined);
+    signal?.throwIfAborted();
+    try {
+      await this.presentation.answerCallback({ callbackId, text, showAlert, signal });
+    } catch {
+      signal?.throwIfAborted();
+    }
+    signal?.throwIfAborted();
   }
 }

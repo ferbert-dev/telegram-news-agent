@@ -100,7 +100,12 @@ test("deleted review message is replaced and ambiguous rebind response recovers 
     }),
     editorial(),
     {
-      async restoreControls() { calls.push(["restore"]); return "missing"; },
+      async restoreControls() {
+        calls.push(["restore"]);
+        return calls.filter((call) => (call as unknown[])[0] === "restore").length === 1
+          ? "missing"
+          : "available";
+      },
       async disableControls() { calls.push(["disable"]); },
       async answerCallback() { calls.push(["answer"]); },
       async sendReview(input) { calls.push(["send", input]); return { messageId: 56 }; },
@@ -128,6 +133,7 @@ test("deleted review message is replaced and ambiguous rebind response recovers 
     "restore",
     "send",
     "rebind",
+    "restore",
   ]);
 });
 
@@ -149,7 +155,7 @@ test("new review sends the selected preview before persisting the exact bound se
     }),
     editorial(),
     {
-      async restoreControls() { throw new Error("unused"); },
+      async restoreControls() { calls.push(["restore"]); return "available"; },
       async disableControls() {},
       async answerCallback() {},
       async sendReview(input) { calls.push(["send", input]); return { messageId: 56 }; },
@@ -167,7 +173,7 @@ test("new review sends the selected preview before persisting the exact bound se
   });
   assert.equal(result.status, "review_ready");
   assert.equal(result.sessionId, sessionId);
-  assert.deepEqual(calls.map((call) => (call as unknown[])[0]), ["send", "create"]);
+  assert.deepEqual(calls.map((call) => (call as unknown[])[0]), ["send", "create", "restore"]);
   assert.deepEqual((calls[1] as unknown[])[1], {
     id: sessionId,
     draft_id: DRAFT.id,

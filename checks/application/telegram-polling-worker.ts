@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { TelegramControlError } from "../../src/telegram/telegram-application.contracts.js";
+import { HandleTelegramControlUpdateUseCase } from "../../src/telegram/application/handle-telegram-control-update.use-case.js";
+import { TelegramBotApiOutcomeRenderer } from "../../src/telegram/transport/telegram-bot-api.gateway.js";
+import { TelegramControlTransportHandler } from "../../src/telegram/transport/telegram-control-transport.handler.js";
 import { TelegramError } from "../../src/telegram.js";
 import {
   classifyTelegramUpdate,
@@ -348,6 +351,69 @@ test("lease loss aborts the transport handler and releases the owner", async () 
   assert.equal(releases, 1);
 });
 
+test("lease loss fences the real poller control route before Bot API presentation", async () => {
+  const controller = new AbortController();
+  const heartbeatGate = createDeferred<void>();
+  const routeGate = createDeferred<void>();
+  const updates = createUpdatesPersistence();
+  let botCalls = 0;
+  let releases = 0;
+  const application = new HandleTelegramControlUpdateUseCase(
+    updates.updates,
+    { async isChannelAdmin() { return true; } },
+    { async run(_context, operation) { return operation(); } },
+    {
+      async execute(_request, _claimToken, signal) {
+        heartbeatGate.resolve();
+        signal?.addEventListener("abort", () => routeGate.resolve(), { once: true });
+        await routeGate.promise;
+        return { status: "no_candidates" };
+      },
+    },
+    { async execute() { throw new Error("unused review"); } },
+    { async execute() { throw new Error("unused settings"); } },
+    { async execute() { throw new Error("unused labs"); } },
+    { async execute() { throw new Error("unused stats"); } },
+    { async execute() { throw new Error("unused status"); } },
+  );
+  const transport = new TelegramControlTransportHandler(
+    { handle: (request, present, signal) => application.execute(request, present, signal) },
+    new TelegramBotApiOutcomeRenderer("token", async () => {
+      botCalls += 1;
+      return { message_id: 1 };
+    }),
+    { botUsername: "honest_bot", botId: 77, channelId: "@channel" },
+  );
+
+  await assert.rejects(
+    pollTelegramUpdates({
+      token: "token", leaseName: "telegram-control-poller", ownerId: "owner",
+      updates: updates.updates, transport,
+      callTelegram: async () => [{
+        update_id: 22,
+        message: { text: "/news", from: { id: 9 }, chat: { id: 10, type: "private" } },
+      }],
+      leaseApplication: {
+        acquire: async () => true,
+        renew: async () => false,
+        release: async () => { releases += 1; return true; },
+      },
+      sleepImpl: async (delayMs, _value, { signal } = {}) => {
+        if (delayMs === 1) return heartbeatGate.promise;
+        await new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      },
+      heartbeatIntervalMs: 1,
+      signal: controller.signal,
+    }),
+    PollingLeaseLostError,
+  );
+  assert.equal(botCalls, 0);
+  assert.equal(releases, 1);
+  assert.equal(updates.calls.filter((entry) => entry.type === "finish").length, 1);
+});
+
 test("an unfinished ignored update stays at its offset for redelivery", async () => {
   const controller = new AbortController();
   const updates = createUpdatesPersistence();
@@ -508,4 +574,45 @@ test("two polling workers share the atomic lease port and only one becomes ready
 
   assert.equal(owner, null);
   assert.equal(releases, 1);
+});
+
+test("own AbortError during lease, poll, and update retry sleeps completes cleanly", async () => {
+  const abortingSleep = (controller: AbortController) => async () => {
+    controller.abort("runtime-stop");
+    throw new DOMException("aborted", "AbortError");
+  };
+
+  const leaseController = new AbortController();
+  await pollTelegramUpdates({
+    token: "token", leaseName: "telegram-control-poller", ownerId: "lease",
+    updates: createUpdatesPersistence().updates,
+    transport: { handle: async () => ({ handled: true }) },
+    callTelegram: async () => { throw new Error("must not poll"); },
+    leaseApplication: { acquire: async () => false, renew: async () => true, release: async () => true },
+    sleepImpl: abortingSleep(leaseController), signal: leaseController.signal,
+  });
+
+  for (const mode of ["poll", "update"] as const) {
+    const controller = new AbortController();
+    let releases = 0;
+    const updates = createUpdatesPersistence();
+    await pollTelegramUpdates({
+      token: "token", leaseName: "telegram-control-poller", ownerId: mode,
+      updates: updates.updates,
+      transport: { handle: async () => {
+        if (mode === "update") throw new Error("retry update");
+        return { handled: true };
+      } },
+      callTelegram: async () => {
+        if (mode === "poll") throw new Error("retry poll");
+        return [{ update_id: 22, message: { text: "x" } }];
+      },
+      leaseApplication: {
+        acquire: async () => true, renew: async () => true,
+        release: async () => { releases += 1; return true; },
+      },
+      sleepImpl: abortingSleep(controller), signal: controller.signal,
+    });
+    assert.equal(releases, 1);
+  }
 });
