@@ -214,15 +214,25 @@ test("busy control updates retry with same offset before moving on", async () =>
       offsets.push(payload.offset as number);
       polls += 1;
       if (polls === 2) {
-        setTimeout(() => controller.abort(), 0);
+        controller.abort("stop-after-retry");
       }
       return [{ update_id: 12, message: { text: "x" } }];
     },
-    sleepImpl: async (delayMs) => {
-      // full-jitter retry delay should still be bounded and deterministic in this test
-      if (delayMs <= 1_000) {
-        assert.ok(delayMs >= 0 && delayMs <= 500);
+    sleepImpl: async (delayMs, _value, { signal } = {}) => {
+      if (delayMs === 60_000) {
+        // Keep the fake heartbeat dormant until shutdown. An immediate fake
+        // sleep would spin the heartbeat in microtasks and starve the timer
+        // which aborts this focused retry test.
+        await new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        });
+        return;
       }
+      // Yield to the event loop so the explicit test cancellation can run.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.ok(delayMs >= 0 && delayMs <= 500);
     },
     leaseApplication: {
       acquire: async () => true,
@@ -230,6 +240,7 @@ test("busy control updates retry with same offset before moving on", async () =>
       release: async () => true,
     },
     random: () => 0.2,
+    heartbeatIntervalMs: 60_000,
     signal: controller.signal,
   });
 
