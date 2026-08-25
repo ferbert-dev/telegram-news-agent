@@ -195,7 +195,8 @@ export class TelegramBotApiGateway
             disable_web_page_preview: true,
           }, { signal: input.signal });
         }
-      } catch {
+      } catch (error) {
+        if (input.signal?.aborted) throw error;
         // Comparison is additive and cannot hide the selected review draft.
       }
     }

@@ -208,6 +208,57 @@ test("transport handler only parses, invokes the application port, then renders 
   ]);
 });
 
+test("real handler and outcome renderer do not start a Telegram call after lease-loss cancellation", async () => {
+  const controller = new AbortController();
+  controller.abort("lease-lost");
+  let calls = 0;
+  const renderer = new TelegramBotApiOutcomeRenderer("token", async () => {
+    calls += 1;
+    return { message_id: 1 };
+  });
+  const handler = new TelegramControlTransportHandler(
+    {
+      async handle(_request, present) {
+        const outcome = { status: "no_candidates" };
+        await present(outcome);
+        return outcome;
+      },
+    },
+    renderer,
+    IDENTITY,
+  );
+
+  await assert.rejects(handler.handle({
+    update_id: 61,
+    message: { text: "/news", from: { id: 9 }, chat: { id: 10, type: "private" } },
+  }, { signal: controller.signal }));
+  assert.equal(calls, 0);
+});
+
+test("real legacy feature adapter forwards cancellation into its Telegram call wrapper", async () => {
+  let receivedSignal: AbortSignal | undefined;
+  const gateway = new TelegramLegacySettingsGateway(
+    "token", "@channel", {},
+    async (_token, _method, _payload, options) => {
+      receivedSignal = options?.signal;
+      options?.signal?.throwIfAborted();
+      return { message_id: 1 };
+    },
+    { show: async ({ callTelegram }) => callTelegram("token", "sendMessage", {}), callback: async () => ({ auditResult: "ok" }), input: async () => ({ auditResult: "ok" }) },
+  );
+  const controller = new AbortController();
+  await gateway.execute({
+    updateId: 62, updateKind: "settings_command", channelId: "@channel", actorId: 9,
+    chatId: 10, chatType: "private", route: { kind: "settings", action: "open" },
+  }, controller.signal);
+  assert.strictEqual(receivedSignal, controller.signal);
+  controller.abort("lease-lost");
+  await assert.rejects(gateway.execute({
+    updateId: 63, updateKind: "settings_command", channelId: "@channel", actorId: 9,
+    chatId: 10, chatType: "private", route: { kind: "settings", action: "open" },
+  }, controller.signal));
+});
+
 test("parser and application enforce positive ids, nonblank channel, and complete callback bindings", () => {
   assert.throws(
     () => parseTelegramControlUpdate({
