@@ -6,7 +6,6 @@ import {
   isTerminalTelegramControlError,
   TelegramControlError,
 } from "./telegram-application.contracts.js";
-import type { TelegramControlTransportHandler } from "./transport/telegram-control-transport.handler.js";
 import type { TelegramControlRawUpdate } from "./transport/telegram-control-update.parser.js";
 import type {
   RecordTelegramUpdateFailureInput,
@@ -73,10 +72,12 @@ type TelegramCallGateway = (
   options?: { signal?: AbortSignal },
 ) => Promise<unknown>;
 
-export type TelegramControlTransport = Pick<
-  TelegramControlTransportHandler,
-  "handle"
->;
+export type TelegramControlTransport = {
+  handle(
+    update: TelegramControlRawUpdate,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ handled: boolean }>;
+};
 
 export type TelegramUpdateClassification = {
   readonly updateId: number;
@@ -277,6 +278,7 @@ export async function pollTelegramUpdates(options: {
   nowImpl?: () => number;
   maxUpdateAttempts?: number;
   maxFailureLedgerAttempts?: number;
+  onReady?: () => void;
 }): Promise<void> {
   const {
     token,
@@ -296,6 +298,7 @@ export async function pollTelegramUpdates(options: {
     nowImpl = Date.now,
     maxUpdateAttempts = TELEGRAM_CONTROL_POLLER_MAX_UPDATE_ATTEMPTS,
     maxFailureLedgerAttempts = TELEGRAM_CONTROL_POLLER_MAX_FAILURE_LEDGER_ATTEMPTS,
+    onReady,
   } = options;
 
   const acquireDeadline = nowImpl() + leaseAcquireTimeoutMs;
@@ -307,7 +310,13 @@ export async function pollTelegramUpdates(options: {
       ownerId,
       ttlSeconds: TELEGRAM_CONTROL_POLLER_LEASE_TTL_SECONDS,
     });
-    if (leaseAcquired) break;
+    if (leaseAcquired) {
+      if (signal.aborted) {
+        await leaseApplication.release({ name: leaseName, ownerId });
+        return;
+      }
+      break;
+    }
     if (nowImpl() >= acquireDeadline) {
       throw new Error(
         "Another Telegram polling process still holds the database lease",
@@ -368,6 +377,8 @@ export async function pollTelegramUpdates(options: {
     }
   })();
 
+  onReady?.();
+
   let offset = 0;
   let pollAttempt = 0;
   let failureLedgerAttempt = 0;
@@ -375,7 +386,7 @@ export async function pollTelegramUpdates(options: {
   const safeClaim = async (request: {
     updateId: number;
     updateKind: string;
-  }): Promise<void> => {
+  }): Promise<boolean> => {
     const claimed = await updates.claimTelegramUpdate({
       updateId: request.updateId,
       updateKind: request.updateKind,
@@ -385,17 +396,16 @@ export async function pollTelegramUpdates(options: {
       if (claimed.claim_token === null) {
         throw new TelegramUpdateProtocolError("missing_claim_token");
       }
-      await updates.finishTelegramUpdate({
+      return await updates.finishTelegramUpdate({
         updateId: request.updateId,
         claimToken: claimed.claim_token,
         status: "completed",
       });
-      return;
     }
     if (claimed.claim_status === "busy") {
       throw new NonRetryableTelegramUpdateError("update_in_progress");
     }
-    return;
+    return true;
   };
 
   try {
@@ -452,16 +462,24 @@ export async function pollTelegramUpdates(options: {
         if (!failure) {
           try {
             const handled = await Promise.race([
-              transport.handle(rawUpdate as TelegramControlRawUpdate).then(
+              transport.handle(rawUpdate as TelegramControlRawUpdate, {
+                signal: operationController.signal,
+              }).then(
                 (value) => value.handled,
               ),
               leaseLoss,
             ]);
             if (!handled) {
-              await safeClaim({
+              const finished = await safeClaim({
                 updateId: classification.updateId,
                 updateKind: classification.kind,
               });
+              if (!finished) {
+                throw new TelegramControlError(
+                  "update_in_progress",
+                  "Telegram update claim was not finished",
+                );
+              }
             }
           } catch (error) {
             if (error instanceof PollingLeaseLostError || isTelegramConflict(error)) {
@@ -625,6 +643,46 @@ export type TelegramPollingWorkerOptions = {
     leaseAcquireRetryMs?: number;
     random?: () => number;
     nowImpl?: () => number;
+    sleepImpl?: (
+      delayMs: number,
+      value?: unknown,
+      options?: { signal?: AbortSignal },
+    ) => Promise<unknown>;
+  };
+};
+
+type StartupLatch = {
+  readonly promise: Promise<void>;
+  resolve(): void;
+  reject(error: unknown): void;
+  get settled(): boolean;
+};
+
+const createStartupLatch = (): StartupLatch => {
+  let resolvePromise!: () => void;
+  let rejectPromise!: (error: unknown) => void;
+  let isSettled = false;
+  const promise = new Promise<void>((resolve, reject) => {
+    resolvePromise = () => {
+      if (!isSettled) {
+        isSettled = true;
+        resolve();
+      }
+    };
+    rejectPromise = (error) => {
+      if (!isSettled) {
+        isSettled = true;
+        reject(error);
+      }
+    };
+  });
+  return {
+    promise,
+    resolve: resolvePromise,
+    reject: rejectPromise,
+    get settled() {
+      return isSettled;
+    },
   };
 };
 
@@ -634,6 +692,9 @@ export class TelegramPollingWorker implements RuntimeWorker {
   private readonly ownerId: string;
   private currentStop: AbortController | null = null;
   private currentRun: Promise<void> | null = null;
+  private startup: StartupLatch | null = null;
+  private stopRequested = false;
+  private backgroundFatal: unknown = null;
   private readonly leaseName = TELEGRAM_CONTROL_POLLER_LEASE_NAME;
   private readonly options: TelegramPollingWorkerOptions;
 
@@ -642,16 +703,24 @@ export class TelegramPollingWorker implements RuntimeWorker {
     this.ownerId = options.ownerId ?? randomUUID();
   }
 
-  async start(shutdownSignal: AbortSignal): Promise<void> {
+  async start(
+    shutdownSignal: AbortSignal,
+    reportFatal?: (error: unknown) => Promise<void>,
+  ): Promise<void> {
     if (this.currentRun !== null) {
-      return this.currentRun;
+      return this.startup?.promise;
+    }
+    if (this.stopRequested || shutdownSignal.aborted) {
+      return;
     }
     const stopSignal = new AbortController();
     const abortFromHost = () => stopSignal.abort(shutdownSignal.reason);
     shutdownSignal.addEventListener("abort", abortFromHost, { once: true });
 
+    const startup = createStartupLatch();
+    this.startup = startup;
     this.currentStop = stopSignal;
-    this.currentRun = pollTelegramUpdates({
+    const run = pollTelegramUpdates({
       token: this.options.token,
       leaseName: this.leaseName,
       ownerId: this.ownerId,
@@ -665,18 +734,46 @@ export class TelegramPollingWorker implements RuntimeWorker {
       leaseAcquireRetryMs: this.options.config?.leaseAcquireRetryMs,
       nowImpl: this.options.config?.nowImpl,
       random: this.options.config?.random,
+      sleepImpl: this.options.config?.sleepImpl,
       log: console,
-    }).finally(() => {
+      onReady: startup.resolve,
+    });
+    this.currentRun = run;
+    void run.then(
+      () => {
+        startup.resolve();
+      },
+      (error: unknown) => {
+        if (!startup.settled) {
+          startup.reject(error);
+          return;
+        }
+        if (!stopSignal.signal.aborted && !shutdownSignal.aborted) {
+          this.backgroundFatal = error;
+          void reportFatal?.(error);
+        }
+      },
+    ).finally(() => {
       shutdownSignal.removeEventListener("abort", abortFromHost);
-      this.currentRun = null;
-      this.currentStop = null;
+      if (this.currentRun === run) {
+        this.currentRun = null;
+        this.currentStop = null;
+        this.startup = null;
+      }
     });
 
-    await this.currentRun;
+    await startup.promise;
   }
 
   async stop(): Promise<void> {
+    this.stopRequested = true;
     this.currentStop?.abort("runtime-stop");
-    await this.currentRun;
+    try {
+      await this.currentRun;
+    } catch (error) {
+      if (error !== this.backgroundFatal) {
+        throw error;
+      }
+    }
   }
 }

@@ -292,6 +292,35 @@ test("RuntimeCoordinator programmatic close and fatal share one stop promise", a
   assert.strictEqual(coordinator.fatalCause, coordinator.fatalCause);
 });
 
+test("RuntimeCoordinator gives ready workers a bounded background-fatal reporter", async () => {
+  const events: string[] = [];
+  let reportFatal: ((error: unknown) => Promise<void>) | undefined;
+  const coordinator = new RuntimeCoordinator({
+    applicationClose: async () => {
+      events.push("application.close");
+    },
+    signalSource: createSignalSource().source,
+    stopGracePeriodMs: 25_000,
+    workers: [{
+      name: "background",
+      start: async (_signal, reporter) => {
+        reportFatal = reporter;
+      },
+      stop: async () => {
+        events.push("background.stop");
+      },
+    }],
+  });
+
+  await coordinator.start();
+  const failure = new Error("background polling failure");
+  await reportFatal?.(failure);
+
+  assert.strictEqual(coordinator.fatalCause, failure);
+  assert.equal(coordinator.lifecycleState, "stopped");
+  assert.deepEqual(events, ["background.stop", "application.close"]);
+});
+
 test("RuntimeCoordinator turns first signal into coordinated stop and second into escalation", async () => {
   const events: string[] = [];
   const signalSource = createSignalSource();

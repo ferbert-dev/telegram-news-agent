@@ -103,6 +103,7 @@ export interface TelegramControlApplicationPort {
   handle(
     request: TelegramControlRequest,
     present: (outcome: TelegramControlOutcome) => Promise<void>,
+    signal?: AbortSignal,
   ): Promise<TelegramControlOutcome>;
 }
 

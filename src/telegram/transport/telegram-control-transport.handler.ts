@@ -27,7 +27,10 @@ export class TelegramControlTransportHandler {
     },
   ) {}
 
-  async handle(update: TelegramControlRawUpdate): Promise<{
+  async handle(
+    update: TelegramControlRawUpdate,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<{
     handled: boolean;
     outcome?: TelegramControlOutcome;
   }> {
@@ -36,6 +39,7 @@ export class TelegramControlTransportHandler {
     const outcome = await this.application.handle(
       request,
       (semanticOutcome) => this.renderer.render(request, semanticOutcome),
+      options.signal,
     );
     return { handled: true, outcome };
   }

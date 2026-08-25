@@ -53,7 +53,9 @@ export class HandleTelegramControlUpdateUseCase
   async execute(
     request: TelegramControlRequest,
     present: (outcome: TelegramControlOutcome) => Promise<void>,
+    signal?: AbortSignal,
   ): Promise<TelegramControlOutcome> {
+    this.throwIfAborted(signal);
     this.validateClaimEnvelope(request);
     return this.audit.run(
       {
@@ -78,10 +80,14 @@ export class HandleTelegramControlUpdateUseCase
         if (!claim.claim_token) throw new Error("Claimed update has no claim token");
 
         try {
+          this.throwIfAborted(signal);
           this.validateRequest(request);
           await this.requireAdmin(request);
+          this.throwIfAborted(signal);
           const outcome = await this.route(request, claim.claim_token);
+          this.throwIfAborted(signal);
           await present(outcome);
+          this.throwIfAborted(signal);
           const finished = await this.updates.finishTelegramUpdate({
             updateId: request.updateId,
             claimToken: claim.claim_token,
@@ -95,16 +101,29 @@ export class HandleTelegramControlUpdateUseCase
           const code = error instanceof TelegramControlError
             ? error.code
             : "internal_error";
-          await this.updates.finishTelegramUpdate({
+          const finished = await this.updates.finishTelegramUpdate({
             updateId: request.updateId,
             claimToken: claim.claim_token,
             status: isTerminalTelegramControlError(error) ? "completed" : "failed",
             errorCode: code,
           }).catch(() => false);
+          if (!finished) {
+            throw new TelegramControlError(
+              "update_claim_lost",
+              "Update claim could not be finished",
+              { cause: error },
+            );
+          }
           throw error;
         }
       },
     );
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new TelegramControlError("update_claim_lost", "Telegram update was cancelled");
+    }
   }
 
   private validateClaimEnvelope(request: TelegramControlRequest): void {
