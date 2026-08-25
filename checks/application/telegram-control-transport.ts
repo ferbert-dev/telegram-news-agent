@@ -259,6 +259,62 @@ test("real legacy feature adapter forwards cancellation into its Telegram call w
   }, controller.signal));
 });
 
+test("legacy feature adapters fence repository and provider calls between awaits", async () => {
+  const request: TelegramControlRequest = {
+    updateId: 64, updateKind: "settings_input", channelId: "@channel", actorId: 9,
+    chatId: 10, chatType: "private", route: {
+      kind: "settings", action: "input", payload: { text: "AI", replyToMessageId: 13 },
+    },
+  };
+  const settingsController = new AbortController();
+  const settingsCalls: string[] = [];
+  const settings = new TelegramLegacySettingsGateway("token", "@channel", {
+    async beginTelegramSettingsInput() { settingsCalls.push("begin"); },
+    async consumeTelegramSettingsInput() {
+      settingsCalls.push("consume");
+      settingsController.abort("lease-lost");
+      return { id: "binding" };
+    },
+    async updateNewsSettings() { settingsCalls.push("update"); },
+  }, async () => { settingsCalls.push("telegram"); return {}; }, {
+    async show() { throw new Error("unused"); },
+    async callback() { throw new Error("unused"); },
+    async input(_message, { repository }) {
+      await (repository as { beginTelegramSettingsInput(): Promise<void> }).beginTelegramSettingsInput();
+      await (repository as { consumeTelegramSettingsInput(): Promise<unknown> }).consumeTelegramSettingsInput();
+      await (repository as { updateNewsSettings(): Promise<void> }).updateNewsSettings();
+      return { auditResult: "ok" };
+    },
+  });
+  await assert.rejects(settings.execute(request, settingsController.signal));
+  assert.deepEqual(settingsCalls, ["begin", "consume"]);
+
+  const statusController = new AbortController();
+  const statusCalls: string[] = [];
+  const status = new TelegramLegacyStatusGateway("token", "@channel", {
+    async getDailyUsageDashboard() {
+      statusCalls.push("dashboard");
+      statusController.abort("lease-lost");
+      return {};
+    },
+  }, async () => { statusCalls.push("telegram"); return {}; }, {
+    async testExaConnection() { statusCalls.push("exa"); return {}; },
+  }, ["exa"], "test", {
+    async show() { throw new Error("unused"); },
+    async callback(_callback, _action, { repository, aiProvider }) {
+      await (repository as { getDailyUsageDashboard(): Promise<unknown> }).getDailyUsageDashboard();
+      await (aiProvider as { testExaConnection(): Promise<unknown> }).testExaConnection();
+      return { auditResult: "ok" };
+    },
+  });
+  await assert.rejects(status.execute({
+    ...request,
+    updateKind: "status_callback",
+    route: { kind: "status", action: "callback", payload: { callbackId: "cb", messageId: 12, action: {} } },
+  }, statusController.signal));
+  assert.deepEqual(statusCalls, ["dashboard"]);
+});
+
 test("parser and application enforce positive ids, nonblank channel, and complete callback bindings", () => {
   assert.throws(
     () => parseTelegramControlUpdate({
@@ -356,13 +412,7 @@ test("Telegram Bot API gateway preserves comparison quality, actual newlines, an
   const selected = calls.at(-1);
   assert.equal(selected?.[0], "sendMessage");
   assert.equal(selected?.[1].text, body);
-  assert.deepEqual(
-    (selected?.[1].reply_markup as { inline_keyboard: unknown[][] }).inline_keyboard[0],
-    [
-      { text: "Publish", callback_data: `news:p:${"a".repeat(48)}` },
-      { text: "Reject", callback_data: `news:r:${"a".repeat(48)}` },
-    ],
-  );
+  assert.equal(selected?.[1].reply_markup, undefined);
 
   const longCalls: Array<[string, Record<string, unknown>]> = [];
   const longGateway = new TelegramBotApiGateway(

@@ -98,23 +98,28 @@ export class HandleTelegramControlUpdateUseCase
           }
           return outcome;
         } catch (error) {
-          const code = error instanceof TelegramControlError
-            ? error.code
+          const retryableError = signal?.aborted
+            ? new TelegramControlError("update_claim_lost", "Telegram update was cancelled", {
+              cause: error,
+            })
+            : error;
+          const code = retryableError instanceof TelegramControlError
+            ? retryableError.code
             : "internal_error";
           const finished = await this.updates.finishTelegramUpdate({
             updateId: request.updateId,
             claimToken: claim.claim_token,
-            status: isTerminalTelegramControlError(error) ? "completed" : "failed",
+            status: isTerminalTelegramControlError(retryableError) ? "completed" : "failed",
             errorCode: code,
           }).catch(() => false);
           if (!finished) {
             throw new TelegramControlError(
               "update_claim_lost",
               "Update claim could not be finished",
-              { cause: error },
+              { cause: retryableError },
             );
           }
-          throw error;
+          throw retryableError;
         }
       },
     );

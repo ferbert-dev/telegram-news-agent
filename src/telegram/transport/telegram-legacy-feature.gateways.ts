@@ -81,6 +81,28 @@ function abortableTelegramCall(
   };
 }
 
+function abortableDependency<T extends object>(dependency: T, signal?: AbortSignal): T {
+  if (!signal) return dependency;
+  return new Proxy(dependency, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) => {
+        signal.throwIfAborted();
+        const result = value.apply(target, args);
+        if (!result || typeof (result as Promise<unknown>).then !== "function") {
+          signal.throwIfAborted();
+          return result;
+        }
+        return (result as Promise<unknown>).then((resolved) => {
+          signal.throwIfAborted();
+          return resolved;
+        });
+      };
+    },
+  });
+}
+
 /** Reuses the verified legacy settings transport until its typed UI slice is extracted. */
 export class TelegramLegacySettingsGateway implements TelegramControlFeatureGateway {
   constructor(
@@ -98,6 +120,7 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
   async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
     signal?.throwIfAborted();
     const callTelegram = abortableTelegramCall(this.callTelegram, signal);
+    const repository = abortableDependency(this.repository, signal);
     if (request.route.kind !== "settings") {
       throw new TelegramControlError("malformed_command", "Expected settings route");
     }
@@ -107,7 +130,7 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
         channelId: this.channelId,
         chatId: request.chatId,
         userId: request.actorId,
-        repository: this.repository,
+        repository,
         callTelegram,
       });
       return { status: "settings_ready", result };
@@ -121,7 +144,7 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
           token: this.token,
           channelId: this.channelId,
           userId: request.actorId,
-          repository: this.repository,
+          repository,
           callTelegram,
         },
       );
@@ -146,7 +169,7 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
         token: this.token,
         channelId: this.channelId,
         userId: request.actorId,
-        repository: this.repository,
+        repository,
         callTelegram,
       },
     );
@@ -170,6 +193,7 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
   async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
     signal?.throwIfAborted();
     const callTelegram = abortableTelegramCall(this.callTelegram, signal);
+    const repository = abortableDependency(this.repository, signal);
     if (request.route.kind !== "labs") {
       throw new TelegramControlError("malformed_command", "Expected Labs route");
     }
@@ -179,7 +203,7 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
         channelId: this.channelId,
         chatId: request.chatId,
         userId: request.actorId,
-        repository: this.repository,
+        repository,
         callTelegram,
       });
       return { status: "labs_ready", result };
@@ -192,7 +216,7 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
         token: this.token,
         channelId: this.channelId,
         userId: request.actorId,
-        repository: this.repository,
+        repository,
         callTelegram,
       },
     );
@@ -220,7 +244,7 @@ export class TelegramLegacyStatsGateway implements TelegramControlFeatureGateway
       token: this.token,
       channelId: this.channelId,
       chatId: request.chatId,
-      repository: this.repository,
+      repository: abortableDependency(this.repository, signal),
       callTelegram: abortableTelegramCall(this.callTelegram, signal),
       now: this.now,
     });
@@ -250,6 +274,7 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
   async execute(request: TelegramControlRequest, signal?: AbortSignal): Promise<TelegramControlOutcome> {
     signal?.throwIfAborted();
     const callTelegram = abortableTelegramCall(this.callTelegram, signal);
+    const repository = abortableDependency(this.repository, signal);
     if (request.route.kind !== "status") {
       throw new TelegramControlError("malformed_command", "Expected status route");
     }
@@ -258,7 +283,7 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
         token: this.token,
         channelId: this.channelId,
         chatId: request.chatId,
-        repository: this.repository,
+        repository,
         callTelegram,
         providerNames: this.providerNames,
         appVersion: this.appVersion,
@@ -274,9 +299,9 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
       {
         token: this.token,
         channelId: this.channelId,
-        repository: this.repository,
+        repository,
         callTelegram,
-        aiProvider: this.aiProvider,
+        aiProvider: abortableDependency(this.aiProvider, signal),
         providerNames: this.providerNames,
         appVersion: this.appVersion,
         now: this.now,

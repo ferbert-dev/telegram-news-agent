@@ -883,6 +883,40 @@ test("admin authorization cancellation is forwarded to Telegram and remains clai
   }]);
 });
 
+test("already-decided review answers receive cancellation and do not report success after loss", async () => {
+  const controller = new AbortController();
+  let receivedSignal: AbortSignal | undefined;
+  const useCase = new DecideTelegramReviewUseCase(
+    asReviews({
+      async decideTelegramReviewSession() {
+        return {
+          session_id: "s".repeat(48), draft_id: DRAFT.id, decision: "reject",
+          decision_won: false, expires_at: "2026-08-13T10:00:00.000Z",
+        };
+      },
+    }),
+    asWorkflow({}),
+    {
+      async restoreControls() { throw new Error("unused"); },
+      async disableControls() { throw new Error("unused"); },
+      async sendReview() { throw new Error("unused"); },
+      async answerCallback(input) {
+        receivedSignal = input.signal;
+        controller.abort("lease-lost");
+        input.signal?.throwIfAborted();
+      },
+    },
+  );
+  await assert.rejects(useCase.execute({
+    ...BASE_REQUEST,
+    route: {
+      kind: "review", action: "reject", sessionId: "s".repeat(48),
+      messageId: 55, callbackId: "callback-already-decided",
+    },
+  }, controller.signal));
+  assert.strictEqual(receivedSignal, controller.signal);
+});
+
 test("review delivery never replaces or cleans up controls after cancellation", async () => {
   const controller = new AbortController();
   const sentMethods: string[] = [];

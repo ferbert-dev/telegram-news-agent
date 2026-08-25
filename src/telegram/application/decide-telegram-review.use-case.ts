@@ -62,6 +62,7 @@ export class DecideTelegramReviewUseCase
         route.callbackId,
         "This draft was already rejected.",
         true,
+        signal,
       );
       return {
         status: "already_decided",
@@ -140,7 +141,11 @@ export class DecideTelegramReviewUseCase
     signal?: AbortSignal,
   ): Promise<void> {
     signal?.throwIfAborted();
-    await this.presentation.answerCallback({ callbackId, text, showAlert, signal })
-      .catch(() => undefined);
+    try {
+      await this.presentation.answerCallback({ callbackId, text, showAlert, signal });
+    } catch {
+      signal?.throwIfAborted();
+    }
+    signal?.throwIfAborted();
   }
 }

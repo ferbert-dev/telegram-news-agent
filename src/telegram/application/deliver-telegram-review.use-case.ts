@@ -139,6 +139,12 @@ export class DeliverTelegramReviewUseCase {
           resumed: true,
         };
       }
+      await this.activateControls({
+        chatId: existing.control_chat_id,
+        messageId: rebound.preview_message_id,
+        sessionId: rebound.id,
+        signal: input.signal,
+      });
       return {
         status: "review_ready",
         draftId: input.draftId,
@@ -167,6 +173,12 @@ export class DeliverTelegramReviewUseCase {
       requested_by: input.actorId,
       expires_at: expiresAt,
     });
+    await this.activateControls({
+      chatId: created.control_chat_id,
+      messageId: created.preview_message_id,
+      sessionId: created.id,
+      signal: input.signal,
+    });
     return {
       status: "review_ready",
       draftId: input.draftId,
@@ -174,5 +186,19 @@ export class DeliverTelegramReviewUseCase {
       previewMessageId: created.preview_message_id,
       resumed: false,
     };
+  }
+
+  private async activateControls(input: {
+    chatId: number;
+    messageId: number;
+    sessionId: string;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    input.signal?.throwIfAborted();
+    const restored = await this.presentation.restoreControls(input);
+    input.signal?.throwIfAborted();
+    if (restored !== "available") {
+      throw new Error("Telegram review controls could not be activated");
+    }
   }
 }

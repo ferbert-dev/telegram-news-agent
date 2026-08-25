@@ -208,7 +208,6 @@ export class TelegramBotApiGateway
     const sent = await this.callTelegram(this.token, "sendMessage", {
       chat_id: input.chatId,
       text: input.preview,
-      reply_markup: reviewMarkup(input.sessionId),
     }, { signal: input.signal });
     const messageId = Number(sent.message_id);
     if (!Number.isSafeInteger(messageId)) {
