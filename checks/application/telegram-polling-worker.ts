@@ -377,7 +377,7 @@ test("lease loss fences the real poller control route before Bot API presentatio
     { async execute() { throw new Error("unused status"); } },
   );
   const transport = new TelegramControlTransportHandler(
-    application,
+    { handle: (request, present, signal) => application.execute(request, present, signal) },
     new TelegramBotApiOutcomeRenderer("token", async () => {
       botCalls += 1;
       return { message_id: 1 };

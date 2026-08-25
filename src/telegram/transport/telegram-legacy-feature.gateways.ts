@@ -94,10 +94,16 @@ function abortableDependency<T extends object>(dependency: T, signal?: AbortSign
           signal.throwIfAborted();
           return result;
         }
-        return (result as Promise<unknown>).then((resolved) => {
-          signal.throwIfAborted();
-          return resolved;
-        });
+        return (result as Promise<unknown>).then(
+          (resolved) => {
+            signal.throwIfAborted();
+            return resolved;
+          },
+          (error) => {
+            signal.throwIfAborted();
+            throw error;
+          },
+        );
       };
     },
   });
@@ -133,6 +139,7 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
         repository,
         callTelegram,
       });
+      signal?.throwIfAborted();
       return { status: "settings_ready", result };
     }
     if (request.route.action === "callback") {
@@ -148,6 +155,7 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
           callTelegram,
         },
       );
+      signal?.throwIfAborted();
       return { status: "settings_updated", result };
     }
     const payload = request.route.payload as Partial<SettingsInputPayload> | undefined;
@@ -173,6 +181,7 @@ export class TelegramLegacySettingsGateway implements TelegramControlFeatureGate
         callTelegram,
       },
     );
+    signal?.throwIfAborted();
     return { status: "settings_updated", result };
   }
 }
@@ -206,6 +215,7 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
         repository,
         callTelegram,
       });
+      signal?.throwIfAborted();
       return { status: "labs_ready", result };
     }
     const payload = callbackPayload(request.route.payload);
@@ -220,6 +230,7 @@ export class TelegramLegacyLabsGateway implements TelegramControlFeatureGateway 
         callTelegram,
       },
     );
+    signal?.throwIfAborted();
     return { status: "labs_updated", result };
   }
 }
@@ -248,6 +259,7 @@ export class TelegramLegacyStatsGateway implements TelegramControlFeatureGateway
       callTelegram: abortableTelegramCall(this.callTelegram, signal),
       now: this.now,
     });
+    signal?.throwIfAborted();
     return { status: "stats_ready", dashboard };
   }
 }
@@ -290,6 +302,7 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
         now: this.now,
         timeZone: this.timeZone,
       });
+      signal?.throwIfAborted();
       return { status: "status_ready", dashboard };
     }
     const payload = callbackPayload(request.route.payload);
@@ -306,9 +319,10 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
         appVersion: this.appVersion,
         now: this.now,
         timeZone: this.timeZone,
-        cooldownStore: this.cooldownStore,
+        cooldownStore: abortableDependency(this.cooldownStore, signal),
       },
     );
+    signal?.throwIfAborted();
     return { status: "status_updated", result };
   }
 }

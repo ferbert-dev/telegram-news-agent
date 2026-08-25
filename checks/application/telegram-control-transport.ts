@@ -315,6 +315,50 @@ test("legacy feature adapters fence repository and provider calls between awaits
   assert.deepEqual(statusCalls, ["dashboard"]);
 });
 
+test("legacy adapter rejection and post-operation abort cannot become a successful outcome", async () => {
+  const controller = new AbortController();
+  const original = new Error("legacy repository failure");
+  const gateway = new TelegramLegacySettingsGateway("token", "@channel", {
+    async getNewsSettings() {
+      controller.abort("lease-lost");
+      throw original;
+    },
+  }, async () => ({}), {
+    async show({ repository }) {
+      try {
+        await (repository as { getNewsSettings(): Promise<unknown> }).getNewsSettings();
+      } catch {
+        return { settings: {}, messageId: 1 };
+      }
+      throw new Error("unreachable");
+    },
+    async callback() { throw new Error("unused"); },
+    async input() { throw new Error("unused"); },
+  });
+  await assert.rejects(gateway.execute({
+    updateId: 65, updateKind: "settings_command", channelId: "@channel", actorId: 9,
+    chatId: 10, chatType: "private", route: { kind: "settings", action: "open" },
+  }, controller.signal));
+
+  const noSignal = new TelegramLegacySettingsGateway("token", "@channel", {
+    async getNewsSettings() { throw original; },
+  }, async () => ({}), {
+    async show({ repository }) {
+      await (repository as { getNewsSettings(): Promise<unknown> }).getNewsSettings();
+      return { settings: {}, messageId: 1 };
+    },
+    async callback() { throw new Error("unused"); },
+    async input() { throw new Error("unused"); },
+  });
+  await assert.rejects(
+    noSignal.execute({
+      updateId: 66, updateKind: "settings_command", channelId: "@channel", actorId: 9,
+      chatId: 10, chatType: "private", route: { kind: "settings", action: "open" },
+    }),
+    (error) => error === original,
+  );
+});
+
 test("parser and application enforce positive ids, nonblank channel, and complete callback bindings", () => {
   assert.throws(
     () => parseTelegramControlUpdate({
