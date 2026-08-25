@@ -77,6 +77,7 @@ export class DeliverTelegramReviewUseCase {
             await this.presentation.disableControls({
               chatId: existing.control_chat_id,
               messageId: existing.preview_message_id,
+              signal: input.signal,
             }).catch(() => undefined);
             return {
               status: "review_unavailable",
@@ -128,6 +129,7 @@ export class DeliverTelegramReviewUseCase {
         await this.presentation.disableControls({
           chatId: existing.control_chat_id,
           messageId: replacement.messageId,
+          signal: input.signal,
         }).catch(() => undefined);
         return {
           status: "review_unavailable",

@@ -17,7 +17,11 @@ import { HandleTelegramSettingsUseCase } from "../../src/telegram/application/ha
 import { HandleTelegramStatusUseCase } from "../../src/telegram/application/handle-telegram-status.use-case.js";
 import { RunTelegramNewsUseCase } from "../../src/telegram/application/run-telegram-news.use-case.js";
 import { DecideTelegramReviewUseCase } from "../../src/telegram/application/decide-telegram-review.use-case.js";
-import { TelegramBotApiOutcomeRenderer } from "../../src/telegram/transport/telegram-bot-api.gateway.js";
+import {
+  TelegramBotApiGateway,
+  TelegramBotApiOutcomeRenderer,
+} from "../../src/telegram/transport/telegram-bot-api.gateway.js";
+import { DeliverTelegramReviewUseCase } from "../../src/telegram/application/deliver-telegram-review.use-case.js";
 import type {
   TelegramNewsJobsPersistence,
   TelegramReviewSessionsPersistence,
@@ -835,4 +839,115 @@ test("winning review controls stay disabled across reject, definitive publish fa
   );
   assert.strictEqual(receivedSignal, controller.signal);
   assert.deepEqual(calls, ["decision", "disable", "answer:Publishing...", "publish"]);
+});
+
+test("admin authorization cancellation is forwarded to Telegram and remains claim-lost", async () => {
+  const controller = new AbortController();
+  const finishes: unknown[] = [];
+  const authorization = new TelegramBotApiGateway(
+    "token",
+    "@channel",
+    async (_token, method, _payload, options) => {
+      assert.equal(method, "getChatMember");
+      assert.strictEqual(options?.signal, controller.signal);
+      controller.abort("lease-lost");
+      throw new Error("Telegram request aborted");
+    },
+  );
+  const router = new HandleTelegramControlUpdateUseCase(
+    asUpdates({
+      async claimTelegramUpdate() {
+        return { claimed: true, claim_token: "token-admin-abort", claim_status: "claimed" };
+      },
+      async finishTelegramUpdate(input: unknown) { finishes.push(input); return true; },
+    }),
+    authorization,
+    passAudit,
+    { async execute() { throw new Error("domain must not run"); } },
+    { async execute() { throw new Error("review must not run"); } },
+    unusedFeature,
+    unusedFeature,
+    unusedFeature,
+    unusedFeature,
+  );
+
+  await assert.rejects(
+    router.execute({ ...BASE_REQUEST, route: { kind: "stats" } }, async () => {}, controller.signal),
+    (error) => error instanceof TelegramControlError && error.code === "update_claim_lost",
+  );
+  assert.deepEqual(finishes, [{
+    updateId: BASE_REQUEST.updateId,
+    claimToken: "token-admin-abort",
+    status: "failed",
+    errorCode: "update_claim_lost",
+  }]);
+});
+
+test("review delivery never replaces or cleans up controls after cancellation", async () => {
+  const controller = new AbortController();
+  const sentMethods: string[] = [];
+  const gateway = new TelegramBotApiGateway(
+    "token",
+    "@channel",
+    async (_token, method, _payload, options) => {
+      sentMethods.push(method);
+      assert.strictEqual(options?.signal, controller.signal);
+      controller.abort("lease-lost");
+      throw new Error("Telegram request aborted");
+    },
+  );
+  const existing = {
+    id: "a".repeat(48), draft_id: DRAFT.id, telegram_channel_id: "@channel",
+    control_chat_id: BASE_REQUEST.chatId, preview_message_id: 55, requested_by: BASE_REQUEST.actorId,
+    decision: null, decided_by: null, decided_at: null,
+    expires_at: "2026-08-13T10:00:00.000Z", created_at: "2026-08-12T09:00:00.000Z",
+  };
+  const delivery = new DeliverTelegramReviewUseCase(
+    asReviews({ async findTelegramReviewSessionByDraft() { return existing; } }),
+    asEditorial({ async getDraft() { return DRAFT; } }),
+    gateway,
+    { next: () => "b".repeat(48) },
+    { now: () => new Date("2026-08-12T10:00:00.000Z") },
+  );
+
+  await assert.rejects(
+    delivery.execute({
+      draftId: DRAFT.id, channelId: "@channel", chatId: BASE_REQUEST.chatId,
+      actorId: BASE_REQUEST.actorId, preview: DRAFT.body, signal: controller.signal,
+    }),
+    /Telegram request aborted/,
+  );
+  assert.deepEqual(sentMethods, ["editMessageReplyMarkup"]);
+
+  const cleanupController = new AbortController();
+  const cleanupMethods: string[] = [];
+  const cleanupGateway = new TelegramBotApiGateway(
+    "token",
+    "@channel",
+    async (_token, method, _payload, options) => {
+      cleanupMethods.push(method);
+      assert.strictEqual(options?.signal, cleanupController.signal);
+      return {};
+    },
+  );
+  const expired = { ...existing, expires_at: "2026-08-12T09:00:00.000Z" };
+  const cleanup = new DeliverTelegramReviewUseCase(
+    asReviews({
+      async findTelegramReviewSessionByDraft() { return expired; },
+      async renewTelegramReviewSession() {
+        cleanupController.abort("lease-lost");
+        return expired;
+      },
+    }),
+    asEditorial({ async getDraft() { return DRAFT; } }),
+    cleanupGateway,
+    { next: () => "b".repeat(48) },
+    { now: () => new Date("2026-08-12T10:00:00.000Z") },
+  );
+  const cleaned = await cleanup.execute({
+    draftId: DRAFT.id, channelId: "@channel", chatId: BASE_REQUEST.chatId,
+    actorId: BASE_REQUEST.actorId, preview: DRAFT.body, signal: cleanupController.signal,
+  });
+  assert.equal(cleaned.status, "review_unavailable");
+  assert.deepEqual(cleanupMethods, ["editMessageReplyMarkup"]);
 });

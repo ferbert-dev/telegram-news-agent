@@ -50,7 +50,7 @@ export interface TelegramControlAuditGateway {
 }
 
 export interface TelegramAdminAuthorizationGateway {
-  isChannelAdmin(channelId: string, actorId: number): Promise<boolean>;
+  isChannelAdmin(channelId: string, actorId: number, signal?: AbortSignal): Promise<boolean>;
 }
 
 export interface TelegramControlFeatureGateway {

@@ -82,7 +82,7 @@ export class HandleTelegramControlUpdateUseCase
         try {
           this.throwIfAborted(signal);
           this.validateRequest(request);
-          await this.requireAdmin(request);
+          await this.requireAdmin(request, signal);
           this.throwIfAborted(signal);
           const outcome = await this.route(request, claim.claim_token, signal);
           this.throwIfAborted(signal);
@@ -194,14 +194,16 @@ export class HandleTelegramControlUpdateUseCase
     }
   }
 
-  private async requireAdmin(request: TelegramControlRequest): Promise<void> {
+  private async requireAdmin(request: TelegramControlRequest, signal?: AbortSignal): Promise<void> {
     let allowed: boolean;
     try {
       allowed = await this.authorization.isChannelAdmin(
         request.channelId,
         request.actorId,
+        signal,
       );
     } catch (error) {
+      this.throwIfAborted(signal);
       throw new TelegramControlError(
         "authorization_unavailable",
         "Authorization failed",

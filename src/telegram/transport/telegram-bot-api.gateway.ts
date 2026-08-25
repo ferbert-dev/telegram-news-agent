@@ -108,11 +108,12 @@ export class TelegramBotApiGateway
     private readonly callTelegram: TelegramBotApiCall,
   ) {}
 
-  async isChannelAdmin(channelId: string, actorId: number): Promise<boolean> {
+  async isChannelAdmin(channelId: string, actorId: number, signal?: AbortSignal): Promise<boolean> {
+    throwIfAborted(signal);
     const member = await this.callTelegram(this.token, "getChatMember", {
       chat_id: channelId || this.channelId,
       user_id: actorId,
-    });
+    }, { signal });
     return ADMIN_STATUSES.has(String(member.status ?? ""));
   }
 
@@ -131,6 +132,9 @@ export class TelegramBotApiGateway
       }, { signal: input.signal });
       return "available";
     } catch (error) {
+      if (input.signal?.aborted || error instanceof Error && error.name === "AbortError") {
+        throw error;
+      }
       return /message is not modified/i.test(
         error instanceof Error ? error.message : "",
       )
