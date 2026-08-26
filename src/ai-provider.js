@@ -23,7 +23,7 @@ const FALLBACK_RETRY_DEFAULTS = {
   baseDelayMs: 250,
   maxDelayMs: 2000,
   jitterRatio: 0.3,
-  operationDeadlineMs: 30_000,
+  providerDeadlineMs: 30_000,
 };
 
 function normalizeInteger(value, fallback, min = Number.MIN_SAFE_INTEGER) {
@@ -58,6 +58,8 @@ function timeoutError() {
 }
 
 function normalizeFallbackRetryOptions(overrides = {}) {
+  const providerDeadlineMs =
+    overrides.providerDeadlineMs ?? overrides.operationDeadlineMs;
   return {
     attempts: normalizeInteger(overrides.attempts, FALLBACK_RETRY_DEFAULTS.attempts, 1),
     baseDelayMs: normalizeInteger(overrides.baseDelayMs, FALLBACK_RETRY_DEFAULTS.baseDelayMs, 0),
@@ -68,9 +70,9 @@ function normalizeFallbackRetryOptions(overrides = {}) {
       0.5,
       FALLBACK_RETRY_DEFAULTS.jitterRatio,
     ),
-    operationDeadlineMs: normalizeInteger(
-      overrides.operationDeadlineMs,
-      FALLBACK_RETRY_DEFAULTS.operationDeadlineMs,
+    providerDeadlineMs: normalizeInteger(
+      providerDeadlineMs,
+      FALLBACK_RETRY_DEFAULTS.providerDeadlineMs,
       0,
     ),
     random: overrides.random || Math.random,
@@ -173,7 +175,7 @@ export function createFallbackAiProvider(
     const attemptController = controller ?? new AbortController();
     const effectiveDeadlineAtMs = Number.isFinite(deadlineAtMs)
       ? deadlineAtMs
-      : started.getTime() + retryOptions.operationDeadlineMs;
+      : started.getTime() + retryOptions.providerDeadlineMs;
     const semanticOperation = input?.usageOperation ?? operation;
     await writeAttempt("startAiProviderAttempt", {
       id, correlationId, operation: semanticOperation, provider: provider.name,
@@ -263,16 +265,10 @@ export function createFallbackAiProvider(
     const errors = [];
     const correlationId = input?.traceId ?? newAttemptId();
     let attemptNumber = 0;
-    const startedAtMs = now().getTime();
-    const deadlineAtMs =
-      startedAtMs + retryOptions.operationDeadlineMs;
-    const operationController = new AbortController();
-    const isInsideDeadline = () =>
-      !operationController.signal.aborted && now().getTime() < deadlineAtMs;
 
-    const runWithRetry = async (provider, run) => {
+    const runWithRetry = async (provider, run, deadline) => {
       let providerAttempt = 0;
-      while (providerAttempt < retryOptions.attempts && isInsideDeadline()) {
+      while (providerAttempt < retryOptions.attempts && deadline.isActive()) {
         providerAttempt += 1;
         try {
           return await run(++attemptNumber);
@@ -293,11 +289,11 @@ export function createFallbackAiProvider(
           if (!isTransientProviderError(error)) {
             throw error;
           }
-          if (providerAttempt >= retryOptions.attempts || !isInsideDeadline()) {
+          if (providerAttempt >= retryOptions.attempts || !deadline.isActive()) {
             throw error;
           }
           const delayMs = retryDelayMs(providerAttempt, retryOptions);
-          const remainingMs = deadlineAtMs - now().getTime();
+          const remainingMs = deadline.atMs - now().getTime();
           await sleep(Math.min(delayMs, Math.max(0, remainingMs)));
         }
       }
@@ -308,6 +304,15 @@ export function createFallbackAiProvider(
       if (typeof provider[operation] !== "function") {
         continue;
       }
+      // Give each configured provider its own bounded window. A single hanging
+      // provider must not consume the fallback provider's entire budget.
+      const controller = new AbortController();
+      const deadlineAtMs = now().getTime() + retryOptions.providerDeadlineMs;
+      const deadline = {
+        atMs: deadlineAtMs,
+        isActive: () =>
+          !controller.signal.aborted && now().getTime() < deadlineAtMs,
+      };
       try {
         const result = await runWithRetry(provider, (nextAttemptNumber) =>
           runAttempt({
@@ -316,9 +321,10 @@ export function createFallbackAiProvider(
             provider,
             correlationId,
             attemptNumber: nextAttemptNumber,
-            controller: operationController,
+            controller,
             deadlineAtMs,
           }),
+          deadline,
         );
         if (result !== null) {
           return result;

@@ -261,9 +261,12 @@ event, and has a five-minute per-admin cooldown.
 Provider attempts are recorded separately from the billing ledger with safe,
 redacted operational metadata only. Normal fallback operations make up to
 three attempts per configured provider for transient failures, using two
-exponential jittered delays within one 30-second operation deadline, before
-trying the next configured provider. One-shot structured generation retains
-its existing one-call budget. This branch is not deployed or activated.
+exponential jittered delays within a separate 30-second deadline for each
+provider. A provider timeout therefore preserves the next provider's bounded
+fallback window instead of exhausting the entire chain before trying the next
+configured provider. One-shot structured generation retains its existing
+one-call budget. The additive typed NestJS provider composition preserves the
+same contract but remains outside the production entrypoint until runtime cutover.
 
 Send `/labs` in the private admin chat to control experimental features without
 redeploying the bot. Article tags have three versioned per-channel states:

@@ -38,6 +38,28 @@ test("typed composition retains Exa cap and one-shot boundaries", async () => {
   assert.deepEqual(calls, ["exa"]);
 });
 
+test("typed Exa fact search remains sequential and is never deadline-raced", async () => {
+  let calls = 0;
+  let scheduledTimeouts = 0;
+  const provider = createFallbackAiProvider([
+    { name: "exa", async searchFact() {
+      calls += 1;
+      if (calls === 1) throw Object.assign(new Error("network"), { code: "ECONNRESET" });
+      return { provider: "exa" };
+    } },
+  ], {
+    log: { warn() {} },
+    sleep: async () => {},
+    setTimeoutImpl() {
+      scheduledTimeouts += 1;
+      return scheduledTimeouts;
+    },
+  });
+  assert.equal((await provider.searchFact({})).provider, "exa");
+  assert.equal(calls, 2);
+  assert.equal(scheduledTimeouts, 0);
+});
+
 test("Exa retry cap hard-stops before a paid fallback", async () => {
   const calls: string[] = [];
   const provider = createFallbackAiProvider([
@@ -67,6 +89,41 @@ test("typed composition preserves legacy fallback result and attempt order", asy
   const legacy = await createLegacyFallbackAiProvider(createProviders(legacyCalls), { log: { warn() {} } as Console, sleep: async () => {} }).generateStructured({});
   assert.deepEqual(typed, legacy);
   assert.deepEqual(typedCalls, legacyCalls);
+});
+
+test("typed composition uses fresh per-provider AbortSignal and bounded fallback windows", async () => {
+  const signals: Array<AbortSignal | null> = [];
+  const scheduledDelays: number[] = [];
+  const provider = createFallbackAiProvider([
+    { name: "openai", async searchNews(input: { signal?: AbortSignal }) {
+      signals.push(input.signal ?? null);
+      return new Promise<never>(() => {});
+    } },
+    { name: "gemini", async searchNews(input: { signal?: AbortSignal }) {
+      signals.push(input.signal ?? null);
+      return { provider: "gemini" };
+    } },
+  ], {
+    log: { warn() {} },
+    sleep: async () => {},
+    providerDeadlineMs: 25,
+    setTimeoutImpl(callback, delayMs) {
+      scheduledDelays.push(delayMs);
+      if (scheduledDelays.length === 1) queueMicrotask(callback);
+      return scheduledDelays.length;
+    },
+    clearTimeoutImpl() {},
+  });
+  const result = await provider.searchNews({});
+  assert.equal(result.provider, "gemini");
+  assert.equal(signals.length, 2);
+  assert.equal(signals[0] instanceof AbortSignal, true);
+  assert.equal(signals[1] instanceof AbortSignal, true);
+  assert.notEqual(signals[0], signals[1]);
+  assert.equal(signals[0]?.aborted, true);
+  assert.equal(signals[1]?.aborted, false);
+  assert.equal(scheduledDelays.length, 2);
+  assert.ok(scheduledDelays.every((delay) => delay >= 0 && delay <= 25));
 });
 
 test("Nest composition instantiates SDKs only through Symbol ports and leaves Gemini optional", async () => {

@@ -154,11 +154,12 @@ test("Gemini transient failures use the production retry count and exponential d
   assert.deepEqual(delays, [250, 500]);
 });
 
-test("operation deadline aborts a hanging provider and prevents later retries", async () => {
+test("provider deadline aborts a hanging provider and preserves fallback budget", async () => {
   const calls = [];
   const records = [];
   let receivedSignal;
-  let scheduledDelay;
+  let fallbackSignal;
+  const scheduledDelays = [];
   const provider = createFallbackAiProvider(
     [
       {
@@ -171,18 +172,21 @@ test("operation deadline aborts a hanging provider and prevents later retries", 
       },
       {
         name: "gemini",
-        async generateStructured() {
+        async generateStructured({ signal }) {
           calls.push("gemini");
+          fallbackSignal = signal;
           return { provider: "gemini" };
         },
       },
     ],
     {
       log: { warn() {} },
-      retry: { operationDeadlineMs: 25 },
+      retry: { providerDeadlineMs: 25 },
       setTimeoutImpl(callback, delayMs) {
-        scheduledDelay = delayMs;
-        queueMicrotask(callback);
+        scheduledDelays.push(delayMs);
+        if (scheduledDelays.length === 1) {
+          queueMicrotask(callback);
+        }
         return 1;
       },
       clearTimeoutImpl() {},
@@ -197,14 +201,13 @@ test("operation deadline aborts a hanging provider and prevents later retries", 
     },
   );
 
-  await assert.rejects(
-    provider.generateStructured({}),
-    (error) => error instanceof AiProvidersExhaustedError,
-  );
-  assert.deepEqual(calls, ["openai"]);
+  const result = await provider.generateStructured({});
+  assert.equal(result.provider, "gemini");
+  assert.deepEqual(calls, ["openai", "gemini"]);
   assert.equal(receivedSignal.aborted, true);
-  assert.ok(scheduledDelay >= 0 && scheduledDelay <= 25);
-  assert.equal(records.filter(([kind, record]) => kind === "complete" && record.status === "succeeded").length, 0);
+  assert.equal(fallbackSignal.aborted, false);
+  assert.ok(scheduledDelays.every((delay) => delay >= 0 && delay <= 25));
+  assert.equal(records.filter(([kind, record]) => kind === "complete" && record.status === "succeeded").length, 1);
   assert.equal(records.filter(([kind, record]) => kind === "complete" && record.status === "failed").length, 1);
 });
 
