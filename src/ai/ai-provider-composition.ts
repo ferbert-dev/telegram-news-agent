@@ -60,6 +60,10 @@ export type FallbackAiProvider = {
 };
 
 const FALLBACK_PROVIDER_DEADLINE_MS = 30_000;
+const FALLBACK_PROVIDER_ATTEMPTS = 3;
+const FALLBACK_RETRY_BASE_DELAY_MS = 250;
+const FALLBACK_RETRY_MAX_DELAY_MS = 2_000;
+const FALLBACK_RETRY_JITTER_RATIO = 0.3;
 
 function timeoutError() {
   const error = new Error("AI provider operation deadline exceeded") as Error & { code: string };
@@ -78,6 +82,26 @@ function isAbortSignal(value: unknown): value is AbortSignal {
   );
 }
 
+function abortReason(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason;
+  const error = new Error("AI provider operation aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfAborted(signal: AbortSignal | null): void {
+  if (signal?.aborted) throw abortReason(signal);
+}
+
+function retryDelayMs(attempt: number, random: () => number): number {
+  const baseDelay = Math.min(
+    FALLBACK_RETRY_MAX_DELAY_MS,
+    FALLBACK_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1),
+  );
+  const jitterSpan = baseDelay * FALLBACK_RETRY_JITTER_RATIO;
+  return Math.floor(Math.max(1, baseDelay - jitterSpan + 2 * jitterSpan * random()));
+}
+
 export function createFallbackAiProvider(
   providers: Array<AiProviderPort | null | undefined>,
   {
@@ -86,6 +110,7 @@ export function createFallbackAiProvider(
     now = () => new Date(),
     sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
     providerDeadlineMs = FALLBACK_PROVIDER_DEADLINE_MS,
+    random = Math.random,
     setTimeoutImpl = (callback: () => void, delayMs: number) => setTimeout(callback, delayMs),
     clearTimeoutImpl = (timeoutId: unknown) => clearTimeout(timeoutId as ReturnType<typeof setTimeout>),
   }: {
@@ -94,6 +119,7 @@ export function createFallbackAiProvider(
     now?: () => Date;
     sleep?: (ms: number) => Promise<void>;
     providerDeadlineMs?: number;
+    random?: () => number;
     setTimeoutImpl?: (callback: () => void, delayMs: number) => unknown;
     clearTimeoutImpl?: (timeoutId: unknown) => void;
   } = {},
@@ -115,11 +141,9 @@ export function createFallbackAiProvider(
     const attemptController = controller ?? new AbortController();
     const semanticOperation = typeof input.usageOperation === "string" ? input.usageOperation : operation;
     const parentSignal = isAbortSignal(input.signal) ? input.signal : null;
+    throwIfAborted(parentSignal);
     const onParentAbort = () => attemptController.abort(parentSignal?.reason);
     if (parentSignal) parentSignal.addEventListener("abort", onParentAbort, { once: true });
-    if (parentSignal?.aborted) {
-      attemptController.abort(parentSignal.reason);
-    }
     const attemptInput = { ...(input as Record<string, unknown>), signal: attemptController.signal };
     await persistStartAiProviderAttempt(attemptRepository, {
       id, correlationId, operation: semanticOperation, provider: provider.name,
@@ -185,6 +209,8 @@ export function createFallbackAiProvider(
     correlationId: string,
     attemptNumber: number,
   ) => {
+    const parentSignal = isAbortSignal(input.signal) ? input.signal : null;
+    throwIfAborted(parentSignal);
     const id = newAttemptId();
     const started = now();
     await persistStartAiProviderAttempt(attemptRepository, {
@@ -229,29 +255,53 @@ export function createFallbackAiProvider(
   const execute = async (operation: AiProviderOperation, input: Record<string, unknown>) => {
     const errors: unknown[] = [];
     const correlationId = typeof input.traceId === "string" ? input.traceId : newAttemptId();
+    const parentSignal = isAbortSignal(input.signal) ? input.signal : null;
+    throwIfAborted(parentSignal);
     let attemptNumber = 0;
     for (const provider of available) {
       if (!provider[operation]) continue;
+      throwIfAborted(parentSignal);
       const deadlineAtMs = now().getTime() + providerDeadlineMs;
       const controller = new AbortController();
+      let providerAttempt = 0;
       try {
-        return await runAttempt(operation, input, provider, correlationId, ++attemptNumber, deadlineAtMs, controller);
+        while (
+          providerAttempt < FALLBACK_PROVIDER_ATTEMPTS
+          && !controller.signal.aborted
+          && now().getTime() < deadlineAtMs
+        ) {
+          throwIfAborted(parentSignal);
+          providerAttempt += 1;
+          try {
+            return await runAttempt(
+              operation,
+              input,
+              provider,
+              correlationId,
+              ++attemptNumber,
+              deadlineAtMs,
+              controller,
+            );
+          } catch (error) {
+            errors.push(error);
+            warn(operation, provider, error);
+            throwIfAborted(parentSignal);
+            const errorCode = classifyProviderError(error);
+            if (provider.name === "exa" && errorCode === "quota_exhausted") throw error;
+            if (!isTransientProviderError(error)) throw error;
+            if (
+              providerAttempt >= FALLBACK_PROVIDER_ATTEMPTS
+              || controller.signal.aborted
+              || now().getTime() >= deadlineAtMs
+            ) throw error;
+            const remainingMs = Math.max(0, deadlineAtMs - now().getTime());
+            await sleep(Math.min(retryDelayMs(providerAttempt, random), remainingMs));
+          }
+        }
       } catch (error) {
-        errors.push(error); warn(operation, provider, error);
+        throwIfAborted(parentSignal);
         if (provider.name === "exa" && classifyProviderError(error) === "quota_exhausted") {
           throw new AiProvidersExhaustedError(typeof input.usageOperation === "string" ? input.usageOperation : operation, errors, correlationId);
-        }
-        if (isTransientProviderError(error) && !controller.signal.aborted && now().getTime() < deadlineAtMs) {
-          try {
-            await sleep(250);
-            if (controller.signal.aborted || now().getTime() >= deadlineAtMs) continue;
-            return await runAttempt(operation, input, provider, correlationId, ++attemptNumber, deadlineAtMs, controller);
-          } catch (retryError) {
-            errors.push(retryError); warn(operation, provider, retryError);
-            if (provider.name === "exa" && classifyProviderError(retryError) === "quota_exhausted") {
-              throw new AiProvidersExhaustedError(typeof input.usageOperation === "string" ? input.usageOperation : operation, errors, correlationId);
-            }
-          }
         }
       }
     }
@@ -262,10 +312,13 @@ export function createFallbackAiProvider(
     const provider = available.find((candidate) => Boolean(candidate[operation]));
     if (!provider) throw new AiProvidersExhaustedError(operation, []);
     const correlationId = typeof input.traceId === "string" ? input.traceId : newAttemptId();
+    const parentSignal = isAbortSignal(input.signal) ? input.signal : null;
+    throwIfAborted(parentSignal);
     const controller = new AbortController();
     try {
       return await runAttempt(operation, input, provider, correlationId, 1, now().getTime() + providerDeadlineMs, controller);
     } catch (error) {
+      throwIfAborted(parentSignal);
       warn(operation, provider, error);
       throw new AiProvidersExhaustedError(operation, [error], (error as { traceId?: string }).traceId ?? correlationId);
     }
@@ -275,13 +328,17 @@ export function createFallbackAiProvider(
     const exa = available.find((candidate) => candidate.name === "exa" && candidate.searchFact);
     if (!exa) return execute("searchFact", input);
     const correlationId = typeof input.traceId === "string" ? input.traceId : newAttemptId();
+    const parentSignal = isAbortSignal(input.signal) ? input.signal : null;
+    throwIfAborted(parentSignal);
     try {
       return await runExaFactAttempt(input, exa, correlationId, 1);
     } catch (error) {
+      throwIfAborted(parentSignal);
       warn("searchFact", exa, error);
       if (!isTransientProviderError(error)) throw new AiProvidersExhaustedError("searchFact", [error], correlationId);
       try {
         await sleep(250);
+        throwIfAborted(parentSignal);
         return await runExaFactAttempt(input, exa, correlationId, 2);
       } catch (retryError) {
         warn("searchFact", exa, retryError);
