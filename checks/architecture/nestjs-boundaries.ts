@@ -323,6 +323,53 @@ test("additive Scheduler application is one-shot and remains unwired from the le
   }
 });
 
+test("scheduler worker owns the loop, stays durable, and remains unwired from production", async () => {
+  const workerPath = path.join(sourceRoot, "scheduler/news-scheduler-worker.ts");
+  const worker = await readFile(workerPath, "utf8");
+  const useCase = await readFile(
+    path.join(
+      sourceRoot,
+      "scheduler/application/run-scheduled-news-once.use-case.ts",
+    ),
+    "utf8",
+  );
+
+  // The loop belongs to the worker, never to the one-shot application layer.
+  assert.match(worker, /export class NewsSchedulerWorker\s+implements RuntimeWorker/);
+  assert.match(worker, /\bwhile\s*\(/, "worker must own the occurrence loop");
+  assert.doesNotMatch(useCase, /\bwhile\s*\(/);
+
+  // Durable PostgreSQL scheduling must not be replaced by cron or memory.
+  assert.doesNotMatch(worker, /@nestjs\/schedule/);
+  assert.doesNotMatch(worker, /\b(?:Cron|Interval|Timeout)\s*\(/);
+  assert.doesNotMatch(worker, /setInterval\s*\(/);
+
+  // Claim, CAS, checkpoint and quiet-hours authority stays in the use case.
+  for (const durable of [
+    /claimDueNewsSchedule/,
+    /renewNewsScheduleClaim/,
+    /saveNewsScheduleDraft/,
+    /finishNewsSchedule/,
+    /deferNewsScheduleForQuietHours/,
+    /shouldDeferScheduledNews/,
+  ]) {
+    assert.doesNotMatch(worker, durable, `worker must not reimplement ${durable}`);
+  }
+
+  // The worker reaches persistence only through the one-shot application port.
+  for (const specifier of importsOf(workerPath, worker)) {
+    assert.equal(isDirectDatabasePackage(specifier), false, specifier);
+    assert.doesNotMatch(specifier, /(?:^|\/)database(?:\/|$)/, specifier);
+    assert.doesNotMatch(specifier, /news-repository/, specifier);
+  }
+
+  for (const entrypoint of ["telegram-bot.js", "news-scheduler.js"]) {
+    const source = await readFile(path.join(sourceRoot, entrypoint), "utf8");
+    assert.doesNotMatch(source, /news-scheduler-worker/, entrypoint);
+    assert.doesNotMatch(source, /NewsSchedulerWorker/, entrypoint);
+  }
+});
+
 test("legacy research compatibility adapter is single-writer, narrow, and remains unwired", async () => {
   const gateway = await readFile(
     path.join(sourceRoot, "research/legacy-research-execution.gateway.ts"),
