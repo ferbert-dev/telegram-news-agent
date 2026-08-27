@@ -121,7 +121,9 @@ Manual `/news`, manual Publish, idempotent per-draft publication (an uncertain T
 
 ## Graphify
 
-`graphify-out/` is a persistent, AST-derived, code-only knowledge graph (no LLM tokens). For codebase questions run `graphify query "<question>" --budget 1400` first, then open the narrow paths it returns; `graphify path`, `explain`, and `affected` cover relationships. After changing code run `graphify extract . --code-only` — **not** the generic `graphify update .`, which would pull Markdown into the graph. Dirty generated graph files are expected and are not a reason to skip it. Verify migration-critical findings against `rg`, SQL, and tests.
+`graphify-out/` is a persistent, AST-derived, code-only knowledge graph (no LLM tokens). For codebase questions run `graphify query "<question>" --budget 1400` first, then open the narrow paths it returns; `graphify path`, `explain`, and `affected` cover relationships. After changing code run `graphify extract . --code-only` — **not** the generic `graphify update .`, which would pull Markdown into the graph. Verify migration-critical findings against `rg`, SQL, and tests.
+
+`graph.json`, `GRAPH_REPORT.md`, `manifest.json`, and `.graphify_analysis.json` are generated and gitignored, so a rebuild produces no diff and a fresh clone has no graph until someone runs the extract. The curated `graphify-out/memory/` and `reflections/` files stay tracked — those are saved query outcomes, not regenerated output. (`AGENTS.md` still says dirty graph files are expected; that line predates this change.)
 
 ## README synchronization
 
