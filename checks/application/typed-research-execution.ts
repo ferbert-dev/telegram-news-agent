@@ -490,6 +490,54 @@ test("web_search_summary fallback selects a non-primary web-source candidate whe
   assert.equal(finished?.metadata.selected_evidence_kind, "web_search_summary");
 });
 
+test("excluded-topic policy deterministically blocks a conflict-event title at the discovery stage and finishes the run with zero results", async () => {
+  const catalog: Partial<CatalogPersistence> = { async listEnabledSources() { return [PRIMARY_SOURCE]; } };
+  let finished: { resultCount: number; metadata: Record<string, unknown> } | undefined;
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() { return { id: "run-policy-blocked" } as never; },
+    async createOrResumeArticleCandidate() { throw new Error("must not persist a candidate blocked at discovery"); },
+    async finishSearchRun(id, details) { finished = details as never; return {} as never; },
+    async failSearchRun() { throw new Error("must not fail — this is a clean policy-filtered terminal state"); },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() { return []; },
+    async recordStoryDedupDecision() { return {} as never; },
+  };
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() { throw new Error("unused"); },
+    async fetchSourceFeed() { throw new Error("unused"); },
+    async fetchSource() {
+      // Matches the deterministic conflict-event regex in
+      // excluded-topic-policy.js — blocked without any AI call.
+      return [{ ...FEED_ENTRY, title: "Missile strike kills dozens in border town" }];
+    },
+    async fetchReddit() { throw new Error("unused"); },
+    async fetchGdelt() { throw new Error("unused"); },
+    // ranked.length is 0 after the discovery-stage block, so execute()
+    // legitimately proceeds through the feed-discovery and news-search
+    // fallback stages (matching research.js) before reaching the terminal
+    // no-candidates check — both must resolve empty, not throw.
+    async searchNews() { return { items: [], provider: "openai", model: null, usageEvents: [] }; },
+    async discoverFeeds() { return { status: "unsupported", sources: [], usageEvents: [] }; },
+  };
+  const ai = fakeAi(); // never called — the block is deterministic, not semantic
+
+  const gateway = buildGateway({ acquisition, catalog: catalog as CatalogPersistence, research: research as ResearchIngestionPersistence, storyDedup, usage: fakeUsage(), ai });
+
+  await assert.rejects(
+    gateway.execute({
+      input: {
+        query: "AI news",
+        newsSettings: { languageCode: "en", topicCodes: ["ai"], customTopics: [], excludedTopicCodes: ["war_conflict"], version: 1 },
+      },
+    }),
+    /No recent news candidates remained after excluded-topic policy/,
+  );
+  assert.equal(finished?.resultCount, 0);
+  assert.equal(finished?.metadata.reason, "excluded_topic_policy");
+  assert.equal(finished?.metadata.terminal_stage, "acquisition");
+});
+
 test("NoResearchCandidatesError is thrown, and failSearchRun (not finishSearchRun) records the run, when no candidates persist", async () => {
   const calls: string[] = [];
   const catalog: Partial<CatalogPersistence> = { async listEnabledSources() { return [PRIMARY_SOURCE]; } };
@@ -520,4 +568,45 @@ test("NoResearchCandidatesError is thrown, and failSearchRun (not finishSearchRu
   const gateway = buildGateway({ acquisition, catalog: catalog as CatalogPersistence, research: research as ResearchIngestionPersistence, storyDedup, usage });
   await assert.rejects(gateway.execute({ input: { query: "AI news" } }), NoResearchCandidatesError);
   assert.deepEqual(calls, ["NoResearchCandidatesError"]);
+});
+
+test("AI feed-discovery fallback supplies a candidate when no configured source produces one", async () => {
+  const discoveredSource = { id: null, name: "discovered.example", homepage_url: "https://discovered.example", feed_url: "https://discovered.example/feed", source_type: "rss", reliability_score: 70, is_primary: false };
+  let discoverFeedsCalled = false;
+  const catalog: Partial<CatalogPersistence> = { async listEnabledSources() { return []; } };
+  let finished: { resultCount: number } | undefined;
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() { return { id: "run-feed-discovery" } as never; },
+    async createOrResumeArticleCandidate(input) {
+      assert.equal(input.metadata?.discovery_kind, "discovered_rss_feed");
+      return { id: "discovered-article", metadata: {}, ...input } as never;
+    },
+    async saveRawContent() { return {} as never; },
+    async finishSearchRun(_id, details) { finished = details as never; return {} as never; },
+    async failSearchRun() { throw new Error("must not fail"); },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() { return []; },
+    async recordStoryDedupDecision() { return {} as never; },
+  };
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() { throw new Error("unused"); },
+    async fetchSourceFeed() { throw new Error("unused"); },
+    async fetchSource() { throw new Error("no configured source should be fanned out over — listEnabledSources is empty"); },
+    async fetchReddit() { throw new Error("unused"); },
+    async fetchGdelt() { throw new Error("unused"); },
+    async searchNews() { throw new Error("must not reach paid search once feed discovery already produced a candidate"); },
+    async discoverFeeds(input) {
+      discoverFeedsCalled = true;
+      assert.deepEqual(input.newsSettings, { languageCode: "en", topicCodes: ["ai"], customTopics: [] });
+      return { status: "completed", provider: "openai", model: "test", sources: [{ source: discoveredSource, entries: [FEED_ENTRY] }], usageEvents: [] };
+    },
+  };
+
+  const gateway = buildGateway({ acquisition, catalog: catalog as CatalogPersistence, research: research as ResearchIngestionPersistence, storyDedup, usage: fakeUsage() });
+  const result = await gateway.execute({ input: { query: "AI news" } });
+
+  assert.ok(discoverFeedsCalled);
+  assert.equal(result.selected.article.id, "discovered-article");
+  assert.equal(finished?.resultCount, 1);
 });
