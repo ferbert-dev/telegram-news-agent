@@ -193,7 +193,7 @@ test("typed execute persists candidates, saves discovery and evidence raw conten
   const result = await gateway.execute({ input: { query: "AI news" } });
 
   assert.equal(result.selected.article.id, "article-1");
-  assert.match(result.selected.evidenceText, /^Extracted primary article evidence with enough length to pass extraction\./);
+  assert.match(result.selected.evidenceText!, /^Extracted primary article evidence with enough length to pass extraction\./);
   assert.deepEqual(calls, [
     "start",
     ["article", "https://example.com/agent"],
@@ -381,6 +381,113 @@ test("execute rejects a pre-aborted signal before starting a run", async () => {
   controller.abort(new Error("cancelled before start"));
   await assert.rejects(gateway.execute({ input: { query: "AI news" } }, controller.signal), /cancelled before start/);
   assert.deepEqual(calls, []);
+});
+
+test("primary_feed_summary fallback selects a primary-source candidate when extraction fails", async () => {
+  const catalog: Partial<CatalogPersistence> = { async listEnabledSources() { return [PRIMARY_SOURCE]; } };
+  let finished: { resultCount: number; metadata: Record<string, unknown> } | undefined;
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() { return { id: "run-primary-fallback" } as never; },
+    async createOrResumeArticleCandidate(input) { return { id: "primary-fallback-article", metadata: {}, ...input } as never; },
+    async saveRawContent() { return {} as never; },
+    async transitionArticle() { throw new Error("must not transition — no policy exclusions configured"); },
+    async finishSearchRun(id, details) { finished = details as never; return {} as never; },
+    async failSearchRun() { throw new Error("must not fail"); },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() { return []; },
+    async recordStoryDedupDecision() { return {} as never; },
+  };
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() { throw new Error("unused"); },
+    async fetchSourceFeed() { throw new Error("unused"); },
+    async fetchSource() { return [FEED_ENTRY]; },
+    async fetchReddit() { throw new Error("unused"); },
+    async fetchGdelt() { throw new Error("unused"); },
+    async searchNews() { throw new Error("unused"); },
+    async discoverFeeds() { throw new Error("unused"); },
+  };
+
+  // A too-short article body fails EvidenceCurationService's MIN_TEXT(200)
+  // check, forcing extraction to fail and the run into the fallback tiers.
+  const gateway = buildGateway({
+    acquisition,
+    catalog: catalog as CatalogPersistence,
+    research: research as ResearchIngestionPersistence,
+    storyDedup,
+    usage: fakeUsage(),
+    articleHtml: "<article><p>short</p></article>",
+  });
+
+  const result = await gateway.execute({ input: { query: "AI news" } });
+  assert.equal(result.selected.verificationStatus, "primary_source");
+  assert.equal(result.selected.evidenceKind, "primary_feed_summary");
+  assert.equal(result.selected.evidenceText!, FEED_ENTRY.summary);
+  assert.equal(result.extractionErrors.length, 1);
+  assert.equal(result.extractionErrors[0].article_id, "primary-fallback-article");
+  assert.equal(finished?.metadata.selected_evidence_kind, "primary_feed_summary");
+});
+
+test("web_search_summary fallback selects a non-primary web-source candidate when extraction fails", async () => {
+  const gdeltSource: SourceWithTopics = {
+    ...PRIMARY_SOURCE,
+    id: "source-gdelt",
+    is_primary: false,
+    source_type: "api",
+    feed_url: "https://api.gdeltproject.org/api/v2/doc/doc",
+  };
+  const webEntry = {
+    title: "Independent outlet covers the story",
+    canonicalUrl: "https://unrelated-publisher.example/story",
+    author: null,
+    publishedAt: "2026-06-26T18:00:00Z",
+    summary: "An unaffiliated publisher's account of the same event.",
+    contentHash: "gdelt-hash",
+    publisher: "unrelated-publisher.example",
+    discoveryUrl: "https://api.gdeltproject.org/api/v2/doc/doc",
+    discoveryKind: "gdelt" as const,
+  };
+  const catalog: Partial<CatalogPersistence> = { async listEnabledSources() { return [gdeltSource]; } };
+  let finished: { resultCount: number; metadata: Record<string, unknown> } | undefined;
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() { return { id: "run-web-fallback" } as never; },
+    async createOrResumeArticleCandidate(input) { return { id: "web-fallback-article", metadata: {}, ...input } as never; },
+    async saveRawContent() { return {} as never; },
+    async transitionArticle() { throw new Error("must not transition — no policy exclusions configured"); },
+    async finishSearchRun(id, details) { finished = details as never; return {} as never; },
+    async failSearchRun() { throw new Error("must not fail"); },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() { return []; },
+    async recordStoryDedupDecision() { return {} as never; },
+  };
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() { throw new Error("unused"); },
+    async fetchSourceFeed() { throw new Error("unused"); },
+    async fetchSource(input) {
+      assert.equal(input.sourceType, "gdelt");
+      return [webEntry];
+    },
+    async fetchReddit() { throw new Error("unused"); },
+    async fetchGdelt() { throw new Error("unused"); },
+    async searchNews() { throw new Error("unused"); },
+    async discoverFeeds() { throw new Error("unused"); },
+  };
+
+  const gateway = buildGateway({
+    acquisition,
+    catalog: catalog as CatalogPersistence,
+    research: research as ResearchIngestionPersistence,
+    storyDedup,
+    usage: fakeUsage(),
+    articleHtml: "<article><p>short</p></article>",
+  });
+
+  const result = await gateway.execute({ input: { query: "AI news" } });
+  assert.equal(result.selected.verificationStatus, "web_search_summary");
+  assert.equal(result.selected.evidenceKind, "web_search_summary");
+  assert.equal(result.selected.evidenceText!, webEntry.summary);
+  assert.equal(finished?.metadata.selected_evidence_kind, "web_search_summary");
 });
 
 test("NoResearchCandidatesError is thrown, and failSearchRun (not finishSearchRun) records the run, when no candidates persist", async () => {
