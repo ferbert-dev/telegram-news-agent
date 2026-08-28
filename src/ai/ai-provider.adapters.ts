@@ -1,7 +1,7 @@
 import { getGeminiConfig } from "../gemini-client.js";
-import { createGeminiProvider, getGeminiProviderConfig } from "../gemini-provider.js";
-import { createOpenAiProvider, getOpenAiConfig } from "../openai-provider.js";
-import { createExaProvider, getExaProviderConfig } from "../exa-provider.js";
+import { exaProviderDescriptor } from "./providers/exa.provider.js";
+import { geminiProviderDescriptor } from "./providers/gemini.provider.js";
+import { openaiProviderDescriptor } from "./providers/openai.provider.js";
 
 import type {
   AiProviderPort,
@@ -15,21 +15,24 @@ export function createOpenAiProviderAdapter(
   env: NodeJS.ProcessEnv = process.env,
   sdk?: OpenAiSdkPort,
 ): AiProviderPort | null {
-  return createOpenAiProvider(getOpenAiConfig(env), { client: sdk }) as AiProviderPort | null;
+  const config = openaiProviderDescriptor.configure(env);
+  return config ? openaiProviderDescriptor.createAdapter(config, sdk) : null;
 }
 
 export function createGeminiProviderAdapter(
   env: NodeJS.ProcessEnv = process.env,
   sdk?: GeminiSdkPort,
 ): AiProviderPort | null {
-  return createGeminiProvider(getGeminiProviderConfig(env), { client: sdk }) as AiProviderPort | null;
+  const config = geminiProviderDescriptor.configure(env);
+  return config ? geminiProviderDescriptor.createAdapter(config, sdk) : null;
 }
 
 export function createExaProviderAdapter(
   env: NodeJS.ProcessEnv = process.env,
   sdk?: ExaSdkPort,
 ): AiProviderPort | null {
-  return createExaProvider(getExaProviderConfig(env), { client: sdk } as never) as AiProviderPort | null;
+  const config = exaProviderDescriptor.configure(env);
+  return config ? exaProviderDescriptor.createAdapter(config, sdk) : null;
 }
 
 export function createGeminiClientAdapter(
