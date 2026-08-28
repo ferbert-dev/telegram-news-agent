@@ -449,6 +449,34 @@ test("typed research execution engine has no direct database or legacy-runtime d
   }
 });
 
+// SourceAcquisitionGateway and EvidenceCurationService are the two other
+// large orchestration engines that, like typed-research-execution.gateway.ts
+// above, are named *.gateway.ts/*.engine.ts and so escape isApplicationLayerFile
+// entirely. Unlike the research gateways they have no sanctioned reason to
+// reach legacy JS at all (no "legacy-" prefix) — this test's bar is simply
+// "zero forbidden imports, full stop," which is what isApplicationLayerFile
+// would already enforce if it matched these filenames.
+test("source acquisition and evidence curation engines have no direct database, legacy-runtime, or forbidden-transport dependency", async () => {
+  for (const relativePath of [
+    "research/source-acquisition.gateway.ts",
+    "research/curation/evidence-curation.engine.ts",
+  ]) {
+    const absolute = path.join(sourceRoot, relativePath);
+    const source = await readFile(absolute, "utf8");
+    assertApplicationDependencies(relativePath, source);
+  }
+
+  // evidence-curation.engine.ts's one legacy JS import (news-settings.js, for
+  // LANGUAGE_OPTIONS/TOPIC_PRESETS constants) is deliberate and narrow — make
+  // that explicit rather than leaving it as an unstated exception.
+  const curation = await readFile(
+    path.join(sourceRoot, "research/curation/evidence-curation.engine.ts"),
+    "utf8",
+  );
+  const legacyJsImports = [...curation.matchAll(/from "\.\.\/\.\.\/([^"/]+\.js)"/g)].map((match) => match[1]);
+  assert.deepEqual([...new Set(legacyJsImports)], ["news-settings.js"]);
+});
+
 test("Nest module imports are acyclic and avoid forwardRef", async () => {
   const files = (await sourceFiles(sourceRoot)).filter((file) =>
     file.endsWith(".module.ts"),
