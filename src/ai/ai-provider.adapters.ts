@@ -1,38 +1,23 @@
 import { getGeminiConfig } from "../gemini-client.js";
-import { exaProviderDescriptor } from "./providers/exa.provider.js";
-import { geminiProviderDescriptor } from "./providers/gemini.provider.js";
 import { openaiProviderDescriptor } from "./providers/openai.provider.js";
 
 import type {
   AiProviderPort,
-  ExaSdkPort,
   GeminiClientPort,
   GeminiSdkPort,
   OpenAiSdkPort,
 } from "./ai-provider.contracts.js";
 
+// Kept for checks/emitted-ai-provider-core.mjs, which asserts this survives
+// tsc emit. Gemini's and Exa's equivalents were dropped: nothing calls them
+// — src/ai/ai-providers.module.ts builds their adapters straight from the
+// descriptors in providers/gemini.provider.ts and providers/exa.provider.ts.
 export function createOpenAiProviderAdapter(
   env: NodeJS.ProcessEnv = process.env,
   sdk?: OpenAiSdkPort,
 ): AiProviderPort | null {
   const config = openaiProviderDescriptor.configure(env);
   return config ? openaiProviderDescriptor.createAdapter(config, sdk) : null;
-}
-
-export function createGeminiProviderAdapter(
-  env: NodeJS.ProcessEnv = process.env,
-  sdk?: GeminiSdkPort,
-): AiProviderPort | null {
-  const config = geminiProviderDescriptor.configure(env);
-  return config ? geminiProviderDescriptor.createAdapter(config, sdk) : null;
-}
-
-export function createExaProviderAdapter(
-  env: NodeJS.ProcessEnv = process.env,
-  sdk?: ExaSdkPort,
-): AiProviderPort | null {
-  const config = exaProviderDescriptor.configure(env);
-  return config ? exaProviderDescriptor.createAdapter(config, sdk) : null;
 }
 
 export function createGeminiClientAdapter(

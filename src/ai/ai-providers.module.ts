@@ -8,6 +8,7 @@ import type { AiProviderAttemptWriter, AiProviderLogger } from "./ai-provider.co
 import { AI_PROVIDER, AI_PROVIDER_ATTEMPT_WRITER, AI_PROVIDER_ENV, AI_PROVIDER_LOGGER, EXA_PROVIDER, EXA_SDK, GEMINI_CLIENT, GEMINI_PROVIDER, GEMINI_SDK, OPENAI_PROVIDER, OPENAI_SDK } from "./ai-provider.tokens.js";
 import { BUILTIN_PROVIDER_DESCRIPTORS } from "./providers/index.js";
 import type { AiProviderDescriptor } from "./providers/provider-descriptor.contracts.js";
+import { assertValidDescriptors } from "./providers/provider-registry.js";
 
 /**
  * Built-in providers keep their original, stable Symbols so existing DI
@@ -31,6 +32,12 @@ export class AiProvidersModule {
     log?: AiProviderLogger;
     descriptors?: readonly AiProviderDescriptor[];
   } = {}): DynamicModule {
+    // Two descriptors sharing an id would silently collide on the same
+    // NAMED_SDK_TOKENS/NAMED_ADAPTER_TOKENS Symbol below (Nest lets a later
+    // `providers` entry for the same token win with no error) — fail loudly
+    // instead.
+    assertValidDescriptors(descriptors);
+
     const perProviderProviders: Provider[] = [];
     const adapterTokens: symbol[] = [];
     const adapterIds: string[] = [];
@@ -87,7 +94,7 @@ export class AiProvidersModule {
             const order = getAiProviderOrder(settings, descriptors);
             return createFallbackAiProvider(
               order.map((id) => byId.get(id)) as never,
-              { log: logger, attemptRepository: attempts },
+              { log: logger, attemptRepository: attempts, descriptors },
             );
           },
         },

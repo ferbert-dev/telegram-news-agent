@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Test } from "@nestjs/testing";
 
 import { BUILTIN_PROVIDER_DESCRIPTORS } from "../../src/ai/providers/index.js";
 import {
@@ -15,6 +16,8 @@ import {
   getAiProviderOrder,
 } from "../../src/ai/ai-provider-composition.js";
 import { getAiProviderOrder as getLegacyAiProviderOrder } from "../../src/ai-provider.js";
+import { AiProvidersModule } from "../../src/ai/ai-providers.module.js";
+import { AI_PROVIDER } from "../../src/ai/ai-provider.tokens.js";
 
 test("built-in descriptors are valid and uniquely identified", () => {
   assertValidDescriptors(BUILTIN_PROVIDER_DESCRIPTORS);
@@ -127,6 +130,76 @@ test("a provider without the halt trait falls through to the next provider on th
   );
   assert.equal((await provider.searchNews({})).provider, "gemini");
   assert.deepEqual(calls, ["openai", "gemini"]);
+});
+
+test("AiProvidersModule rejects a duplicate descriptor id before registering any provider", () => {
+  const duplicate: AiProviderDescriptor = { ...findDescriptor("openai")! };
+  assert.throws(
+    () => AiProvidersModule.register({ descriptors: [...BUILTIN_PROVIDER_DESCRIPTORS, duplicate] }),
+    /Duplicate AI provider descriptor id: openai/,
+  );
+});
+
+test("AiProvidersModule threads custom descriptors through to the composed AI_PROVIDER, not just direct callers", async () => {
+  // Regression test: an earlier version of ai-providers.module.ts called
+  // getAiProviderOrder(settings, descriptors) but omitted `descriptors` from
+  // createFallbackAiProvider's options, so trait lookups silently fell back
+  // to BUILTIN_PROVIDER_DESCRIPTORS and a custom descriptor's traits were
+  // never honored once wired through the real Nest module. Both providers
+  // here are synthetic (no OPENAI_API_KEY/GEMINI_API_KEY/EXA_* set, so none
+  // of the built-ins configure) — a real provider adapter would make a live
+  // network call on fallthrough instead of failing this test outright.
+  const calls: string[] = [];
+  const meteredDescriptor: AiProviderDescriptor = {
+    id: "synthetic-metered",
+    displayName: "Synthetic Metered",
+    capabilities: ["searchNews"],
+    defaultOrderRank: 5,
+    traits: { haltsCascadeOnQuotaExhaustion: true },
+    configure: () => ({}),
+    createClient: () => ({}),
+    createAdapter: () => ({
+      name: "synthetic-metered",
+      async searchNews() {
+        calls.push("synthetic-metered");
+        throw Object.assign(new Error("cap"), { code: "exa_daily_search_cap", status: 429 });
+      },
+    }),
+  };
+  const fallbackDescriptor: AiProviderDescriptor = {
+    id: "synthetic-fallback",
+    displayName: "Synthetic Fallback",
+    capabilities: ["searchNews"],
+    defaultOrderRank: 6,
+    traits: {},
+    configure: () => ({}),
+    createClient: () => ({}),
+    createAdapter: () => ({
+      name: "synthetic-fallback",
+      async searchNews() {
+        calls.push("synthetic-fallback");
+        return { provider: "synthetic-fallback" };
+      },
+    }),
+  };
+
+  const module = await Test.createTestingModule({
+    imports: [
+      AiProvidersModule.register({
+        env: { AI_PROVIDER_ORDER: "synthetic-metered,synthetic-fallback" },
+        descriptors: [...BUILTIN_PROVIDER_DESCRIPTORS, meteredDescriptor, fallbackDescriptor],
+      }),
+    ],
+  }).compile();
+  try {
+    const provider = module.get(AI_PROVIDER);
+    await assert.rejects(provider.searchNews({}), AiProvidersExhaustedError);
+    // If the trait weren't honored, the cascade would fall through and
+    // calls would be ["synthetic-metered", "synthetic-fallback"] instead.
+    assert.deepEqual(calls, ["synthetic-metered"]);
+  } finally {
+    await module.close();
+  }
 });
 
 test("testConnection is generic; testExaConnection is a thin alias over it", async () => {
