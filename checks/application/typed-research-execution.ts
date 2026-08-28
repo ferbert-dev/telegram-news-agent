@@ -1,0 +1,416 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { EvidenceCurationService } from "../../src/research/curation/evidence-curation.engine.js";
+import { NoResearchCandidatesError, TypedResearchExecutionGateway } from "../../src/research/typed-research-execution.gateway.js";
+
+import type { CatalogPersistence, SourceWithTopics } from "../../src/catalog/catalog-persistence.js";
+import type { ResearchIngestionPersistence } from "../../src/research/research-persistence.contracts.js";
+import type { SourceAcquisition } from "../../src/research/source-acquisition.contracts.js";
+import type { StoryDeduplicationPersistence } from "../../src/story-deduplication/story-deduplication.contracts.js";
+import type { UsageReportingPersistence } from "../../src/usage/usage-persistence.contracts.js";
+import type { FallbackAiProvider } from "../../src/ai/ai-provider-composition.js";
+
+const NOW = new Date("2026-06-27T00:00:00Z");
+
+const PRIMARY_SOURCE: SourceWithTopics = {
+  id: "source-1",
+  name: "Primary Source",
+  homepage_url: "https://example.com",
+  feed_url: "https://example.com/feed",
+  source_type: "rss",
+  reliability_score: 90,
+  enabled: true,
+  last_checked_at: null,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+  is_primary: true,
+  last_success_at: null,
+  last_failed_at: null,
+  consecutive_failures: 0,
+  last_error_code: null,
+  disabled_until: null,
+  discovered_by: "seed",
+  discovery_metadata: {},
+  topic_codes: [],
+};
+
+const FEED_ENTRY = {
+  title: "New AI agent released",
+  canonicalUrl: "https://example.com/agent",
+  author: "Research Team",
+  publishedAt: "2026-06-26T18:00:00Z",
+  summary: "A new agent model for research.",
+  contentHash: "hash",
+};
+
+const publicDns = async () => [{ address: "93.184.216.34", family: 4 as const }];
+const noSleep = { async sleep() {} };
+
+const curationGenerator = {
+  async generateStructured(input: { schemaName: string; input: unknown }) {
+    assert.equal(input.schemaName, "news_candidate_curation");
+    const candidates = (input.input as { candidates: Array<{ id: string }> }).candidates;
+    return { value: { rankedCandidateIds: candidates.map((c) => c.id) }, provider: "openai", model: "test", usageEvents: [] };
+  },
+};
+
+function fakeAi(overrides: Partial<FallbackAiProvider> = {}): FallbackAiProvider {
+  return {
+    names: ["openai"],
+    async generateStructured() {
+      throw new Error("unexpected generateStructured on the raw fake — excluded-topic policy should not need it here");
+    },
+    async generateStructuredOnce() {
+      throw new Error("unexpected generateStructuredOnce on the raw fake");
+    },
+    async searchNews() {
+      throw new Error("unexpected searchNews — this test should not fall back to paid search");
+    },
+    async searchFeeds() {
+      throw new Error("unexpected searchFeeds — this test should not fall back to feed discovery");
+    },
+    async searchFact() {
+      throw new Error("unexpected searchFact");
+    },
+    async testConnection() {
+      throw new Error("unexpected testConnection");
+    },
+    async testExaConnection() {
+      throw new Error("unexpected testExaConnection");
+    },
+    ...overrides,
+  };
+}
+
+function fakeUsage(): UsageReportingPersistence {
+  return {
+    async recordAiUsage() {
+      return {} as never;
+    },
+    async getDailyUsageDashboard() {
+      return {} as never;
+    },
+  };
+}
+
+function buildGateway({
+  acquisition,
+  catalog,
+  research,
+  storyDedup,
+  usage,
+  ai = fakeAi(),
+  articleHtml = `<article><p>${"Extracted primary article evidence with enough length to pass extraction. ".repeat(4)}</p></article>`,
+}: {
+  acquisition: SourceAcquisition;
+  catalog: CatalogPersistence;
+  research: ResearchIngestionPersistence;
+  storyDedup: StoryDeduplicationPersistence;
+  usage: UsageReportingPersistence;
+  ai?: FallbackAiProvider;
+  articleHtml?: string;
+}) {
+  const curation = new EvidenceCurationService(
+    publicDns,
+    { fetchPinned: async () => new Response(articleHtml, { status: 200, headers: { "content-type": "text/html" } }) },
+    noSleep,
+    curationGenerator,
+  );
+  return new TypedResearchExecutionGateway(acquisition, curation, ai, catalog, research, storyDedup, usage, () => NOW, { info() {}, warn() {} });
+}
+
+test("typed execute persists candidates, saves discovery and evidence raw content, then finishes the run", async () => {
+  const calls: unknown[] = [];
+  const catalog: Partial<CatalogPersistence> = {
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+  };
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() {
+      calls.push("start");
+      return { id: "run-1" } as never;
+    },
+    async createOrResumeArticleCandidate(input) {
+      calls.push(["article", input.canonical_url]);
+      return { id: "article-1", ...input } as never;
+    },
+    async saveRawContent(input) {
+      calls.push(["raw", input.article_id]);
+      return {} as never;
+    },
+    async transitionArticle() {
+      throw new Error("must not transition in this happy path");
+    },
+    async finishSearchRun(id, details) {
+      calls.push(["finish", id, details.resultCount]);
+      return {} as never;
+    },
+    async failSearchRun() {
+      calls.push("fail");
+      return {} as never;
+    },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() {
+      calls.push("listRecentPublishedStories");
+      return [];
+    },
+    async recordStoryDedupDecision(input) {
+      calls.push(["recordStoryDedupDecision", input.relation]);
+      return {} as never;
+    },
+  };
+  const usage: UsageReportingPersistence = fakeUsage();
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() {
+      throw new Error("unused");
+    },
+    async fetchSourceFeed() {
+      throw new Error("unused");
+    },
+    async fetchSource(input) {
+      assert.equal(input.sourceType, "rss");
+      assert.equal(input.sourceId, PRIMARY_SOURCE.id);
+      return [FEED_ENTRY];
+    },
+    async fetchReddit() {
+      throw new Error("unused");
+    },
+    async fetchGdelt() {
+      throw new Error("unused");
+    },
+    async searchNews() {
+      throw new Error("must not reach paid search when RSS already produced a candidate");
+    },
+    async discoverFeeds() {
+      throw new Error("must not reach feed discovery when RSS already produced a candidate");
+    },
+  };
+
+  const gateway = buildGateway({ acquisition, catalog: catalog as CatalogPersistence, research: research as ResearchIngestionPersistence, storyDedup, usage });
+  const result = await gateway.execute({ input: { query: "AI news" } });
+
+  assert.equal(result.selected.article.id, "article-1");
+  assert.match(result.selected.evidenceText, /^Extracted primary article evidence with enough length to pass extraction\./);
+  assert.deepEqual(calls, [
+    "start",
+    ["article", "https://example.com/agent"],
+    ["raw", "article-1"],
+    "listRecentPublishedStories",
+    ["recordStoryDedupDecision", "distinct"],
+    ["raw", "article-1"],
+    ["finish", "run-1", 1],
+  ]);
+});
+
+test("execute never calls finishSearchRun after a transitionArticle failure — failSearchRun replaces the pending rejection", async () => {
+  const transitionFailure = new Error("transition persistence failed");
+  const failReplacement = new Error("failSearchRun replacement");
+  let failedWith: unknown;
+
+  // Drive transitionArticle deterministically through the story-dedup
+  // "duplicate" branch (unconditional, no AI call, no policy dependency):
+  // a "published story" with the exact same title/summary as the candidate
+  // fingerprints identically and maxes out context similarity, guaranteeing
+  // a deterministic duplicate match with zero fixture complexity.
+  const fingerprint = new EvidenceCurationService(publicDns, { fetchPinned: async () => { throw new Error("must not fetch — duplicate short-circuits before extraction"); } }, noSleep)
+    .storyFingerprint({ title: FEED_ENTRY.title, summary: FEED_ENTRY.summary });
+
+  const catalog: Partial<CatalogPersistence> = {
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+  };
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() {
+      return { id: "run-transition-replacement" } as never;
+    },
+    async createOrResumeArticleCandidate(input) {
+      return { id: "transition-replacement-article", ...input } as never;
+    },
+    async saveRawContent() {
+      return {} as never;
+    },
+    async transitionArticle() {
+      throw transitionFailure;
+    },
+    async finishSearchRun() {
+      throw new Error("must not finish");
+    },
+    async failSearchRun(_id, error) {
+      failedWith = error;
+      throw failReplacement;
+    },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() {
+      return [
+        {
+          article_id: "published-prior",
+          title: FEED_ENTRY.title,
+          feed_summary: FEED_ENTRY.summary,
+          message_text: FEED_ENTRY.summary,
+          telegram_channel_id: "@channel",
+          telegram_message_id: 1,
+          published_at: "2026-06-26T12:00:00.000Z",
+          story_fingerprint: fingerprint,
+        },
+      ];
+    },
+    async recordStoryDedupDecision(input) {
+      assert.equal(input.relation, "duplicate");
+      return {} as never;
+    },
+  };
+  const usage: UsageReportingPersistence = fakeUsage();
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() {
+      throw new Error("unused");
+    },
+    async fetchSourceFeed() {
+      throw new Error("unused");
+    },
+    async fetchSource() {
+      return [FEED_ENTRY];
+    },
+    async fetchReddit() {
+      throw new Error("unused");
+    },
+    async fetchGdelt() {
+      throw new Error("unused");
+    },
+    async searchNews() {
+      throw new Error("unused");
+    },
+    async discoverFeeds() {
+      throw new Error("unused");
+    },
+  };
+
+  const gateway = buildGateway({
+    acquisition,
+    catalog: catalog as CatalogPersistence,
+    research: research as ResearchIngestionPersistence,
+    storyDedup,
+    usage,
+  });
+
+  await assert.rejects(
+    gateway.execute({ input: { query: "world news" } }),
+    (error) => error === failReplacement,
+  );
+  assert.equal(failedWith, transitionFailure);
+});
+
+test("execute fails closed without any discovery sources and never starts a run", async () => {
+  const calls: string[] = [];
+  const catalog: Partial<CatalogPersistence> = {
+    async listEnabledSources() {
+      return [];
+    },
+  };
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() {
+      calls.push("start");
+      return { id: "run-empty" } as never;
+    },
+    async failSearchRun() {
+      calls.push("fail");
+      return {} as never;
+    },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() {
+      return [];
+    },
+    async recordStoryDedupDecision() {
+      return {} as never;
+    },
+  };
+  const usage: UsageReportingPersistence = fakeUsage();
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() { throw new Error("unused"); },
+    async fetchSourceFeed() { throw new Error("unused"); },
+    async fetchSource() { throw new Error("unused"); },
+    async fetchReddit() { throw new Error("unused"); },
+    async fetchGdelt() { throw new Error("unused"); },
+    async searchNews() { throw new Error("unused"); },
+    async discoverFeeds() { throw new Error("unused"); },
+  };
+  const ai = fakeAi({ names: [] });
+
+  const gateway = buildGateway({ acquisition, catalog: catalog as CatalogPersistence, research: research as ResearchIngestionPersistence, storyDedup, usage, ai });
+
+  await assert.rejects(
+    gateway.execute({ input: { query: "AI news" } }),
+    /No enabled news discovery sources are configured/,
+  );
+  // The run was started (matching legacy behaviour — the guard runs inside
+  // the try block, after startSearchRun) and correctly failed, not finished.
+  assert.deepEqual(calls, ["start", "fail"]);
+});
+
+test("execute rejects a pre-aborted signal before starting a run", async () => {
+  const calls: string[] = [];
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() {
+      calls.push("start");
+      return { id: "run-aborted" } as never;
+    },
+  };
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() { throw new Error("unused"); },
+    async fetchSourceFeed() { throw new Error("unused"); },
+    async fetchSource() { throw new Error("unused"); },
+    async fetchReddit() { throw new Error("unused"); },
+    async fetchGdelt() { throw new Error("unused"); },
+    async searchNews() { throw new Error("unused"); },
+    async discoverFeeds() { throw new Error("unused"); },
+  };
+  const catalog: Partial<CatalogPersistence> = { async listEnabledSources() { throw new Error("unused"); } };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() { return []; },
+    async recordStoryDedupDecision() { return {} as never; },
+  };
+  const usage: UsageReportingPersistence = fakeUsage();
+  const gateway = buildGateway({ acquisition, catalog: catalog as CatalogPersistence, research: research as ResearchIngestionPersistence, storyDedup, usage });
+
+  const controller = new AbortController();
+  controller.abort(new Error("cancelled before start"));
+  await assert.rejects(gateway.execute({ input: { query: "AI news" } }, controller.signal), /cancelled before start/);
+  assert.deepEqual(calls, []);
+});
+
+test("NoResearchCandidatesError is thrown, and failSearchRun (not finishSearchRun) records the run, when no candidates persist", async () => {
+  const calls: string[] = [];
+  const catalog: Partial<CatalogPersistence> = { async listEnabledSources() { return [PRIMARY_SOURCE]; } };
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() { return { id: "run-empty-candidates" } as never; },
+    async createOrResumeArticleCandidate() { return null; },
+    async finishSearchRun() { throw new Error("must not finish"); },
+    async failSearchRun(_id, error) {
+      calls.push((error as Error).constructor.name);
+      return {} as never;
+    },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() { return []; },
+    async recordStoryDedupDecision() { return {} as never; },
+  };
+  const usage: UsageReportingPersistence = fakeUsage();
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() { throw new Error("unused"); },
+    async fetchSourceFeed() { throw new Error("unused"); },
+    async fetchSource() { return [FEED_ENTRY]; },
+    async fetchReddit() { throw new Error("unused"); },
+    async fetchGdelt() { throw new Error("unused"); },
+    async searchNews() { throw new Error("unused"); },
+    async discoverFeeds() { throw new Error("unused"); },
+  };
+
+  const gateway = buildGateway({ acquisition, catalog: catalog as CatalogPersistence, research: research as ResearchIngestionPersistence, storyDedup, usage });
+  await assert.rejects(gateway.execute({ input: { query: "AI news" } }), NoResearchCandidatesError);
+  assert.deepEqual(calls, ["NoResearchCandidatesError"]);
+});
