@@ -403,6 +403,52 @@ test("legacy research compatibility adapter is single-writer, narrow, and remain
   }
 });
 
+// typed-research-execution.gateway.ts is not matched by isApplicationLayerFile
+// (it's a *.gateway.ts, not *-application*/*.service.ts/*.use-case.ts), so
+// the generic application-layer scanner above never runs against it — even
+// though it IS orchestration logic in the sense that guard cares about. It
+// also reaches directly into a handful of legacy JS modules, which CLAUDE.md
+// otherwise reserves for legacy-*.gateway.ts files. Both are deliberate,
+// reviewed exceptions (the file composes typed child slices and reuses only
+// pure, stateless legacy helpers with no persistence/network of their own) —
+// this test makes that exception explicit and narrow rather than an
+// unenforced gap: it fails if the exact allowed import set drifts, or if the
+// forbidden database/legacy-runtime/provider-SDK/HTTP surface ever appears.
+test("typed research execution engine has no direct database or legacy-runtime dependency and its legacy JS reuse stays narrow", async () => {
+  const gateway = await readFile(
+    path.join(sourceRoot, "research/typed-research-execution.gateway.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(gateway, /NewsRepository|news-repository|\bpg\b|PG_POOL|drizzle-orm/);
+  assert.doesNotMatch(gateway, /\.\.\/(?:pipeline|draft|publish|publication-recovery|notion-audit)\.js/);
+  assert.doesNotMatch(gateway, /(?:^|\/)(?:openai|@google\/genai|exa-js)(?:\/|$)/);
+  assert.doesNotMatch(gateway, /node:https?\b|\baxios\b|\bundici\b|(?<!\.)\bfetch\(/);
+
+  // Only single-segment "../x.js" specifiers are genuine plain-JS legacy
+  // reuse. Typed sibling modules also end in .js (NodeNext requires the
+  // extension even for .ts sources) but always live under a subdirectory,
+  // e.g. "../ai/ai-provider-composition.js" — excluded by the [^/]+ here.
+  const legacyJsImports = [...gateway.matchAll(/from "\.\.\/([^"/]+\.js)"/g)].map((match) => match[1]);
+  assert.deepEqual(
+    [...new Set(legacyJsImports)].sort(),
+    ["ai-usage.js", "excluded-topic-policy.js", "feed.js", "news-settings.js"],
+    "legacy JS reuse must stay exactly this narrow set — extending it is a deliberate change, not an accident",
+  );
+
+  assert.match(gateway, /recordAiUsage/);
+  assert.match(gateway, /this\.research\.failSearchRun/);
+  assert.match(gateway, /terminalRunRecorded/);
+
+  for (const entrypoint of ["telegram-bot.js", "pipeline.js"]) {
+    const source = await readFile(path.join(sourceRoot, entrypoint), "utf8");
+    assert.doesNotMatch(
+      source,
+      /typed-research-execution|TypedResearchExecutionGateway/,
+      entrypoint,
+    );
+  }
+});
+
 test("Nest module imports are acyclic and avoid forwardRef", async () => {
   const files = (await sourceFiles(sourceRoot)).filter((file) =>
     file.endsWith(".module.ts"),
