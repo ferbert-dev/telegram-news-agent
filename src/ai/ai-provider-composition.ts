@@ -7,7 +7,9 @@ import {
   persistStartAiProviderAttempt,
   safeAttemptDiagnostics,
 } from "../telemetry/ai-provider-attempts.adapters.js";
-import { getExaProviderConfig } from "../exa-provider.js";
+import { BUILTIN_PROVIDER_DESCRIPTORS } from "./providers/index.js";
+import { getDefaultProviderOrder, listProviderIds, traitsOf } from "./providers/provider-registry.js";
+import type { AiProviderDescriptor } from "./providers/provider-descriptor.contracts.js";
 
 import type {
   AiProviderAttemptWriter,
@@ -16,8 +18,6 @@ import type {
   AiProviderPort,
   AiProviderResult,
 } from "./ai-provider.contracts.js";
-
-const SUPPORTED_PROVIDERS = new Set(["openai", "gemini", "exa"]);
 
 export class AiProvidersExhaustedError extends AggregateError {
   public readonly code = "ai_providers_exhausted";
@@ -32,14 +32,16 @@ export class AiProvidersExhaustedError extends AggregateError {
   }
 }
 
-export function getAiProviderOrder(env: NodeJS.ProcessEnv = process.env): string[] {
+export function getAiProviderOrder(
+  env: NodeJS.ProcessEnv = process.env,
+  descriptors: readonly AiProviderDescriptor[] = BUILTIN_PROVIDER_DESCRIPTORS,
+): string[] {
+  const supportedProviders = new Set(listProviderIds(descriptors));
   const configuredOrder = env.AI_PROVIDER_ORDER?.trim();
-  const defaultOrder = getExaProviderConfig(env)
-    ? "exa,openai,gemini"
-    : "openai,gemini";
+  const defaultOrder = getDefaultProviderOrder(env, descriptors).join(",");
   const unique = [...new Set((configuredOrder || defaultOrder).split(",")
     .map((name) => name.trim().toLowerCase()).filter(Boolean))];
-  const unsupported = unique.filter((name) => !SUPPORTED_PROVIDERS.has(name));
+  const unsupported = unique.filter((name) => !supportedProviders.has(name));
   if (unsupported.length) throw new Error(`Unsupported AI provider: ${unsupported.join(", ")}`);
   if (!unique.length) throw new Error("AI_PROVIDER_ORDER must contain at least one provider");
   return unique;
@@ -56,6 +58,7 @@ export type FallbackAiProvider = {
   searchNews: (input: Record<string, unknown>) => Promise<AiProviderResult>;
   searchFeeds: (input: Record<string, unknown>) => Promise<AiProviderResult>;
   searchFact: (input: Record<string, unknown>) => Promise<AiProviderResult>;
+  testConnection: (providerId: string) => Promise<AiProviderResult>;
   testExaConnection: () => Promise<AiProviderResult>;
 };
 
@@ -113,6 +116,7 @@ export function createFallbackAiProvider(
     random = Math.random,
     setTimeoutImpl = (callback: () => void, delayMs: number) => setTimeout(callback, delayMs),
     clearTimeoutImpl = (timeoutId: unknown) => clearTimeout(timeoutId as ReturnType<typeof setTimeout>),
+    descriptors = BUILTIN_PROVIDER_DESCRIPTORS,
   }: {
     log?: AiProviderLogger;
     attemptRepository?: AiProviderAttemptWriter | null;
@@ -122,6 +126,10 @@ export function createFallbackAiProvider(
     random?: () => number;
     setTimeoutImpl?: (callback: () => void, delayMs: number) => unknown;
     clearTimeoutImpl?: (timeoutId: unknown) => void;
+    /** Traits (haltsCascadeOnQuotaExhaustion, exclusiveOperations, ...) are
+     *  resolved against this set. Defaults to the built-in registry; pass a
+     *  superset here when composing providers outside it. */
+    descriptors?: readonly AiProviderDescriptor[];
   } = {},
 ): FallbackAiProvider {
   const available = providers.filter((provider): provider is AiProviderPort => Boolean(provider));
@@ -201,11 +209,13 @@ export function createFallbackAiProvider(
     }
   };
 
-  // Exa fact search is paid per call. Preserve its sequential behavior: an
-  // unsettled request is never raced with a deadline or retried concurrently.
-  const runExaFactAttempt = async (
+  // Operations trait-marked `sequentialOperations` are billed per call.
+  // Preserve their sequential behavior: an unsettled request is never raced
+  // with a deadline or retried concurrently.
+  const runSequentialAttempt = async (
     input: Record<string, unknown>,
     provider: AiProviderPort,
+    operation: AiProviderOperation,
     correlationId: string,
     attemptNumber: number,
   ) => {
@@ -216,15 +226,16 @@ export function createFallbackAiProvider(
     await persistStartAiProviderAttempt(attemptRepository, {
       id,
       correlationId,
-      operation: "searchFact",
+      operation,
       provider: provider.name,
       model: provider.model ?? null,
       attemptNumber,
       startedAt: started.toISOString(),
     }, log as Required<AiProviderLogger>);
     try {
-      if (!provider.searchFact) throw new Error(`Provider ${provider.name} does not support searchFact`);
-      const result = await provider.searchFact(input);
+      const method = provider[operation];
+      if (!method) throw new Error(`Provider ${provider.name} does not support ${operation}`);
+      const result = await method(input);
       await persistCompleteAiProviderAttempt(attemptRepository, {
         id,
         status: "succeeded",
@@ -287,7 +298,7 @@ export function createFallbackAiProvider(
             warn(operation, provider, error);
             throwIfAborted(parentSignal);
             const errorCode = classifyProviderError(error);
-            if (provider.name === "exa" && errorCode === "quota_exhausted") throw error;
+            if (traitsOf(provider.name, descriptors).haltsCascadeOnQuotaExhaustion && errorCode === "quota_exhausted") throw error;
             if (!isTransientProviderError(error)) throw error;
             if (
               providerAttempt >= FALLBACK_PROVIDER_ATTEMPTS
@@ -300,7 +311,7 @@ export function createFallbackAiProvider(
         }
       } catch (error) {
         throwIfAborted(parentSignal);
-        if (provider.name === "exa" && classifyProviderError(error) === "quota_exhausted") {
+        if (traitsOf(provider.name, descriptors).haltsCascadeOnQuotaExhaustion && classifyProviderError(error) === "quota_exhausted") {
           throw new AiProvidersExhaustedError(typeof input.usageOperation === "string" ? input.usageOperation : operation, errors, correlationId);
         }
       }
@@ -325,26 +336,34 @@ export function createFallbackAiProvider(
   };
 
   const executeFactSearch = async (input: Record<string, unknown>) => {
-    const exa = available.find((candidate) => candidate.name === "exa" && candidate.searchFact);
-    if (!exa) return execute("searchFact", input);
+    const exclusive = available.find(
+      (candidate) => traitsOf(candidate.name, descriptors).exclusiveOperations?.includes("searchFact") && candidate.searchFact,
+    );
+    if (!exclusive) return execute("searchFact", input);
     const correlationId = typeof input.traceId === "string" ? input.traceId : newAttemptId();
     const parentSignal = isAbortSignal(input.signal) ? input.signal : null;
     throwIfAborted(parentSignal);
     try {
-      return await runExaFactAttempt(input, exa, correlationId, 1);
+      return await runSequentialAttempt(input, exclusive, "searchFact", correlationId, 1);
     } catch (error) {
       throwIfAborted(parentSignal);
-      warn("searchFact", exa, error);
+      warn("searchFact", exclusive, error);
       if (!isTransientProviderError(error)) throw new AiProvidersExhaustedError("searchFact", [error], correlationId);
       try {
         await sleep(250);
         throwIfAborted(parentSignal);
-        return await runExaFactAttempt(input, exa, correlationId, 2);
+        return await runSequentialAttempt(input, exclusive, "searchFact", correlationId, 2);
       } catch (retryError) {
-        warn("searchFact", exa, retryError);
+        warn("searchFact", exclusive, retryError);
         throw new AiProvidersExhaustedError("searchFact", [error, retryError], correlationId);
       }
     }
+  };
+
+  const testConnection = async (providerId: string, operationLabel = `testConnection:${providerId}`) => {
+    const candidate = available.find((provider) => provider.name === providerId && provider.testConnection);
+    if (!candidate?.testConnection) throw new AiProvidersExhaustedError(operationLabel, []);
+    return candidate.testConnection();
   };
 
   return {
@@ -354,10 +373,7 @@ export function createFallbackAiProvider(
     searchNews: (input) => execute("searchNews", input),
     searchFeeds: (input) => execute("searchFeeds", input),
     searchFact: executeFactSearch,
-    async testExaConnection() {
-      const exa = available.find((provider) => provider.name === "exa" && provider.testConnection);
-      if (!exa?.testConnection) throw new AiProvidersExhaustedError("testExaConnection", []);
-      return exa.testConnection();
-    },
+    testConnection,
+    testExaConnection: () => testConnection("exa", "testExaConnection"),
   };
 }

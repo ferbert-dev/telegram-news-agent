@@ -13,7 +13,7 @@ export type AiProviderResult = {
 };
 
 export type AiProviderPort = {
-  name: "openai" | "gemini" | "exa";
+  name: string;
   model?: string | null;
   generateStructured?: (input: Record<string, unknown>) => Promise<AiProviderResult>;
   searchNews?: (input: Record<string, unknown>) => Promise<AiProviderResult>;
