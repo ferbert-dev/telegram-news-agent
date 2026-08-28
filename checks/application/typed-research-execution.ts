@@ -610,3 +610,51 @@ test("AI feed-discovery fallback supplies a candidate when no configured source 
   assert.equal(result.selected.article.id, "discovered-article");
   assert.equal(finished?.resultCount, 1);
 });
+
+test("AI news-search fallback supplies a candidate when feed discovery also yields nothing", async () => {
+  let searchNewsCalled = false;
+  const catalog: Partial<CatalogPersistence> = { async listEnabledSources() { return []; } };
+  let finished: { resultCount: number } | undefined;
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() { return { id: "run-news-search" } as never; },
+    async createOrResumeArticleCandidate(input) {
+      assert.match(input.canonical_url, /^https:\/\/web-result\.example\/story/);
+      return { id: "web-search-article", metadata: {}, ...input } as never;
+    },
+    async saveRawContent() { return {} as never; },
+    async finishSearchRun(_id, details) { finished = details as never; return {} as never; },
+    async failSearchRun() { throw new Error("must not fail"); },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() { return []; },
+    async recordStoryDedupDecision() { return {} as never; },
+  };
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() { throw new Error("unused"); },
+    async fetchSourceFeed() { throw new Error("unused"); },
+    async fetchSource() { throw new Error("no configured source — listEnabledSources is empty"); },
+    async fetchReddit() { throw new Error("unused"); },
+    async fetchGdelt() { throw new Error("unused"); },
+    async searchNews() { throw new Error("unused — the gateway calls the AI provider's searchNews directly, not the acquisition port's"); },
+    async discoverFeeds() { return { status: "unsupported", sources: [], usageEvents: [] }; },
+  };
+  const ai = fakeAi({
+    async searchNews(input) {
+      searchNewsCalled = true;
+      assert.equal((input as { query: string }).query, "AI news");
+      return {
+        provider: "openai",
+        items: [{ url: "https://web-result.example/story", title: "Web search result", summary: "A summary from paid web search.", publishedAt: "2026-06-26T18:00:00Z" }],
+        usageEvents: [],
+      } as never;
+    },
+  });
+
+  const gateway = buildGateway({ acquisition, catalog: catalog as CatalogPersistence, research: research as ResearchIngestionPersistence, storyDedup, usage: fakeUsage(), ai });
+  const result = await gateway.execute({ input: { query: "AI news" } });
+
+  assert.ok(searchNewsCalled);
+  assert.equal(result.selected.article.id, "web-search-article");
+  assert.equal(result.selected.discoveryKind, "openai_web_search");
+  assert.equal(finished?.resultCount, 1);
+});
