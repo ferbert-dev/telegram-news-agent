@@ -287,7 +287,7 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
         const providers = new Map<string, unknown>();
         for (const audit of enabledAudits) {
           for (const provider of (audit.providers as Array<{ provider?: string; model?: string }> | undefined) ?? []) {
-            const key = `${provider.provider ?? "unknown"} ${provider.model ?? "unknown"}`;
+            const key = `${provider.provider ?? "unknown"}\u0000${provider.model ?? "unknown"}`;
             providers.set(key, provider);
           }
         }
@@ -478,8 +478,16 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
             provider: string;
           };
           providerDiscovery = searchResult;
-          // SourceAcquisitionGateway/FallbackAiProvider already persist usage
-          // for this call internally — recording it again here would double-count.
+          // Unlike discoverFeeds (called via SourceAcquisitionGateway, which
+          // records usage internally), this calls the raw AI provider
+          // directly — SourceAcquisitionGateway.searchNews is deliberately
+          // bypassed (see module design notes), so nothing else records this
+          // call's usage. Must record it here, matching research.js's own
+          // explicit recordAiUsageEvents call after discoveryProvider.searchNews.
+          await recordAiUsageEvents(usageRepository, searchResult.usageEvents, {
+            channelId,
+            searchRunId: run.id,
+          } as never);
           const seenWebPublishers = new Set<string>();
           const providerCandidates = searchResult.items.flatMap((item, searchRank) => {
             let canonicalUrl: string;

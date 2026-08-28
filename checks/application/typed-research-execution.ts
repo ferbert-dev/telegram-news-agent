@@ -611,8 +611,14 @@ test("AI feed-discovery fallback supplies a candidate when no configured source 
   assert.equal(finished?.resultCount, 1);
 });
 
-test("AI news-search fallback supplies a candidate when feed discovery also yields nothing", async () => {
+test("AI news-search fallback supplies a candidate when feed discovery also yields nothing, and records its usage", async () => {
+  // Regression test: this call goes through the raw AI provider directly
+  // (this.ai.searchNews), bypassing SourceAcquisitionGateway.searchNews —
+  // the one place that would otherwise record usage internally. An earlier
+  // version of the gateway assumed (incorrectly, per its own comment) that
+  // usage was already being recorded somewhere and silently dropped it.
   let searchNewsCalled = false;
+  const recordedUsage: unknown[] = [];
   const catalog: Partial<CatalogPersistence> = { async listEnabledSources() { return []; } };
   let finished: { resultCount: number } | undefined;
   const research: Partial<ResearchIngestionPersistence> = {
@@ -645,16 +651,28 @@ test("AI news-search fallback supplies a candidate when feed discovery also yiel
       return {
         provider: "openai",
         items: [{ url: "https://web-result.example/story", title: "Web search result", summary: "A summary from paid web search.", publishedAt: "2026-06-26T18:00:00Z" }],
-        usageEvents: [],
+        usageEvents: [{ provider: "openai", model: "test", operation: "news_search", inputTokens: 42 }],
       } as never;
     },
   });
+  const usage: UsageReportingPersistence = {
+    ...fakeUsage(),
+    async recordAiUsage(input) {
+      recordedUsage.push(input);
+      return {} as never;
+    },
+  };
 
-  const gateway = buildGateway({ acquisition, catalog: catalog as CatalogPersistence, research: research as ResearchIngestionPersistence, storyDedup, usage: fakeUsage(), ai });
+  const gateway = buildGateway({ acquisition, catalog: catalog as CatalogPersistence, research: research as ResearchIngestionPersistence, storyDedup, usage, ai });
   const result = await gateway.execute({ input: { query: "AI news" } });
 
   assert.ok(searchNewsCalled);
   assert.equal(result.selected.article.id, "web-search-article");
   assert.equal(result.selected.discoveryKind, "openai_web_search");
   assert.equal(finished?.resultCount, 1);
+  assert.equal(recordedUsage.length, 1);
+  assert.equal((recordedUsage[0] as { provider: string }).provider, "openai");
+  assert.equal((recordedUsage[0] as { operation: string }).operation, "news_search");
+  assert.equal((recordedUsage[0] as { inputTokens: number }).inputTokens, 42);
+  assert.equal((recordedUsage[0] as { searchRunId: string }).searchRunId, "run-news-search");
 });
