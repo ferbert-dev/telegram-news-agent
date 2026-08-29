@@ -7,6 +7,7 @@ import type { EditorialWorkflowApplicationPort } from "../editorial/editorial-ap
 import { EditorialPersistenceModule } from "../editorial/editorial-persistence.module.js";
 import { SettingsApplicationModule } from "../settings/settings-application.module.js";
 import { DecideTelegramReviewUseCase } from "./application/decide-telegram-review.use-case.js";
+import { DeliverTelegramReviewUseCase } from "./application/deliver-telegram-review.use-case.js";
 import { GetTelegramStatsUseCase } from "./application/get-telegram-stats.use-case.js";
 import { HandleTelegramControlUpdateUseCase } from "./application/handle-telegram-control-update.use-case.js";
 import { HandleTelegramLabsUseCase } from "./application/handle-telegram-labs.use-case.js";
@@ -81,6 +82,10 @@ export class TelegramControlApplicationModule {
         },
         RunTelegramNewsUseCase,
         DecideTelegramReviewUseCase,
+        // Registered so the scheduler's review-delivery adapter can resolve it.
+        // It implements review-session create/rebind/renew but was previously
+        // unreachable: @Injectable with no provider entry in any module.
+        DeliverTelegramReviewUseCase,
         HandleTelegramSettingsUseCase,
         HandleTelegramLabsUseCase,
         GetTelegramStatsUseCase,
@@ -92,7 +97,7 @@ export class TelegramControlApplicationModule {
           useExisting: TelegramControlService,
         },
       ],
-      exports: [TELEGRAM_CONTROL_APPLICATION],
+      exports: [TELEGRAM_CONTROL_APPLICATION, DeliverTelegramReviewUseCase],
     };
   }
 }
