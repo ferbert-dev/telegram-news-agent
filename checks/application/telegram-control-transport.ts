@@ -10,6 +10,7 @@ import { TelegramControlService } from "../../src/telegram/application/telegram-
 import type { TelegramControlRequest } from "../../src/telegram/telegram-application.contracts.js";
 import { TelegramControlError } from "../../src/telegram/telegram-application.contracts.js";
 import { TelegramControlApplicationModule } from "../../src/telegram/telegram-control-application.module.js";
+import { DeliverTelegramReviewUseCase } from "../../src/telegram/application/deliver-telegram-review.use-case.js";
 import { TELEGRAM_CONTROL_APPLICATION } from "../../src/telegram/telegram-application.tokens.js";
 import {
   TelegramBotApiGateway,
@@ -729,5 +730,14 @@ test("TelegramControlApplicationModule exposes a real Nest application identity 
   const application = moduleRef.get(TELEGRAM_CONTROL_APPLICATION);
   assert.ok(application instanceof TelegramControlService);
   assert.equal(moduleRef.get(TelegramControlService), application);
+
+  // DeliverTelegramReviewUseCase was @Injectable but listed as a provider in no
+  // module at all, so nothing could resolve it. The scheduler's review-delivery
+  // adapter needs it, so this asserts it is genuinely constructible from the
+  // module's own graph rather than merely present in the providers array.
+  const delivery = moduleRef.get(DeliverTelegramReviewUseCase);
+  assert.ok(delivery instanceof DeliverTelegramReviewUseCase);
+  assert.equal(typeof delivery.execute, "function");
+
   await moduleRef.close();
 });
