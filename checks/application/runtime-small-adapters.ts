@@ -3,7 +3,11 @@ import test from "node:test";
 
 import { createTelegramCallAdapter } from "../../src/telegram/transport/telegram-call.adapter.js";
 import { TelegramSchedulerNotificationAdapter } from "../../src/scheduler/telegram-scheduler-notification.adapter.js";
-import { LegacySchedulerAuditAdapter } from "../../src/scheduler/legacy-scheduler-audit.adapter.js";
+import {
+  LegacySchedulerAuditAdapter,
+  SCHEDULED_RUN_AUDIT_NAME,
+  SCHEDULED_RUN_FAILURE_AUDIT_CODE,
+} from "../../src/scheduler/legacy-scheduler-audit.adapter.js";
 import { LegacyTelegramControlAuditAdapter } from "../../src/telegram/legacy-telegram-control-audit.adapter.js";
 
 import type {
@@ -109,6 +113,18 @@ function auditLogger(overrides: Partial<{ start: () => Promise<typeof auditRun>;
   };
 }
 
+/** Records what start() was called with, so title/objective are pinned. */
+function recordingAuditLogger(finish: (run: unknown, f: unknown) => Promise<unknown> = async () => ({})) {
+  const started: unknown[] = [];
+  return {
+    started,
+    logger: {
+      async start(details: unknown) { started.push(details); return auditRun; },
+      finish,
+    },
+  };
+}
+
 test("scheduler audit adapter records a run and returns the operation's own result", async () => {
   const finished: unknown[] = [];
   const adapter = new LegacySchedulerAuditAdapter(
@@ -125,8 +141,13 @@ test("scheduler audit adapter records a run and returns the operation's own resu
   assert.equal((finished[0] as { status: string }).status, "Succeeded");
 });
 
-test("scheduler audit adapter rethrows the operation error unchanged when finalization succeeds", async () => {
-  const failure = new Error("pipeline failed");
+test("scheduler audit adapter rethrows the operation error unchanged and never uploads its raw message", async () => {
+  // Production's legacy caller sanitizes to a constant
+  // (withScheduledAudit passes sanitizeError: () => "scheduled_run_failed").
+  // Pipeline failures routinely embed provider responses that can contain API
+  // keys, plus draft text and chat ids, and this record goes to a third-party
+  // Notion workspace.
+  const failure = new Error('OpenAI request failed: 401 Incorrect API key provided: sk-proj-SECRET');
   const finished: unknown[] = [];
   const adapter = new LegacySchedulerAuditAdapter(
     auditLogger({ finish: async (_run, finalization) => { finished.push(finalization); return {}; } }),
@@ -139,6 +160,69 @@ test("scheduler audit adapter rethrows the operation error unchanged when finali
     (error) => error === failure,
   );
   assert.equal((finished[0] as { status: string }).status, "Failed");
+  assert.equal((finished[0] as { error: string }).error, SCHEDULED_RUN_FAILURE_AUDIT_CODE);
+  assert.doesNotMatch(JSON.stringify(finished), /sk-proj-SECRET|Incorrect API key/);
+});
+
+test("scheduler audit adapter keeps a constant page title and puts the run id in the objective", () => {
+  // Notion board views, rollups and saved filters group scheduled runs by this
+  // exact Name; a per-run title would split history into one row per run.
+  assert.equal(SCHEDULED_RUN_AUDIT_NAME, "Telegram scheduler - news run");
+});
+
+test("scheduler audit adapter records the constant title and a run-identifying objective", async () => {
+  const { started, logger } = recordingAuditLogger();
+  const adapter = new LegacySchedulerAuditAdapter(logger);
+
+  await adapter.run({ channelId: "@channel", scheduleRunId: "run-77", settingsVersion: 3 }, async () => okResult);
+
+  assert.equal(started.length, 1);
+  assert.equal((started[0] as { name: string }).name, SCHEDULED_RUN_AUDIT_NAME);
+  assert.match((started[0] as { objective: string }).objective, /run-77/);
+  assert.match((started[0] as { objective: string }).objective, /version 3/);
+});
+
+test("scheduler audit adapter honors an abort before issuing any Notion write", async () => {
+  // Without this, a SIGTERM arriving here still fires two uncancellable Notion
+  // HTTP calls and can hold shutdown past compose's 45s stop_grace_period.
+  const { started, logger } = recordingAuditLogger();
+  const adapter = new LegacySchedulerAuditAdapter(logger);
+  const controller = new AbortController();
+  const cancellation = new Error("shutting down");
+  controller.abort(cancellation);
+
+  let ranOperation = false;
+  await assert.rejects(
+    adapter.run(
+      { channelId: "@channel", scheduleRunId: "run-1", settingsVersion: 3 },
+      async () => { ranOperation = true; return okResult; },
+      controller.signal,
+    ),
+    (error) => error === cancellation,
+  );
+  assert.equal(started.length, 0);
+  assert.equal(ranOperation, false);
+});
+
+test("an abort before success finalization defers the record to the outbox instead of losing the outcome", async () => {
+  const enqueued: unknown[] = [];
+  let finishCalls = 0;
+  const adapter = new LegacySchedulerAuditAdapter(
+    auditLogger({ finish: async () => { finishCalls += 1; return {}; } }),
+    { async enqueueNotionAuditBackfill(record) { enqueued.push(record); return {}; } },
+  );
+  const controller = new AbortController();
+
+  const result = await adapter.run(
+    { channelId: "@channel", scheduleRunId: "run-1", settingsVersion: 3 },
+    async () => { controller.abort(new Error("shutting down")); return okResult; },
+    controller.signal,
+  );
+
+  // The work succeeded, so the outcome survives; only its audit is deferred.
+  assert.equal(result, okResult);
+  assert.equal(finishCalls, 0);
+  assert.equal(enqueued.length, 1);
 });
 
 test("scheduler audit adapter fails closed: an operation failure plus a finalization failure surface together", async () => {
@@ -178,6 +262,13 @@ test("scheduler audit adapter falls back to the durable outbox when success fina
   assert.equal((enqueued[0] as { notion_page_id: string }).notion_page_id, "page-1");
   assert.equal((enqueued[0] as { event_type: string }).event_type, "finalize_success");
   assert.match((enqueued[0] as { last_error: string }).last_error, /notion unreachable/);
+  // backfillNotionAudits does `new Date(record.payload.started_at)` and hands
+  // `record.payload.finalization` straight to logger.finish, so both keys are
+  // a consumed contract, not free-form metadata.
+  const payload = (enqueued[0] as { payload: { started_at: string; finalization: { status: string; links: string } } }).payload;
+  assert.equal(payload.started_at, auditRun.startedAt.toISOString());
+  assert.equal(payload.finalization.status, "Succeeded");
+  assert.equal(payload.finalization.links, auditRun.pageUrl);
 });
 
 test("scheduler audit adapter rethrows a success finalization failure when no outbox is configured", async () => {
@@ -217,7 +308,10 @@ test("telegram control audit adapter returns the operation result and logs start
 test("telegram control audit adapter rethrows unchanged and never logs the error message", async () => {
   // Control payloads carry private message content; only a coarse error
   // identity may be audited.
-  const failure = new Error("chat 12345 private draft text leaked");
+  class ControlError extends Error {
+    constructor(message: string) { super(message); this.name = "ControlError"; }
+  }
+  const failure = new ControlError("chat 12345 private draft text leaked");
   const logged: string[] = [];
   const adapter = new LegacyTelegramControlAuditAdapter({ info: (message) => logged.push(message) });
 
@@ -225,10 +319,19 @@ test("telegram control audit adapter rethrows unchanged and never logs the error
     adapter.run(controlContext, async () => { throw failure; }),
     (error) => error === failure,
   );
-  const failureEvent = JSON.parse(logged[1]) as { event: string; error_name: string };
+  const failureEvent = JSON.parse(logged[1]) as Record<string, unknown>;
   assert.equal(failureEvent.event, "telegram_control_update_failed");
-  assert.equal(failureEvent.error_name, "Error");
+  // A subclass makes this load-bearing: error.constructor.name or a wrong
+  // field would not produce "ControlError".
+  assert.equal(failureEvent.error_name, "ControlError");
   assert.doesNotMatch(logged.join("\n"), /private draft text leaked|12345/);
+  // Pin the exact emitted key set, so a future change that spreads richer
+  // context (chat id, message text) into the event fails here rather than
+  // silently leaking.
+  assert.deepEqual(
+    Object.keys(failureEvent).sort(),
+    ["duration_ms", "error_name", "event", "route_kind", "update_id", "update_kind"],
+  );
 });
 
 test("telegram control audit adapter cannot let a throwing logger alter the routed outcome", async () => {
