@@ -477,6 +477,42 @@ test("source acquisition and evidence curation engines have no direct database, 
   assert.deepEqual([...new Set(legacyJsImports)], ["news-settings.js"]);
 });
 
+test("scheduler adapters keep their legacy JS reuse narrow and stay unwired from production", async () => {
+  // Same coverage gap as the research gateways: these are *.adapter.ts files,
+  // which isApplicationLayerFile does not match, so the generic scanner never
+  // sees them despite their being real composition logic.
+  for (const relativePath of [
+    "scheduler/typed-scheduler-news-workflow.adapter.ts",
+    "scheduler/telegram-scheduler-review-delivery.adapter.ts",
+    "scheduler/legacy-scheduler-audit.adapter.ts",
+  ]) {
+    const source = await readFile(path.join(sourceRoot, relativePath), "utf8");
+    assert.doesNotMatch(source, /NewsRepository|news-repository|\bpg\b|PG_POOL|drizzle-orm/, relativePath);
+    assert.doesNotMatch(source, /\.\.\/(?:pipeline|draft|publish|publication-recovery|research)\.js/, relativePath);
+    assert.doesNotMatch(source, /^(?:node:)?https?(?:\/|$)|\baxios\b|\bundici\b/m, relativePath);
+  }
+
+  // The news-workflow adapter composes research and editorial, so it must not
+  // reach either concrete implementation -- the ports are structural on
+  // purpose, and the guard below forbids the use case from doing it directly.
+  const newsWorkflow = await readFile(
+    path.join(sourceRoot, "scheduler/typed-scheduler-news-workflow.adapter.ts"),
+    "utf8",
+  );
+  // Import-based, not text-based: the file's doc comment legitimately quotes
+  // both class names when explaining which seam it binds to instead.
+  for (const specifier of importsOf("news-workflow.ts", newsWorkflow)) {
+    assert.doesNotMatch(specifier, /research\.service|editorial-workflow\.service/, specifier);
+  }
+  const legacyJsImports = [...newsWorkflow.matchAll(/from "\.\.\/([^"/]+\.js)"/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(legacyJsImports)], ["news-settings.js"]);
+
+  for (const entrypoint of ["telegram-bot.js", "news-scheduler.js"]) {
+    const source = await readFile(path.join(sourceRoot, entrypoint), "utf8");
+    assert.doesNotMatch(source, /typed-scheduler-news-workflow|TypedSchedulerNewsWorkflowAdapter/, entrypoint);
+  }
+});
+
 test("Nest module imports are acyclic and avoid forwardRef", async () => {
   const files = (await sourceFiles(sourceRoot)).filter((file) =>
     file.endsWith(".module.ts"),

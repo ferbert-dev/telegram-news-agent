@@ -7,8 +7,17 @@ import type {
   SchedulerSettingsSnapshot,
 } from "./scheduler-application.contracts.js";
 
-/** Narrow slices of the two collaborators, declared structurally so this
- *  adapter depends on neither the research nor the editorial concrete type. */
+/**
+ * Narrow slices of the two collaborators, declared structurally so this adapter
+ * depends on neither concrete type.
+ *
+ * The research shape here is `ResearchExecutionGateway.execute(request, signal)`
+ * -- the seam both TypedResearchExecutionGateway and
+ * LegacyResearchExecutionGateway implement -- not `ResearchService.runResearch`.
+ * That is deliberate: the tier loop needs to drive one research attempt per
+ * tier and inspect the outcome, which is exactly what the execution gateway
+ * exposes; ResearchService only forwards to it.
+ */
 export type NewsWorkflowResearchPort = {
   execute(
     request: {
@@ -29,7 +38,9 @@ export type ResearchSelection = {
   canonicalUrl: string;
   title: string;
   publishedAt: string | null;
-  evidenceText?: string;
+  /** Both research engines guarantee a non-empty value before selecting;
+   *  the fallback branches explicitly skip a candidate without one. */
+  evidenceText: string;
   evidenceUrl?: string;
   publisher?: string;
   verificationStatus?: string;
@@ -90,7 +101,7 @@ export function buildDraftEvidence(selected: ResearchSelection): EditorialEviden
     url: evidenceUrl,
     title: selected.title,
     publishedAt: selected.publishedAt,
-    text: selected.evidenceText ?? "",
+    text: selected.evidenceText,
     primary: verificationStatus === "primary_source",
     publisher: selected.publisher ?? selected.source.name,
     verificationStatus,
@@ -108,7 +119,7 @@ export function buildDraftEvidence(selected: ResearchSelection): EditorialEviden
       url: selected.discoveryUrl,
       title: `Reddit discussion: ${selected.title}`,
       publishedAt: selected.publishedAt,
-      text: selected.evidenceText ?? "",
+      text: selected.evidenceText,
       primary: false,
       publisher: selected.source.name,
       verificationStatus: "unverified_community",
@@ -122,6 +133,11 @@ export function buildDraftEvidence(selected: ResearchSelection): EditorialEviden
  * this seam." `checks/architecture/nestjs-boundaries.ts` forbids
  * RunScheduledNewsOnceUseCase from referencing ResearchService directly, so the
  * composition has to live here rather than being inlined into the use case.
+ *
+ * On the research side it binds to the execution gateway rather than
+ * ResearchService (see NewsWorkflowResearchPort above): the tier loop drives
+ * one research attempt per tier and inspects each outcome, and ResearchService
+ * only forwards to that same gateway.
  *
  * Reproduces the legacy chain (telegram-bot.js runScheduledNews →
  * runTieredNewsSearch → runWorkflow → runPipeline):
@@ -149,7 +165,7 @@ export class TypedSchedulerNewsWorkflowAdapter
   ) {}
 
   async run(input: SchedulerNewsWorkflowInput): Promise<SchedulerNewsWorkflowResult> {
-    const { settingsSnapshot, lease, signal } = input;
+    const { settingsSnapshot, lease, signal, assertOwned } = input;
     const tiers = buildSearchPlan(settingsSnapshot as unknown as Record<string, unknown>) as Array<{
       query: string;
       keywords: string[];
@@ -158,6 +174,9 @@ export class TypedSchedulerNewsWorkflowAdapter
 
     for (const tier of tiers) {
       signal?.throwIfAborted();
+      // Legacy re-acquired the lease per tier (each tier was a whole
+      // runPipeline), so ownership is checked at the top of every tier too.
+      await assertOwned?.();
       let selected: ResearchSelection;
       try {
         const research = await this.research.execute(
@@ -181,6 +200,10 @@ export class TypedSchedulerNewsWorkflowAdapter
       }
 
       signal?.throwIfAborted();
+      // The parity-critical one: src/pipeline.js calls heartbeat.assertOwned()
+      // here, between research and generation, so a lease lost during a long
+      // research pass fails before any generation tokens are spent.
+      await assertOwned?.();
       const generated = await this.editorial.generateReviewDraft(
         {
           article: selected.article,

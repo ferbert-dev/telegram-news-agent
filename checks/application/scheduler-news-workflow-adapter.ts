@@ -83,6 +83,22 @@ test("buildDraftEvidence matches the legacy pipeline.js implementation exactly",
       discoveryUrl: "https://example.com/story",
     }),
     selection({ unverified: true, source: { name: "r/news", is_primary: false }, discoveryUrl: null }),
+    // `publisher ?? source.name` -- the research engines set publisher on
+    // web-search candidates, and without this case the fallback branch is
+    // never exercised (mutating it to always use source.name kept every test
+    // green before this was added).
+    selection({ publisher: "Independent Wire" }),
+    selection({ publisher: "Independent Wire", unverified: true, source: { name: "r/news", is_primary: false }, discoveryUrl: "https://reddit.example/t" }),
+    // verificationStatus explicitly set alongside unverified: pins the `??`
+    // short-circuit rather than the unverified branch.
+    selection({ verificationStatus: "primary_source", unverified: true }),
+    // discoveryUrl equal to an explicit evidenceUrl (not just canonicalUrl).
+    selection({
+      unverified: true,
+      source: { name: "r/news", is_primary: false },
+      evidenceUrl: "https://example.com/final",
+      discoveryUrl: "https://example.com/final",
+    }),
   ];
 
   for (const candidate of cases) {
@@ -200,6 +216,12 @@ test("draft generation receives the lease, language, channel and allowUnverified
   await adapter.run({ settingsSnapshot, lease });
 
   const draftInput = drafts[0] as Record<string, unknown>;
+  // Nothing else asserts the evidence array actually reaching the editorial
+  // port, so a regression passing [] would otherwise go uncaught.
+  assert.deepEqual(
+    draftInput.evidence,
+    buildDraftEvidence(selection({ source: { name: "Web", is_primary: false } })),
+  );
   assert.deepEqual(draftInput.lease, { name: "news-pipeline", ownerId: "owner-1" });
   assert.equal(draftInput.languageCode, "en");
   assert.equal(draftInput.channelId, "@channel");
@@ -293,6 +315,73 @@ test("the signal is forwarded into both collaborators", async () => {
 
   assert.equal(researchSignal, controller.signal);
   assert.equal(editorialSignal, controller.signal);
+});
+
+// ---------------------------------------------------------------------------
+// Pipeline lease ownership
+// ---------------------------------------------------------------------------
+
+test("a lease lost between research and generation fails before any generation tokens are spent", async () => {
+  // src/pipeline.js calls heartbeat.assertOwned() here. Without it the run
+  // executes a full paid generation under a lease it no longer owns and only
+  // fails later at the create_review_draft SQL function.
+  const lost = new Error("Pipeline lease ownership was lost");
+  let generated = false;
+  let researched = false;
+
+  const adapter = new TypedSchedulerNewsWorkflowAdapter(
+    { async execute() { researched = true; return { selected: selection() }; } },
+    {
+      async generateReviewDraft() {
+        generated = true;
+        return { draft: { id: "draft-1" }, generation: { draft: { body: "b" } } };
+      },
+    },
+  );
+
+  await assert.rejects(
+    adapter.run({
+      settingsSnapshot,
+      lease,
+      assertOwned: () => { if (researched) throw lost; },
+    }),
+    (error) => error === lost,
+  );
+  assert.equal(researched, true);
+  assert.equal(generated, false);
+});
+
+test("ownership is re-checked at the top of every tier, as legacy did per pipeline run", async () => {
+  const checks: number[] = [];
+  let tier = 0;
+
+  const adapter = new TypedSchedulerNewsWorkflowAdapter(
+    {
+      async execute() {
+        tier += 1;
+        if (tier === 1) throw noCandidates();
+        return { selected: selection() };
+      },
+    },
+    editorialFake(),
+  );
+
+  await adapter.run({
+    settingsSnapshot,
+    lease,
+    assertOwned: () => { checks.push(tier); },
+  });
+
+  // Once before tier 1, once before tier 2, once before generation.
+  assert.deepEqual(checks, [0, 1, 2]);
+});
+
+test("omitting assertOwned keeps the adapter working, so it stays an opt-in contract extension", async () => {
+  const adapter = new TypedSchedulerNewsWorkflowAdapter(
+    { async execute() { return { selected: selection() }; } },
+    editorialFake(),
+  );
+  assert.equal((await adapter.run({ settingsSnapshot, lease })).status, "review_ready");
 });
 
 test("adapter is assignable to the exact port SchedulerApplicationModule requires", () => {

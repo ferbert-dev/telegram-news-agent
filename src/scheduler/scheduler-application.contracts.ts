@@ -31,6 +31,16 @@ export type SchedulerNewsWorkflowInput = {
   settingsSnapshot: SchedulerSettingsSnapshot;
   lease: SchedulerLeaseIdentity;
   signal?: AbortSignal;
+  /**
+   * Throws if the pipeline lease is no longer owned by this run. Legacy called
+   * `heartbeat.assertOwned()` between research and draft generation
+   * (src/pipeline.js), so a lease lost mid-run failed before spending a single
+   * generation token. Without it the run only fails at the create_review_draft
+   * SQL function -- which does correctly refuse to write an orphan draft, but
+   * only after a full paid generation has already executed under a lease the
+   * run no longer holds.
+   */
+  assertOwned?: () => void | Promise<void>;
 };
 
 export type SchedulerNewsWorkflowResult =
