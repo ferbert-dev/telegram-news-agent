@@ -60,6 +60,86 @@ test("register rejects supplying both workers and workerTokens, or neither", () 
   );
 });
 
+test("register rejects an empty workerTokens list rather than starting nothing", () => {
+  // Otherwise the coordinator reaches "running" with no workers: the process
+  // looks healthy, passes the health gate, and does nothing forever.
+  assert.throws(
+    () => RuntimeModule.register({ workerTokens: [] }),
+    /at least one worker token/,
+  );
+});
+
+test("bootstrapRuntime rejects both options rather than silently dropping workers", async () => {
+  // bootstrapRuntime forwards only one of the two to register(), so without
+  // its own guard, passing both would drop `workers` and start a partial
+  // worker set with no error at all -- exactly what a half-finished cutover
+  // would produce (e.g. scheduler moved to a token, poller left as an
+  // instance: the poller never starts, the control lease is never acquired,
+  // and /news and Publish go dead silently).
+  @Module({})
+  class EmptyModule {}
+
+  await assert.rejects(
+    bootstrapRuntime({
+      applicationModule: EmptyModule,
+      workers: [{ name: "instance", async start() {}, async stop() {} }],
+      workerTokens: [PortDependentWorker],
+      signalSource: silentSignals,
+      stopGracePeriodMs: 5_000,
+    }),
+    /exactly one of workers or workerTokens/,
+  );
+});
+
+test("the application module is instantiated exactly once despite being imported twice", async () => {
+  // This is the change's biggest latent risk. On the token path the
+  // application module is imported by BOTH the anonymous bootstrap root and
+  // RuntimeModule. That is safe only because the same object reference is
+  // passed to both, and Nest's default module-key factory keys on reference.
+  // A future refactor that re-wraps it (a helper, or RuntimeModule growing its
+  // own .register() call) would duplicate the module -- meaning two pg pools
+  // and two Telegram lease owners -- while every other test stayed green.
+  let poolConstructions = 0;
+  const POOL = Symbol("COUNTED_POOL");
+
+  @Injectable()
+  class PoolUsingWorker implements RuntimeWorker {
+    readonly name = "pool-using";
+    constructor(@Inject(POOL) readonly pool: { id: number }) {}
+    async start(): Promise<void> {}
+    async stop(): Promise<void> {}
+  }
+
+  const applicationModule = {
+    module: class CountedModule {},
+    providers: [
+      {
+        provide: POOL,
+        useFactory: () => {
+          poolConstructions += 1;
+          return { id: poolConstructions };
+        },
+      },
+      PoolUsingWorker,
+    ],
+    exports: [PoolUsingWorker],
+  };
+
+  const run = await bootstrapRuntime({
+    applicationModule,
+    workerTokens: [PoolUsingWorker],
+    signalSource: silentSignals,
+    stopGracePeriodMs: 5_000,
+  });
+  try {
+    assert.equal(poolConstructions, 1);
+    // And the worker the coordinator started holds that single instance.
+    assert.equal(run.application.get(PoolUsingWorker).pool.id, 1);
+  } finally {
+    await run.stop();
+  }
+});
+
 test("workerTokens resolve workers whose dependencies only exist inside the container", async () => {
   // The point of the whole change: this worker needs an application port that
   // is a Nest singleton in another module. Under the instances-only API the

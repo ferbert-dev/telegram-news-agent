@@ -56,6 +56,13 @@ export type RuntimeModuleOptions = {
    * shape.
    *
    * Pass `imports` alongside these so the tokens are actually visible here.
+   *
+   * A worker resolved this way becomes a container-managed provider, so
+   * `app.close()` will reach its Nest lifecycle hooks *after* the coordinator
+   * has already called `stop()`. Runtime workers must therefore NOT implement
+   * `OnModuleDestroy`/`OnApplicationShutdown` — the coordinator owns worker
+   * lifecycle, and adding a hook that calls `stop()` again is only harmless
+   * while every `stop()` happens to be idempotent.
    */
   workerTokens?: readonly RuntimeWorkerToken[];
   /** Modules whose exports supply `workerTokens`. */
@@ -86,6 +93,13 @@ export class RuntimeModule {
         "RuntimeModule.register requires exactly one of workers or workerTokens",
       );
     }
+    // An empty list is the same silent-nothing outcome as omitting it: the
+    // coordinator reaches "running" with no workers, the process looks
+    // healthy, and it does nothing forever. Easy to hit with a token list
+    // built by a filter or a conditional.
+    if (hasTokens && workerTokens.length === 0) {
+      throw new Error("RuntimeModule.register requires at least one worker token");
+    }
     if (!Number.isInteger(stopGracePeriodMs)) {
       throw new Error("stopGracePeriodMs must be an integer");
     }
@@ -102,7 +116,7 @@ export class RuntimeModule {
     const workersProvider: Provider = hasTokens
       ? {
           provide: RUNTIME_WORKERS,
-          inject: [...(workerTokens as readonly RuntimeWorkerToken[])],
+          inject: [...workerTokens],
           useFactory: (...resolved: RuntimeWorker[]) => resolved,
         }
       : { provide: RUNTIME_WORKERS, useValue: workers };
