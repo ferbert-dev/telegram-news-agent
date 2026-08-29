@@ -31,6 +31,7 @@ import {
   TELEGRAM_CONTROL_ID_GENERATOR,
   TELEGRAM_EDITORIAL_WORKFLOW,
   TELEGRAM_LABS_CONTROL,
+  TELEGRAM_REVIEW_DELIVERY,
   TELEGRAM_REVIEW_PRESENTATION,
   TELEGRAM_SETTINGS_CONTROL,
   TELEGRAM_STATS_CONTROL,
@@ -86,6 +87,10 @@ export class TelegramControlApplicationModule {
         // It implements review-session create/rebind/renew but was previously
         // unreachable: @Injectable with no provider entry in any module.
         DeliverTelegramReviewUseCase,
+        {
+          provide: TELEGRAM_REVIEW_DELIVERY,
+          useExisting: DeliverTelegramReviewUseCase,
+        },
         HandleTelegramSettingsUseCase,
         HandleTelegramLabsUseCase,
         GetTelegramStatsUseCase,
@@ -97,7 +102,7 @@ export class TelegramControlApplicationModule {
           useExisting: TelegramControlService,
         },
       ],
-      exports: [TELEGRAM_CONTROL_APPLICATION, DeliverTelegramReviewUseCase],
+      exports: [TELEGRAM_CONTROL_APPLICATION, TELEGRAM_REVIEW_DELIVERY],
     };
   }
 }

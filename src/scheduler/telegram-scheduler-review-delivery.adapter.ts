@@ -62,11 +62,24 @@ export class TelegramSchedulerReviewDeliveryAdapter
       };
     }
 
-    // Fail loudly rather than degrade. Silently mapping an unrecognized status
-    // onto "review_unavailable" would let the scheduler pause a schedule or
-    // discard a delivered draft on the strength of a status nobody checked;
-    // a thrown error is caught by the scheduler's own error path and recorded
-    // against the run instead.
+    // Refuse to act on a status nobody checked: mapping an unrecognized one
+    // onto "review_unavailable" would make the scheduler report
+    // "review_already_resolved" for a review that may still be pending.
+    //
+    // Be aware of the exact consequence, which is stickier than a normal run
+    // failure. RunScheduledNewsOnceUseCase wraps anything thrown by deliver()
+    // as "Scheduled review delivery could not be completed", which its
+    // errorCode() maps to `review_delivery_failed` — and that code is one of
+    // the two explicitly excluded from calling finish(), so the schedule claim
+    // is deliberately left held and retried once it goes stale. For a genuine
+    // delivery failure that is the intended behavior. For a *shape* error like
+    // this one it means the schedule stalls until the code is fixed, which is
+    // the loud signal we want for what can only be a programming error
+    // (DeliverTelegramReviewUseCase returns exactly two statuses today, so
+    // reaching here requires someone adding a third without updating this
+    // adapter) — but it is not a graceful degradation, and it is not what the
+    // legacy scheduler did (src/news-scheduler.js treated any unrecognized
+    // shape as awaiting_approval).
     throw new Error(
       `Telegram review delivery returned an unsupported status: ${String(outcome.status)}`,
     );

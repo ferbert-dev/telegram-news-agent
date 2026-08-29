@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { TelegramSchedulerReviewDeliveryAdapter } from "../../src/scheduler/telegram-scheduler-review-delivery.adapter.js";
+import {
+  TelegramSchedulerReviewDeliveryAdapter,
+  type TelegramReviewDeliveryPort,
+} from "../../src/scheduler/telegram-scheduler-review-delivery.adapter.js";
+import { DeliverTelegramReviewUseCase } from "../../src/telegram/application/deliver-telegram-review.use-case.js";
 
 import type { SchedulerReviewDeliveryApplicationPort } from "../../src/scheduler/scheduler-application.contracts.js";
 
@@ -52,6 +56,15 @@ test("adapter narrows a review_ready outcome and reports resumed as a strict boo
     },
   });
   assert.deepEqual(await resumed.deliver(input), { status: "review_ready", resumed: true });
+
+  // A truthy non-boolean is what actually distinguishes `=== true` from a
+  // loose `!!` coercion; without this the "strict" in the title is untested.
+  const truthy = new TelegramSchedulerReviewDeliveryAdapter({
+    async execute() {
+      return { status: "review_ready", resumed: 1 };
+    },
+  });
+  assert.deepEqual(await truthy.deliver(input), { status: "review_ready", resumed: false });
 });
 
 test("adapter passes a resolved decision through and normalizes anything else to null", async () => {
@@ -128,6 +141,17 @@ test("adapter forwards an abort signal and propagates the use case's own rejecti
     },
   });
   await assert.rejects(failing.deliver(input), (error) => error === failure);
+});
+
+test("the real DeliverTelegramReviewUseCase satisfies the adapter's structural port", () => {
+  // The tests above drive the adapter with hand-written fakes, and the port's
+  // return type ({status: string, [key: string]: unknown}) is wide enough that
+  // any object literal satisfies it. Without this, renaming actorId or adding a
+  // required field to DeliverTelegramReviewInput would leave every test and the
+  // whole typecheck green, and only break when someone finally wires the two
+  // together in a composition root.
+  const shape: TelegramReviewDeliveryPort = {} as DeliverTelegramReviewUseCase;
+  assert.ok(shape);
 });
 
 test("adapter is assignable to the exact port SchedulerApplicationModule requires", () => {
