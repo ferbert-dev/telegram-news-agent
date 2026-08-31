@@ -23,6 +23,7 @@ npm run build:nest             # tsc -p tsconfig.build.json → dist/ (emits src
 npm run test:persistence       # tsx --test checks/persistence/*.ts   (Nest persistence modules, mocked pg)
 npm run test:application       # tsx --test checks/application/*.ts   (application services, fake ports)
 npm run test:architecture      # tsx --test checks/architecture/*.ts  (layering rules — see below)
+npm run test:runtime           # tsx --test checks/runtime/*.ts       (coordinator, worker tokens, readiness)
 npm run test:drizzle           # Drizzle schema snapshot
 npm run test:drizzle:sources   # Drizzle sources repository
 npm run test:nest:build        # build:nest, then run every checks/emitted-*.mjs against dist/
