@@ -102,6 +102,7 @@ function buildGateway({
   usage,
   ai = fakeAi(),
   articleHtml = `<article><p>${"Extracted primary article evidence with enough length to pass extraction. ".repeat(4)}</p></article>`,
+  generator = curationGenerator,
 }: {
   acquisition: SourceAcquisition;
   catalog: CatalogPersistence;
@@ -110,12 +111,13 @@ function buildGateway({
   usage: UsageReportingPersistence;
   ai?: FallbackAiProvider;
   articleHtml?: string;
+  generator?: typeof curationGenerator;
 }) {
   const curation = new EvidenceCurationService(
     publicDns,
     { fetchPinned: async () => new Response(articleHtml, { status: 200, headers: { "content-type": "text/html" } }) },
     noSleep,
-    curationGenerator,
+    generator,
   );
   return new TypedResearchExecutionGateway(acquisition, curation, ai, catalog, research, storyDedup, usage, () => NOW, { info() {}, warn() {} });
 }
@@ -675,4 +677,236 @@ test("AI news-search fallback supplies a candidate when feed discovery also yiel
   assert.equal((recordedUsage[0] as { operation: string }).operation, "news_search");
   assert.equal((recordedUsage[0] as { inputTokens: number }).inputTokens, 42);
   assert.equal((recordedUsage[0] as { searchRunId: string }).searchRunId, "run-news-search");
+});
+
+test("a curation failure is recorded and the run still finishes, and its attached usage is still billed", async () => {
+  // research.js treats curation as advisory: if the ranking call fails, the
+  // already-acquired candidates are kept in their existing order and the run
+  // completes. The part that is easy to lose in a port is the usage attached to
+  // the *failed* call -- that call was still billed, and dropping it under-reports
+  // spend in exactly the case where a provider is misbehaving.
+  const recordedUsage: unknown[] = [];
+  const finishes: Record<string, unknown>[] = [];
+  const curationError = Object.assign(new Error("curation upstream failed"), {
+    code: "curation_provider_unavailable",
+    usageEvents: [{ provider: "openai", model: "test", providerResponseId: "resp-curation-failed" }],
+  });
+
+  const catalog: Partial<CatalogPersistence> = {
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+  };
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() {
+      return { id: "run-1" } as never;
+    },
+    async createOrResumeArticleCandidate(input) {
+      return { id: "article-1", ...input } as never;
+    },
+    async saveRawContent() {
+      return {} as never;
+    },
+    async transitionArticle() {
+      throw new Error("must not transition — curation failure is not a candidate failure");
+    },
+    async finishSearchRun(_id, details) {
+      finishes.push(details as unknown as Record<string, unknown>);
+      return {} as never;
+    },
+    async failSearchRun() {
+      throw new Error("a curation failure must not fail the run");
+    },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() {
+      return [];
+    },
+    async recordStoryDedupDecision() {
+      return {} as never;
+    },
+  };
+  const usage: UsageReportingPersistence = {
+    async recordAiUsage(input) {
+      recordedUsage.push(input);
+      return {} as never;
+    },
+    async getDailyUsageDashboard() {
+      return {} as never;
+    },
+  };
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() { throw new Error("unused"); },
+    async fetchSourceFeed() { throw new Error("unused"); },
+    async fetchSource() { return [FEED_ENTRY]; },
+    async fetchReddit() { throw new Error("unused"); },
+    async fetchGdelt() { throw new Error("unused"); },
+    async searchNews() { throw new Error("must not reach paid search"); },
+    async discoverFeeds() { throw new Error("must not reach feed discovery"); },
+  };
+
+  const gateway = buildGateway({
+    acquisition,
+    catalog: catalog as CatalogPersistence,
+    research: research as ResearchIngestionPersistence,
+    storyDedup,
+    usage,
+    generator: {
+      async generateStructured() {
+        throw curationError;
+      },
+    },
+  });
+
+  const result = await gateway.execute({ input: { query: "AI news" } });
+
+  // The candidate survives the curation failure.
+  assert.equal(result.selected.article.id, "article-1");
+  assert.equal(finishes.length, 1);
+  assert.equal(finishes[0]?.resultCount, 1);
+
+  // The error code is carried into the run's metadata, not swallowed.
+  const metadata = finishes[0]?.metadata as { candidate_curation?: { error?: string } };
+  assert.equal(metadata?.candidate_curation?.error, "curation_provider_unavailable");
+
+  // And the billed call is still recorded.
+  assert.equal(
+    recordedUsage.some(
+      (event) => (event as { providerResponseId?: string }).providerResponseId === "resp-curation-failed",
+    ),
+    true,
+    "usage attached to the failed curation call was dropped",
+  );
+});
+
+test("semantic story classification stops at its budget and falls back deterministically", async () => {
+  // Each semantic classification is a paid AI call, so research.js caps them at
+  // three per run and every candidate past the cap is decided without one. A
+  // port that forgets the cap turns a run with many similar candidates into an
+  // unbounded spend, and one that stops evaluating instead of falling back
+  // would let a duplicate through -- so both halves are asserted.
+  const MAX = 3;
+  const semanticCalls: unknown[] = [];
+  const persisted: string[] = [];
+  const decisions: { relation: string; decisionSource: string }[] = [];
+
+  const entries = Array.from({ length: MAX + 2 }, (_, index) => ({
+    ...FEED_ENTRY,
+    // Identical titles: every candidate shortlists against the published story
+    // in exactly the same way, so the budget is the only thing that can limit
+    // the number of classifier calls. Varying the title lets similarity vary,
+    // and the call count then matches the cap by coincidence.
+    title: "OpenAI releases a new agent model for research teams",
+    canonicalUrl: `https://example.com/agent-${index}`,
+    // Distinct hashes and timestamps: entries sharing either are collapsed
+    // upstream, which would quietly reduce this to a one-candidate run.
+    contentHash: `hash-${index}`,
+    publishedAt: new Date(Date.parse(FEED_ENTRY.publishedAt) - index * 60_000).toISOString(),
+  }));
+
+  const catalog: Partial<CatalogPersistence> = {
+    async listEnabledSources() {
+      return [PRIMARY_SOURCE];
+    },
+  };
+  const research: Partial<ResearchIngestionPersistence> = {
+    async startSearchRun() {
+      return { id: "run-1" } as never;
+    },
+    async createOrResumeArticleCandidate(input) {
+      persisted.push(input.canonical_url);
+      return { id: `article-${input.canonical_url.split("-").pop()}`, ...input } as never;
+    },
+    async saveRawContent() {
+      return {} as never;
+    },
+    async transitionArticle() {
+      return {} as never;
+    },
+    async finishSearchRun() {
+      return {} as never;
+    },
+    async failSearchRun() {
+      return {} as never;
+    },
+  };
+  const storyDedup: StoryDeduplicationPersistence = {
+    async listRecentPublishedStories() {
+      return [
+        {
+          article_id: "published-1",
+          title: "OpenAI releases a new agent model for research teams",
+          feed_summary: "OpenAI announced a new agent model aimed at research teams.",
+          message_text: "OpenAI announced a new agent model aimed at research teams.",
+          telegram_channel_id: "@channel",
+          telegram_message_id: 1,
+          published_at: "2026-06-26T12:00:00Z",
+          story_fingerprint: "published-fingerprint",
+        },
+      ] as never;
+    },
+    async recordStoryDedupDecision(input) {
+      decisions.push({ relation: input.relation, decisionSource: input.decisionSource });
+      return {} as never;
+    },
+  };
+  const acquisition: SourceAcquisition = {
+    async fetchFeed() { throw new Error("unused"); },
+    async fetchSourceFeed() { throw new Error("unused"); },
+    async fetchSource() { return entries; },
+    async fetchReddit() { throw new Error("unused"); },
+    async fetchGdelt() { throw new Error("unused"); },
+    async searchNews() { throw new Error("must not reach paid search"); },
+    async discoverFeeds() { throw new Error("must not reach feed discovery"); },
+  };
+
+  const gateway = buildGateway({
+    acquisition,
+    catalog: catalog as CatalogPersistence,
+    research: research as ResearchIngestionPersistence,
+    storyDedup,
+    usage: fakeUsage(),
+    ai: fakeAi({
+      async generateStructuredOnce(input: unknown) {
+        semanticCalls.push(input);
+        // Classified as the same story, so the candidate is rejected and the
+        // loop moves on. This is what lets the budget be reached at all: the
+        // dedup loop is also the selection loop and breaks on the first
+        // candidate it accepts.
+        return {
+          value: {
+            relation: "same_story",
+            matchedPublishedArticleId: "published-1",
+            confidence: 0.95,
+            reason: "same announcement",
+          },
+          provider: "openai",
+          model: "test",
+          usageEvents: [],
+        } as never;
+      },
+    }),
+  });
+
+  await gateway.execute({ input: { query: "AI news" } }).catch(() => undefined);
+
+  // The cap is enforced in two independent places -- MAX_SEMANTIC_STORY_AI_CALLS
+  // at the call site and a Math.min(3, ...) inside StorySemanticAttemptBudget --
+  // so raising either one alone changes nothing. That is worth knowing before
+  // someone "raises the limit" and finds it has no effect; it also means this
+  // assertion only moves if both are lifted, which is the behaviour that
+  // matters.
+  assert.equal(
+    semanticCalls.length,
+    MAX,
+    `expected exactly ${MAX} semantic calls, got ${semanticCalls.length}`,
+  );
+  // Every candidate is still decided; the ones past the cap fall back rather
+  // than being skipped, which is what stops a duplicate slipping through.
+  assert.equal(decisions.length, entries.length, `decided ${decisions.length} of ${entries.length}`);
+  assert.equal(persisted.length, entries.length);
+  assert.equal(
+    decisions.filter((decision) => decision.decisionSource === "fallback").length,
+    entries.length - MAX,
+  );
 });
