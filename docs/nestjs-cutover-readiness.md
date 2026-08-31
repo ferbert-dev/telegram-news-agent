@@ -23,6 +23,7 @@ would run it instead.
 | A runtime that came up without its scheduler is not ready | `checks/application/news-agent-composition.ts` — the readiness file is derived from the token list actually started, and the probe requires the full set from a separate declaration |
 | The compiled output survives `tsc` emit | `checks/emitted-*.mjs`, run against `dist/` |
 | `dist/` imports and the health probe fails closed, without devDependencies | `.github/workflows/deploy.yml` — run inside the built image |
+| SIGTERM drains workers in reverse order and exits cleanly | `checks/emitted-runtime-signals.mjs` — a real signal to a real process running the compiled output, not an injected fake signal source |
 | The image still starts the legacy entrypoint | Same step — `CMD` asserted byte-for-byte |
 
 ## Rehearsed by hand, not regression-protected
