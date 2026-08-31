@@ -4,6 +4,12 @@
 .env.*
 !.env.example
 node_modules
+# Built inside the image by the build stage. Excluded so a stale local build can
+# never be shipped, and so the build context stays small.
+dist
+checks
+graphify-out
+.worktrees
 coverage
 docs
 test

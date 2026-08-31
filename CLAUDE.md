@@ -28,6 +28,9 @@ npm run test:drizzle           # Drizzle schema snapshot
 npm run test:drizzle:sources   # Drizzle sources repository
 npm run test:nest:build        # build:nest, then run every checks/emitted-*.mjs against dist/
 
+docker build -t telegram-news-agent:local .                     # also compiles dist/ in a build stage
+docker compose -f compose.yaml -f compose.nest.yaml up -d bot    # run the NestJS runtime instead of legacy
+
 tsx --test checks/persistence/database-module.ts    # single TypeScript check
 tsx --test checks/runtime/runtime-lifecycle.ts      # single runtime check
 ```
@@ -66,7 +69,7 @@ Two runtimes coexist by design, and this is the single most important fact about
 - **Legacy JS (production).** `src/telegram-bot.js` is the deployed entrypoint (`compose.yaml`, `command: node src/telegram-bot.js`). It wires flat `src/*.js` modules — `news-repository.js`, `pipeline.js`, `draft.js`, `publish.js`, `telegram-control.js`, `telegram-polling.js`, `news-scheduler.js`, `notion-audit.js`, `ai-provider.js` — against a raw `pg` pool.
 - **NestJS TS (additive, mostly unwired).** `src/<domain>/` directories hold a standalone Nest application context. Slices land one vertical at a time and are deliberately **not** imported by the legacy entrypoint until an explicit cutover ticket. `checks/architecture/nestjs-boundaries.ts` asserts that unwiring — e.g. `telegram-bot.js`/`telegram-polling.js` must not mention `telegram-control-application`, `telegram-bot.js`/`pipeline.js` must not mention `legacy-research-execution`.
 
-The `Dockerfile` makes the split concrete: it copies only `src`, `scripts`, and `db`, never runs `build:nest`, and ships no `dist/`. **The production image cannot execute the TypeScript layer at all** — it runs `node src/telegram-bot.js` against `src/*.js`. Anything requiring `dist/` (including `npm run usage:dashboard`) is local/CI-only until the cutover ticket changes the image.
+The `Dockerfile` now builds and ships `dist/` from a separate `build` stage (devDependencies stay in that stage), so the image *can* execute the TypeScript layer — but it does not. `CMD` is still `node src/telegram-bot.js`, and `compose.yaml`'s `bot` service still overrides it with the same command. **What runs in production is the legacy JS runtime; the compiled runtime is carried, not started.** Flipping it is `compose.nest.yaml`, an overlay no deployment path passes — `ops/deploy.sh` and CI compose only `compose.yaml` (plus `compose.test.yaml` / `compose.ssh-access.yaml`). Cutover means a reviewed change to a compose file, not a rebuild.
 
 Keep the legacy path working. Do not "clean up" a legacy module by pointing it at the Nest layer.
 

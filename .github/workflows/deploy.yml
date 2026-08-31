@@ -67,6 +67,13 @@ jobs:
             -f compose.yaml \
             -f compose.ssh-access.yaml \
             config --quiet --no-env-resolution
+          # Not a deployment path, but it must stay valid: it is how cutover
+          # will be performed, and a broken overlay would only be discovered
+          # then.
+          docker compose \
+            -f compose.yaml \
+            -f compose.nest.yaml \
+            config --quiet --no-env-resolution
 
       - name: Run unit tests
         run: npm test
@@ -84,6 +91,28 @@ jobs:
 
       - name: Build test image
         run: docker build --tag "$APP_IMAGE" .
+
+      # The image is the only place the compiled runtime meets production-only
+      # dependencies. `test:nest:build` proves dist/ works against the full
+      # devDependency tree; this proves it works without one.
+      - name: Verify the image ships a runnable compiled runtime
+        run: |
+          docker run --rm --entrypoint node "$APP_IMAGE" \
+            -e "import('/app/dist/composition/runtime-entry.js').then((m) => {
+                  if (typeof m.startNewsAgentRuntime !== 'function') {
+                    throw new Error('dist/ does not export startNewsAgentRuntime');
+                  }
+                })"
+          # The health probe must fail closed on an unidentifiable runtime, and
+          # must do so without opening a database connection.
+          if docker run --rm --entrypoint node "$APP_IMAGE" dist/composition/health-cli.js; then
+            echo "health CLI reported healthy with no configuration" >&2
+            exit 1
+          fi
+          # Production still runs the legacy entrypoint. Carrying dist/ must not
+          # change what the image starts.
+          test "$(docker inspect --format '{{json .Config.Cmd}}' "$APP_IMAGE")" \
+            = '["node","src/telegram-bot.js"]'
 
       - name: Run PostgreSQL migration and integration tests
         run: |
