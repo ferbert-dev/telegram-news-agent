@@ -10,15 +10,6 @@ import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
 
 import type { PipelineLeaseReadPort } from "../operations/operations.interfaces.js";
 
-/**
- * A separate process from the runtime it is checking. That separation is the
- * point: a runtime cannot report itself healthy, because this reads the
- * readiness file as a *claim* and then confirms it against the database
- * independently.
- *
- * Only the database is booted here — no workers, no Telegram, no AI provider —
- * so the check cannot acquire a lease, send a message, or spend a token.
- */
 /** What a healthy deployment must be running, independent of what it started. */
 export const REQUIRED_WORKERS = ["telegram-polling", "news-scheduler"] as const;
 
@@ -52,6 +43,15 @@ export function expectedIdentity(
     : null;
 }
 
+/**
+ * A separate process from the runtime it is checking. That separation is the
+ * point: a runtime cannot report itself healthy, because this reads the
+ * readiness file as a *claim* and then confirms it against the database
+ * independently.
+ *
+ * Only the database is booted here — no workers, no Telegram, no AI provider —
+ * so the check cannot acquire a lease, send a message, or spend a token.
+ */
 export async function runHealthCli(
   filePath?: string,
   env: NodeJS.ProcessEnv = process.env,

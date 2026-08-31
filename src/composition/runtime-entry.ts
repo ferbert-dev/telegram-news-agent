@@ -58,6 +58,9 @@ export type StartNewsAgentRuntimeOptions = {
  *
  * Exported as a constant so that ordering is a testable fact and not a comment.
  */
+/** The only mode getPollingConfig accepts, and so the only one a runtime runs in. */
+export const VALIDATED_UPDATE_MODE = "polling";
+
 export const RUNTIME_WORKER_TOKENS = [
   TELEGRAM_POLLING_WORKER,
   NEWS_SCHEDULER_WORKER,
@@ -85,6 +88,10 @@ export async function startNewsAgentRuntime(
   // below runs in a validated mode -- which is what the readiness file records.
   const { migrateWebhook } = getPollingConfig(env);
   await ensurePollingMode({ token, migrateWebhook, callTelegram });
+  // getPollingConfig has now proven this; passing the proven value rather than
+  // a literal keeps composeRuntime from recording a mode nothing checked when
+  // it is called directly.
+  const updateMode = VALIDATED_UPDATE_MODE;
 
   const identity = options.identity ?? (await resolveRuntimeIdentity(token, channelId));
 
@@ -92,7 +99,13 @@ export async function startNewsAgentRuntime(
   // the bootstrap root and RuntimeModule, and Nest keys modules by reference —
   // rebuilding it here would give the process two pools and two lease owners.
   return bootstrapRuntime({
-    ...composeRuntime({ token, identity, env, workerTokens: [...RUNTIME_WORKER_TOKENS] }),
+    ...composeRuntime({
+      token,
+      identity,
+      env,
+      updateMode,
+      workerTokens: [...RUNTIME_WORKER_TOKENS],
+    }),
     ...(options.stopGracePeriodMs === undefined
       ? {}
       : { stopGracePeriodMs: options.stopGracePeriodMs }),
@@ -112,6 +125,8 @@ export function composeRuntime(options: {
   token: string;
   identity: NewsAgentRuntimeIdentity;
   env: NodeJS.ProcessEnv;
+  /** The mode the caller validated. No default: a literal here could lie. */
+  updateMode: string;
   workerTokens: readonly symbol[];
 }): { applicationModule: DynamicModule; workerTokens: symbol[] } {
   const workerTokens = [...options.workerTokens];
@@ -120,8 +135,7 @@ export function composeRuntime(options: {
       token: options.token,
       identity: options.identity,
       env: options.env,
-      // Validated by getPollingConfig before this is reached on the real path.
-      updateMode: "polling",
+      updateMode: options.updateMode,
       startedWorkers: startedWorkerNames(workerTokens),
     }),
     workerTokens,

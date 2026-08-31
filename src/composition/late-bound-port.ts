@@ -140,10 +140,6 @@ export class LateBoundPortRegistry {
     return this.ports.filter(({ port }) => !port.isBound).map(({ name }) => name);
   }
 
-  get size(): number {
-    return this.ports.length;
-  }
-
   /**
    * Refuses a composition that left a port unbound.
    *

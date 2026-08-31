@@ -13,6 +13,7 @@ import {
   composeRuntime,
   RUNTIME_WORKER_TOKENS,
   resolveRuntimeIdentity,
+  VALIDATED_UPDATE_MODE,
 } from "../../src/composition/runtime-entry.js";
 import { NewsSchedulerWorker } from "../../src/scheduler/news-scheduler-worker.js";
 import {
@@ -346,7 +347,13 @@ test("whatever token list the runtime starts, the readiness file describes that 
     [TELEGRAM_POLLING_WORKER, RUNTIME_HEALTH_WORKER],
     [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER],
   ]) {
-    const composed = composeRuntime({ token: "test-token", identity, env, workerTokens: tokens });
+    const composed = composeRuntime({
+      token: "test-token",
+      identity,
+      env,
+      updateMode: VALIDATED_UPDATE_MODE,
+      workerTokens: tokens,
+    });
     const moduleRef = await Test.createTestingModule({ imports: [composed.applicationModule] })
       .overrideProvider(PG_POOL)
       .useValue(fakePool)
