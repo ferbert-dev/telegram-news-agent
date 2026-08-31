@@ -346,6 +346,9 @@ overlay that would run the new runtime instead. That overlay exists so the
 migration can be exercised against a real database, and so cutover becomes a
 reviewed compose change rather than an image rebuild:
 
+The same environment every other compose recipe needs — `POSTGRES_PASSWORD`,
+`POSTGRES_APP_PASSWORD` and a `.env.production`:
+
 ```bash
 docker compose -f compose.yaml -f compose.nest.yaml up -d bot
 ```

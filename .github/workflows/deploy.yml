@@ -103,12 +103,29 @@ jobs:
                     throw new Error('dist/ does not export startNewsAgentRuntime');
                   }
                 })"
-          # The health probe must fail closed on an unidentifiable runtime, and
-          # must do so without opening a database connection.
-          if docker run --rm --entrypoint node "$APP_IMAGE" dist/composition/health-cli.js; then
+          # The health probe must fail closed on an unidentifiable runtime. The
+          # verdict is asserted, not just the exit code: a probe whose imports
+          # cannot resolve against production-only dependencies also exits
+          # non-zero, so an exit-code-only check would pass on exactly the
+          # failure this step exists to catch. DATABASE_URL is deliberately
+          # unreachable -- reaching the identity verdict at all proves the probe
+          # returns before it opens a pool.
+          probe_output="$(
+            docker run --rm --entrypoint node \
+              -e DATABASE_URL=postgresql://nobody@127.0.0.1:1/nothing \
+              "$APP_IMAGE" dist/composition/health-cli.js 2>&1
+          )" && {
             echo "health CLI reported healthy with no configuration" >&2
             exit 1
-          fi
+          }
+          case "$probe_output" in
+            *'"event":"runtime_unhealthy"'*'TELEGRAM_CHANNEL_ID'*) ;;
+            *)
+              echo "health CLI did not fail closed with an identity verdict:" >&2
+              echo "$probe_output" >&2
+              exit 1
+              ;;
+          esac
           # Production still runs the legacy entrypoint. Carrying dist/ must not
           # change what the image starts.
           test "$(docker inspect --format '{{json .Config.Cmd}}' "$APP_IMAGE")" \
