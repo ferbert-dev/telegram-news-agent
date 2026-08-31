@@ -5,11 +5,19 @@ import { Test } from "@nestjs/testing";
 import {
   NEWS_SCHEDULER_WORKER,
   NewsAgentModule,
+  RUNTIME_HEALTH_WORKER,
   TELEGRAM_POLLING_WORKER,
 } from "../../src/composition/news-agent.module.js";
-import { resolveRuntimeIdentity } from "../../src/composition/runtime-entry.js";
+import {
+  RUNTIME_WORKER_TOKENS,
+  resolveRuntimeIdentity,
+} from "../../src/composition/runtime-entry.js";
 import { NewsSchedulerWorker } from "../../src/scheduler/news-scheduler-worker.js";
-import { TelegramPollingWorker } from "../../src/telegram/telegram-polling-worker.js";
+import {
+  TELEGRAM_CONTROL_POLLER_LEASE_NAME,
+  TelegramPollingWorker,
+} from "../../src/telegram/telegram-polling-worker.js";
+import { RuntimeHealthWorker } from "../../src/runtime/runtime-health.js";
 import { DRIZZLE_DB, PG_POOL } from "../../src/database/database.tokens.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../../src/editorial/editorial-application.tokens.js";
 import { PIPELINE_LEASE_APPLICATION } from "../../src/operations/operations-application.tokens.js";
@@ -66,16 +74,19 @@ test("the whole application graph constructs with real adapters", async () => {
   }
 });
 
-test("both workers resolve from their tokens as real worker instances", async () => {
+test("every worker resolves from its token as a real worker instance", async () => {
   const moduleRef = await compileRuntime();
   try {
     const poller = moduleRef.get(TELEGRAM_POLLING_WORKER, { strict: false });
     const scheduler = moduleRef.get(NEWS_SCHEDULER_WORKER, { strict: false });
+    const health = moduleRef.get(RUNTIME_HEALTH_WORKER, { strict: false });
 
     assert.ok(poller instanceof TelegramPollingWorker);
     assert.ok(scheduler instanceof NewsSchedulerWorker);
+    assert.ok(health instanceof RuntimeHealthWorker);
     assert.equal(poller.name, "telegram-polling");
     assert.equal(scheduler.name, "news-scheduler");
+    assert.equal(health.name, "runtime-health");
   } finally {
     await moduleRef.close();
   }
@@ -87,7 +98,7 @@ test("neither worker implements a Nest lifecycle hook, so the coordinator stays 
   // coordinator already called stop().
   const moduleRef = await compileRuntime();
   try {
-    for (const token of [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER]) {
+    for (const token of [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER, RUNTIME_HEALTH_WORKER]) {
       const worker = moduleRef.get(token, { strict: false }) as Record<string, unknown>;
       for (const hook of ["onModuleDestroy", "beforeApplicationShutdown", "onApplicationShutdown"]) {
         assert.equal(typeof worker[hook], "undefined", `${String(token)} must not define ${hook}`);
@@ -167,4 +178,60 @@ test("resolveRuntimeIdentity reads the bot identity and rejects an unusable resp
     resolveRuntimeIdentity("token-1", "@channel", (async () => ({})) as never),
     /did not return a usable bot identity/,
   );
+});
+
+test("the readiness snapshot names the same lease and owner the poller actually claims", async () => {
+  // The health check is only meaningful if the owner id in the readiness file
+  // is the one the lease row will carry. Both come from the composition root
+  // rather than from each worker's own default, and this is the assertion that
+  // keeps them from drifting apart -- a mismatch would make every check report
+  // "owned by another runtime" against the runtime's own lease.
+  const moduleRef = await compileRuntime();
+  try {
+    const poller = moduleRef.get(TELEGRAM_POLLING_WORKER, { strict: false }) as unknown as {
+      ownerId: string;
+      leaseName: string;
+    };
+    const health = moduleRef.get(RUNTIME_HEALTH_WORKER, { strict: false }) as RuntimeHealthWorker;
+    const snapshot = health.snapshot("ready");
+
+    assert.equal(typeof poller.ownerId, "string");
+    assert.equal(snapshot.pollerLeaseOwnerId, poller.ownerId);
+    assert.equal(snapshot.pollerLeaseName, poller.leaseName);
+    assert.equal(snapshot.pollerLeaseName, TELEGRAM_CONTROL_POLLER_LEASE_NAME);
+    assert.equal(snapshot.botId, identity.botId);
+    assert.equal(snapshot.channelId, identity.channelId);
+  } finally {
+    await moduleRef.close();
+  }
+});
+
+test("two registrations get distinct owner ids, so a redeploy cannot impersonate the old runtime", async () => {
+  // If the owner id were derived from something stable (hostname, bot id), a
+  // restarted runtime would match a lease row the previous process still holds
+  // and report itself healthy while owning nothing.
+  const [first, second] = await Promise.all([compileRuntime(), compileRuntime()]);
+  try {
+    const ownerOf = (moduleRef: typeof first) =>
+      (moduleRef.get(RUNTIME_HEALTH_WORKER, { strict: false }) as RuntimeHealthWorker).snapshot(
+        "ready",
+      ).pollerLeaseOwnerId;
+    assert.notEqual(ownerOf(first), ownerOf(second));
+  } finally {
+    await Promise.all([first.close(), second.close()]);
+  }
+});
+
+test("the health worker starts last, which is what makes the readiness file mean anything", () => {
+  // The coordinator starts in this order and stops in reverse. If the health
+  // worker moved anywhere but the end, the readiness file would be published
+  // during the poller's 70-second lease-acquire wait -- a duplicate poller that
+  // is about to fail would report itself ready, which is the exact failure this
+  // protocol exists to catch. Every other check in this file still passes with
+  // that order broken, so it is asserted directly.
+  assert.deepEqual(
+    [...RUNTIME_WORKER_TOKENS],
+    [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER, RUNTIME_HEALTH_WORKER],
+  );
+  assert.equal(RUNTIME_WORKER_TOKENS.at(-1), RUNTIME_HEALTH_WORKER);
 });

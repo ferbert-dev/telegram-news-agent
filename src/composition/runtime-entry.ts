@@ -9,6 +9,7 @@ import { bootstrapRuntime, type RuntimeBootstrapRun } from "../runtime/runtime-b
 import {
   NEWS_SCHEDULER_WORKER,
   NewsAgentModule,
+  RUNTIME_HEALTH_WORKER,
   TELEGRAM_POLLING_WORKER,
   type NewsAgentRuntimeIdentity,
 } from "./news-agent.module.js";
@@ -41,11 +42,27 @@ export type StartNewsAgentRuntimeOptions = {
 };
 
 /**
- * Builds the composition root and starts both workers.
+ * The worker start order, which is the readiness contract rather than a
+ * preference.
  *
- * Worker order is the readiness contract, not a preference: the Telegram
- * poller must own its lease before the scheduler begins, so the poller token
- * comes first.
+ * The Telegram poller must own its lease before the scheduler begins, so it
+ * comes first. The health worker must come LAST: the coordinator starts in
+ * this order and calls stop in reverse, so being last is what makes the
+ * readiness file mean "the poller owns its lease" rather than "a process
+ * started". Moved to the front, it would publish "ready" during the poller's
+ * 70-second lease-acquire wait -- reinstating exactly the duplicate-poller
+ * false-healthy this protocol exists to catch.
+ *
+ * Exported as a constant so that ordering is a testable fact and not a comment.
+ */
+export const RUNTIME_WORKER_TOKENS = [
+  TELEGRAM_POLLING_WORKER,
+  NEWS_SCHEDULER_WORKER,
+  RUNTIME_HEALTH_WORKER,
+] as const;
+
+/**
+ * Builds the composition root and starts every worker.
  */
 export async function startNewsAgentRuntime(
   options: StartNewsAgentRuntimeOptions = {},
@@ -76,7 +93,7 @@ export async function startNewsAgentRuntime(
 
   return bootstrapRuntime({
     applicationModule,
-    workerTokens: [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER],
+    workerTokens: [...RUNTIME_WORKER_TOKENS],
     ...(options.stopGracePeriodMs === undefined
       ? {}
       : { stopGracePeriodMs: options.stopGracePeriodMs }),
@@ -93,7 +110,7 @@ export async function startNewsAgentRuntime(
 async function main(): Promise<void> {
   const run = await startNewsAgentRuntime();
   process.stdout.write(
-    `${JSON.stringify({ event: "runtime_started", workers: ["telegram-polling", "news-scheduler"] })}\n`,
+    `${JSON.stringify({ event: "runtime_started", workers: ["telegram-polling", "news-scheduler", "runtime-health"] })}\n`,
   );
 
   // `stopSignal.aborted` is a boolean, so awaiting it resolves immediately and
