@@ -118,8 +118,11 @@ jobs:
             echo "health CLI reported healthy with no configuration" >&2
             exit 1
           }
+          # One line, and that line is the verdict. A substring search alone
+          # would still pass for a probe that printed the right verdict and
+          # then crashed.
           case "$probe_output" in
-            *'"event":"runtime_unhealthy"'*'TELEGRAM_CHANNEL_ID'*) ;;
+            '{"event":"runtime_unhealthy","reason":"TELEGRAM_CHANNEL_ID'*'}') ;;
             *)
               echo "health CLI did not fail closed with an identity verdict:" >&2
               echo "$probe_output" >&2

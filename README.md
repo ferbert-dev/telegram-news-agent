@@ -344,9 +344,8 @@ Docker stage so the TypeScript toolchain never reaches the final image. It is
 src/telegram-bot.js`, and no deployment path passes the `compose.nest.yaml`
 overlay that would run the new runtime instead. That overlay exists so the
 migration can be exercised against a real database, and so cutover becomes a
-reviewed compose change rather than an image rebuild:
-
-The same environment every other compose recipe needs — `POSTGRES_PASSWORD`,
+reviewed compose change rather than an image rebuild. It needs the same
+environment every other compose recipe here does — `POSTGRES_PASSWORD`,
 `POSTGRES_APP_PASSWORD` and a `.env.production`:
 
 ```bash
