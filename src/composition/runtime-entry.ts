@@ -5,11 +5,14 @@ import { pathToFileURL } from "node:url";
 
 import { callTelegram, getTelegramConfig } from "../telegram.js";
 import { ensurePollingMode, getPollingConfig } from "../telegram-polling.js";
+import type { DynamicModule } from "@nestjs/common";
+
 import { bootstrapRuntime, type RuntimeBootstrapRun } from "../runtime/runtime-bootstrap.js";
 import {
   NEWS_SCHEDULER_WORKER,
   NewsAgentModule,
   RUNTIME_HEALTH_WORKER,
+  startedWorkerNames,
   TELEGRAM_POLLING_WORKER,
   type NewsAgentRuntimeIdentity,
 } from "./news-agent.module.js";
@@ -55,6 +58,9 @@ export type StartNewsAgentRuntimeOptions = {
  *
  * Exported as a constant so that ordering is a testable fact and not a comment.
  */
+/** The only mode getPollingConfig accepts, and so the only one a runtime runs in. */
+export const VALIDATED_UPDATE_MODE = "polling";
+
 export const RUNTIME_WORKER_TOKENS = [
   TELEGRAM_POLLING_WORKER,
   NEWS_SCHEDULER_WORKER,
@@ -78,26 +84,62 @@ export async function startNewsAgentRuntime(
   // every poll with 409 Conflict forever, and the poller would sit holding the
   // control lease reporting nothing useful. Legacy does this before starting
   // its poller (src/telegram-bot.js).
-  await ensurePollingMode({
-    token,
-    migrateWebhook: getPollingConfig(env).migrateWebhook,
-    callTelegram,
-  });
+  // Throws unless TELEGRAM_UPDATE_MODE is exactly "polling", so everything
+  // below runs in a validated mode -- which is what the readiness file records.
+  const { migrateWebhook } = getPollingConfig(env);
+  await ensurePollingMode({ token, migrateWebhook, callTelegram });
+  // getPollingConfig has now proven this; passing the proven value rather than
+  // a literal keeps composeRuntime from recording a mode nothing checked when
+  // it is called directly.
+  const updateMode = VALIDATED_UPDATE_MODE;
 
   const identity = options.identity ?? (await resolveRuntimeIdentity(token, channelId));
 
   // One reference, used once. bootstrapRuntime passes this same object to both
   // the bootstrap root and RuntimeModule, and Nest keys modules by reference —
   // rebuilding it here would give the process two pools and two lease owners.
-  const applicationModule = NewsAgentModule.register({ token, identity, env });
-
   return bootstrapRuntime({
-    applicationModule,
-    workerTokens: [...RUNTIME_WORKER_TOKENS],
+    ...composeRuntime({
+      token,
+      identity,
+      env,
+      updateMode,
+      workerTokens: [...RUNTIME_WORKER_TOKENS],
+    }),
     ...(options.stopGracePeriodMs === undefined
       ? {}
       : { stopGracePeriodMs: options.stopGracePeriodMs }),
   });
+}
+
+/**
+ * Builds the module and the worker-token list together, from one list.
+ *
+ * Separated from `startNewsAgentRuntime` because that function cannot run in a
+ * test -- it calls Telegram twice before it composes anything. The invariant
+ * worth pinning is exactly what this function guarantees: the readiness file
+ * describes the tokens the runtime is about to start, so a filtered or
+ * conditional token list changes the file rather than being contradicted by it.
+ */
+export function composeRuntime(options: {
+  token: string;
+  identity: NewsAgentRuntimeIdentity;
+  env: NodeJS.ProcessEnv;
+  /** The mode the caller validated. No default: a literal here could lie. */
+  updateMode: string;
+  workerTokens: readonly symbol[];
+}): { applicationModule: DynamicModule; workerTokens: symbol[] } {
+  const workerTokens = [...options.workerTokens];
+  return {
+    applicationModule: NewsAgentModule.register({
+      token: options.token,
+      identity: options.identity,
+      env: options.env,
+      updateMode: options.updateMode,
+      startedWorkers: startedWorkerNames(workerTokens),
+    }),
+    workerTokens,
+  };
 }
 
 /**

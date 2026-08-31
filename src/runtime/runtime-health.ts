@@ -2,7 +2,7 @@ import { chmod, readFile, rename, unlink, writeFile } from "node:fs/promises";
 
 import type { RuntimeWorker } from "./runtime-coordinator.js";
 
-export const RUNTIME_HEALTH_SCHEMA_VERSION = 1;
+export const RUNTIME_HEALTH_SCHEMA_VERSION = 2;
 export const DEFAULT_RUNTIME_HEALTH_FILE = "/tmp/telegram-news-agent-runtime-health.json";
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 
@@ -14,6 +14,20 @@ export type RuntimeHealthSnapshot = {
   channelId: string;
   pollerLeaseName: string;
   pollerLeaseOwnerId: string;
+  /**
+   * The Telegram update mode this runtime validated before the container was
+   * built. `getPollingConfig` throws unless it is "polling", so reaching a
+   * published snapshot at all means it was satisfied -- recording it makes that
+   * checkable from outside instead of merely true.
+   */
+  updateMode: string;
+  /**
+   * The workers that were already started when this snapshot was first
+   * published. The health worker starts last, so this is the set the runtime
+   * actually brought up -- which is what lets a probe refuse a runtime started
+   * with a reduced worker set, rather than inferring it from start order.
+   */
+  startedWorkers: readonly string[];
   state: "ready" | "stopping";
   heartbeatAt: string;
 };
@@ -24,6 +38,8 @@ export type RuntimeHealthWorkerOptions = {
   channelId: string;
   pollerLeaseName: string;
   pollerLeaseOwnerId: string;
+  updateMode: string;
+  startedWorkers: readonly string[];
   filePath?: string;
   heartbeatIntervalMs?: number;
   now?: () => Date;
@@ -108,6 +124,8 @@ export class RuntimeHealthWorker implements RuntimeWorker {
       channelId: this.options.channelId,
       pollerLeaseName: this.options.pollerLeaseName,
       pollerLeaseOwnerId: this.options.pollerLeaseOwnerId,
+      updateMode: this.options.updateMode,
+      startedWorkers: this.options.startedWorkers,
       state,
       heartbeatAt: this.options.now().toISOString(),
     };

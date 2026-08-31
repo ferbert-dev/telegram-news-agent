@@ -7,17 +7,12 @@ import { checkRuntimeHealth } from "../runtime/runtime-health-check.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { OperationsPersistenceModule } from "../operations/operations-persistence.module.js";
 import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
+
 import type { PipelineLeaseReadPort } from "../operations/operations.interfaces.js";
 
-/**
- * A separate process from the runtime it is checking. That separation is the
- * point: a runtime cannot report itself healthy, because this reads the
- * readiness file as a *claim* and then confirms it against the database
- * independently.
- *
- * Only the database is booted here — no workers, no Telegram, no AI provider —
- * so the check cannot acquire a lease, send a message, or spend a token.
- */
+/** What a healthy deployment must be running, independent of what it started. */
+export const REQUIRED_WORKERS = ["telegram-polling", "news-scheduler"] as const;
+
 /**
  * The identity this probe expects the runtime to have.
  *
@@ -28,11 +23,35 @@ import type { PipelineLeaseReadPort } from "../operations/operations.interfaces.
  * trailing space or a CRLF in `.env` into "belongs to channel @x, not @x ", a
  * visually identical mismatch that would fail every probe on a working bot.
  */
-export function expectedIdentity(env: NodeJS.ProcessEnv): { channelId: string } | null {
+export function expectedIdentity(
+  env: NodeJS.ProcessEnv,
+): { channelId: string; updateMode: string; startedWorkers: readonly string[] } | null {
   const channelId = env.TELEGRAM_CHANNEL_ID?.trim();
-  return channelId ? { channelId } : null;
+  return channelId
+    ? {
+        channelId,
+        // The runtime refuses to start in any other mode, so a snapshot saying
+        // otherwise means the file belongs to something else.
+        updateMode: "polling",
+        // Declared here deliberately, and NOT imported from the composition
+        // root: this is what a healthy deployment must be running, which is a
+        // different statement from what some runtime happened to start. Sharing
+        // one constant between the writer and the probe would compare it to
+        // itself and could never fail.
+        startedWorkers: REQUIRED_WORKERS,
+      }
+    : null;
 }
 
+/**
+ * A separate process from the runtime it is checking. That separation is the
+ * point: a runtime cannot report itself healthy, because this reads the
+ * readiness file as a *claim* and then confirms it against the database
+ * independently.
+ *
+ * Only the database is booted here — no workers, no Telegram, no AI provider —
+ * so the check cannot acquire a lease, send a message, or spend a token.
+ */
 export async function runHealthCli(
   filePath?: string,
   env: NodeJS.ProcessEnv = process.env,

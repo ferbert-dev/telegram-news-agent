@@ -22,8 +22,17 @@ test("the expected channel is trimmed to match what the runtime actually wrote",
   // getTelegramConfig trims before the runtime records the channel, so an
   // untrimmed expectation would report "belongs to channel @news, not @news "
   // -- a mismatch nobody can see, failing every probe on a working bot.
-  assert.deepEqual(expectedIdentity({ TELEGRAM_CHANNEL_ID: "@news " }), { channelId: "@news" });
-  assert.deepEqual(expectedIdentity({ TELEGRAM_CHANNEL_ID: "@news\r\n" }), { channelId: "@news" });
+  assert.equal(expectedIdentity({ TELEGRAM_CHANNEL_ID: "@news " })?.channelId, "@news");
+  assert.equal(expectedIdentity({ TELEGRAM_CHANNEL_ID: "@news\r\n" })?.channelId, "@news");
   assert.equal(expectedIdentity({ TELEGRAM_CHANNEL_ID: "  " }), null);
   assert.equal(expectedIdentity({}), null);
+});
+
+test("the probe requires polling mode and the full worker set, not just an identity", () => {
+  // A runtime that came up without its scheduler, or in some other update mode,
+  // must not be reported healthy just because the channel matches.
+  const expected = expectedIdentity({ TELEGRAM_CHANNEL_ID: "@news" });
+  assert.ok(expected);
+  assert.equal(expected.updateMode, "polling");
+  assert.deepEqual([...expected.startedWorkers], ["telegram-polling", "news-scheduler"]);
 });
