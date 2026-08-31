@@ -27,7 +27,13 @@ export type RuntimeHealthCheckOptions = {
    * confirm runtime B's lease and report A healthy. The snapshot has always
    * carried the identity; this is what compares it.
    */
-  expect?: { botId?: number; channelId?: string };
+  expect?: {
+    botId?: number;
+    channelId?: string;
+    updateMode?: string;
+    /** Every worker that must have started before readiness was published. */
+    startedWorkers?: readonly string[];
+  };
   now?: () => Date;
   /** Injected so the check can be tested without signalling a real process. */
   isProcessAlive?: (pid: number) => boolean;
@@ -53,12 +59,21 @@ function parseSnapshot(raw: string): RuntimeHealthSnapshot | null {
   }
   if (!value || typeof value !== "object") return null;
   const snapshot = value as Partial<RuntimeHealthSnapshot>;
-  const stringFields = ["runtimeId", "channelId", "pollerLeaseName", "pollerLeaseOwnerId", "heartbeatAt"] as const;
+  const stringFields = [
+    "runtimeId",
+    "channelId",
+    "pollerLeaseName",
+    "pollerLeaseOwnerId",
+    "updateMode",
+    "heartbeatAt",
+  ] as const;
   if (
     typeof snapshot.schemaVersion !== "number" ||
     typeof snapshot.pid !== "number" ||
     typeof snapshot.botId !== "number" ||
     (snapshot.state !== "ready" && snapshot.state !== "stopping") ||
+    !Array.isArray(snapshot.startedWorkers) ||
+    snapshot.startedWorkers.some((worker) => typeof worker !== "string") ||
     stringFields.some((field) => typeof snapshot[field] !== "string")
   ) {
     return null;
@@ -76,9 +91,10 @@ function parseSnapshot(raw: string): RuntimeHealthSnapshot | null {
  *
  * 1. the file parses and matches the schema version this checker understands;
  * 2. it says `ready`, not `stopping`;
- * 2b. it describes the runtime this probe was pointed at, when the caller
- *    supplies the expected identity -- checked before the database is touched,
- *    so a probe never confirms a lease it was not asked about;
+ * 2b. it describes the runtime this probe was pointed at -- identity, update
+ *    mode and the workers that came up -- when the caller supplies those
+ *    expectations, checked before the database is touched, so a probe never
+ *    confirms a lease it was not asked about;
  * 3. its heartbeat is recent — a wedged process stops advancing it;
  * 4. the pid it names is actually alive — a stale file from a crashed run
  *    would otherwise pass every check above;
@@ -143,6 +159,25 @@ export async function checkRuntimeHealth(
   const age = now().valueOf() - heartbeatAt;
   if (age > maxAge) {
     return { healthy: false, reason: `readiness heartbeat is ${age}ms old, over ${maxAge}ms` };
+  }
+
+  if (expected?.updateMode !== undefined && snapshot.updateMode !== expected.updateMode) {
+    return {
+      healthy: false,
+      reason: `runtime is in ${snapshot.updateMode} mode, not ${expected.updateMode}`,
+    };
+  }
+  const missingWorkers = (expected?.startedWorkers ?? []).filter(
+    (worker) => !snapshot.startedWorkers.includes(worker),
+  );
+  if (missingWorkers.length > 0) {
+    // A runtime that came up without its scheduler polls fine and serves no
+    // scheduled run. Start order alone cannot express that: the health worker
+    // is last either way.
+    return {
+      healthy: false,
+      reason: `runtime started without ${missingWorkers.join(", ")}`,
+    };
   }
 
   if (!isProcessAlive(snapshot.pid)) {

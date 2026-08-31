@@ -29,6 +29,8 @@ function worker(filePath: string, overrides: Record<string, unknown> = {}) {
     channelId: "@channel",
     pollerLeaseName: "telegram_control_poller",
     pollerLeaseOwnerId: "owner-1",
+    updateMode: "polling",
+    startedWorkers: ["telegram-polling", "news-scheduler"],
     filePath,
     now: () => NOW,
     ...overrides,
@@ -80,6 +82,8 @@ test("start publishes a ready snapshot the checker's schema accepts, readable on
   assert.equal(snapshot.state, "ready");
   assert.equal(snapshot.runtimeId, "runtime-1");
   assert.equal(snapshot.pollerLeaseOwnerId, "owner-1");
+  assert.equal(snapshot.updateMode, "polling");
+  assert.deepEqual(snapshot.startedWorkers, ["telegram-polling", "news-scheduler"]);
   assert.equal(snapshot.heartbeatAt, NOW.toISOString());
   assert.equal(snapshot.pid, process.pid);
 
@@ -219,6 +223,8 @@ test("a missing or malformed readiness file is unhealthy, never an exception", a
         channelId: "@c",
         pollerLeaseName: "l",
         pollerLeaseOwnerId: "o",
+        updateMode: "polling",
+        startedWorkers: [],
         state: "ready",
         heartbeatAt: NOW.toISOString(),
       }),
@@ -497,4 +503,68 @@ test("a foreign readiness file is diagnosed as foreign, even when its heartbeat 
 
   assert.equal(result.healthy, false);
   assert.match(result.healthy ? "" : result.reason, /belongs to channel/);
+});
+
+test("a runtime that came up without the scheduler is not ready, however healthy it looks", async () => {
+  // Start order cannot express this: the health worker is last either way. A
+  // runtime whose scheduler never started polls fine, holds its lease, and
+  // silently runs nothing on a schedule -- which every other check here passes.
+  const filePath = await temporaryFile();
+  const health = worker(filePath, { startedWorkers: ["telegram-polling"] });
+  started.push(health);
+  await health.start(new AbortController().signal);
+
+  const result = await checkRuntimeHealth({
+    filePath,
+    expect: { startedWorkers: ["telegram-polling", "news-scheduler"] },
+    now: () => NOW,
+    isProcessAlive: () => true,
+    leases: leaseReader({}),
+  });
+
+  assert.equal(result.healthy, false);
+  assert.match(result.healthy ? "" : result.reason, /started without news-scheduler/);
+});
+
+test("a runtime in another update mode is rejected rather than polled for", async () => {
+  const filePath = await temporaryFile();
+  const health = worker(filePath, { updateMode: "webhook" });
+  started.push(health);
+  await health.start(new AbortController().signal);
+
+  const result = await checkRuntimeHealth({
+    filePath,
+    expect: { updateMode: "polling" },
+    now: () => NOW,
+    isProcessAlive: () => true,
+    leases: leaseReader({}),
+  });
+
+  assert.equal(result.healthy, false);
+  assert.match(result.healthy ? "" : result.reason, /webhook mode, not polling/);
+});
+
+test("a schema-1 readiness file is rejected, not read with the new fields missing", async () => {
+  // The snapshot gained updateMode and startedWorkers, so a file written by the
+  // previous runtime must not be interpreted optimistically during a rollout
+  // where both versions briefly exist.
+  const result = await checkRuntimeHealth({
+    filePath: "ignored",
+    leases: leaseReader({}),
+    now: () => NOW,
+    readSnapshotFile: async () =>
+      JSON.stringify({
+        schemaVersion: 1,
+        runtimeId: "runtime-1",
+        pid: process.pid,
+        botId: 4242,
+        channelId: "@channel",
+        pollerLeaseName: "telegram_control_poller",
+        pollerLeaseOwnerId: "owner-1",
+        state: "ready",
+        heartbeatAt: NOW.toISOString(),
+      }),
+  });
+  assert.equal(result.healthy, false);
+  assert.match(result.healthy ? "" : result.reason, /schema|malformed/);
 });

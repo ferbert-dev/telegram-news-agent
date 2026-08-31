@@ -47,7 +47,14 @@ test(
       channelId: "@integration-channel",
       pollerLeaseName: leaseName,
       pollerLeaseOwnerId: ownerId,
+      updateMode: "polling",
+      startedWorkers: ["telegram-polling", "news-scheduler"],
       filePath,
+      // Long enough that no heartbeat can fire inside the clock-skew window
+      // below. A tick landing there would write a heartbeatAt ten minutes ahead
+      // and the later age comparison would go negative -- which still fails for
+      // the reasons those steps assert, but by luck rather than by design.
+      heartbeatIntervalMs: 60 * 60_000,
     });
 
     try {
@@ -126,6 +133,8 @@ test(
         channelId: "@integration-channel",
         pollerLeaseName: leaseName,
         pollerLeaseOwnerId: randomUUID(),
+        updateMode: "polling",
+        startedWorkers: ["telegram-polling", "news-scheduler"],
         filePath: duplicatePath,
       });
       await duplicate.start(new AbortController().signal);

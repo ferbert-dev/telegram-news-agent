@@ -61,7 +61,10 @@ const LIFECYCLE_HOOKS = new Set([
   "onApplicationShutdown",
 ]);
 
-export function createLateBoundPort<T extends object>(name: string): LateBoundPort<T> {
+export function createLateBoundPort<T extends object>(
+  name: string,
+  registry?: LateBoundPortRegistry,
+): LateBoundPort<T> {
   let target: T | null = null;
 
   const port = new Proxy({} as T, {
@@ -95,7 +98,7 @@ export function createLateBoundPort<T extends object>(name: string): LateBoundPo
     },
   });
 
-  return {
+  const handle: LateBoundPort<T> = {
     port,
     bind(next: T) {
       if (target !== null) {
@@ -107,20 +110,50 @@ export function createLateBoundPort<T extends object>(name: string): LateBoundPo
       return target !== null;
     },
   };
+  // Registered at creation, so a port cannot be added to a composition without
+  // also being covered by its unbound check.
+  registry?.add(name, handle);
+  return handle;
 }
 
 /**
- * Refuses a composition that left a late-bound port unbound.
+ * Collects every port a composition creates, so nothing has to be remembered.
  *
- * Kept here rather than inline in the binder so the rule itself is testable:
- * the failure it prevents is silent, and a check that can only observe the
- * fully-correct wiring cannot tell you the rule is still there.
+ * The first version of this rule took a hand-written list. That closed the
+ * failure it was written for and left the same one open a level up: a *new*
+ * late-bound port added without a matching list entry was silent again, which
+ * a review demonstrated by adding a sixth port and watching every test pass.
+ * Registering at creation removes the step someone can forget, and removes the
+ * duplicated name literals, which could otherwise drift and make the error
+ * message name the wrong port.
  */
-export function assertPortsBound(
-  ports: readonly (readonly [string, { readonly isBound: boolean }])[],
-): void {
-  const unbound = ports.filter(([, port]) => !port.isBound).map(([name]) => name);
-  if (unbound.length > 0) {
-    throw new Error(`Runtime composition left late-bound ports unbound: ${unbound.join(", ")}`);
+export class LateBoundPortRegistry {
+  private readonly ports: { name: string; port: { readonly isBound: boolean } }[] = [];
+
+  add(name: string, port: { readonly isBound: boolean }): void {
+    this.ports.push({ name, port });
+  }
+
+  /** Every port created against this registry that is still unbound. */
+  unbound(): string[] {
+    return this.ports.filter(({ port }) => !port.isBound).map(({ name }) => name);
+  }
+
+  get size(): number {
+    return this.ports.length;
+  }
+
+  /**
+   * Refuses a composition that left a port unbound.
+   *
+   * A separate method rather than an inline check in the binder so the rule
+   * itself is testable: the failure it prevents is silent, and a check that can
+   * only observe fully-correct wiring cannot tell you the rule is still there.
+   */
+  assertAllBound(): void {
+    const unbound = this.unbound();
+    if (unbound.length > 0) {
+      throw new Error(`Runtime composition left late-bound ports unbound: ${unbound.join(", ")}`);
+    }
   }
 }

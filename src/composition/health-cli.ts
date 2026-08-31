@@ -7,6 +7,7 @@ import { checkRuntimeHealth } from "../runtime/runtime-health-check.js";
 import { DatabaseModule } from "../database/database.module.js";
 import { OperationsPersistenceModule } from "../operations/operations-persistence.module.js";
 import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
+import { RUNTIME_STARTED_WORKERS } from "./news-agent.module.js";
 import type { PipelineLeaseReadPort } from "../operations/operations.interfaces.js";
 
 /**
@@ -28,9 +29,19 @@ import type { PipelineLeaseReadPort } from "../operations/operations.interfaces.
  * trailing space or a CRLF in `.env` into "belongs to channel @x, not @x ", a
  * visually identical mismatch that would fail every probe on a working bot.
  */
-export function expectedIdentity(env: NodeJS.ProcessEnv): { channelId: string } | null {
+export function expectedIdentity(
+  env: NodeJS.ProcessEnv,
+): { channelId: string; updateMode: string; startedWorkers: readonly string[] } | null {
   const channelId = env.TELEGRAM_CHANNEL_ID?.trim();
-  return channelId ? { channelId } : null;
+  return channelId
+    ? {
+        channelId,
+        // The runtime refuses to start in any other mode, so a snapshot saying
+        // otherwise means the file belongs to something else.
+        updateMode: "polling",
+        startedWorkers: RUNTIME_STARTED_WORKERS,
+      }
+    : null;
 }
 
 export async function runHealthCli(

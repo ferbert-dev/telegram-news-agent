@@ -19,8 +19,8 @@ import {
 } from "../../src/telegram/telegram-polling-worker.js";
 import { RuntimeHealthWorker } from "../../src/runtime/runtime-health.js";
 import {
-  assertPortsBound,
   createLateBoundPort,
+  LateBoundPortRegistry,
 } from "../../src/composition/late-bound-port.js";
 import { DRIZZLE_DB, PG_POOL } from "../../src/database/database.tokens.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../../src/editorial/editorial-application.tokens.js";
@@ -133,8 +133,8 @@ test("late-bound ports are filled during init, before any worker could run", asy
 });
 
 test("a port left unbound stops the container from finishing its boot", () => {
-  // The test above passes with every bind() deleted -- resolving a service does
-  // not go through the proxies, so nothing observed a missing binding. The
+  // Resolving a service does not go through the proxies, so no test observed a
+  // missing binding: deleting any bind() used to fail nothing at all. The
   // binder now verifies itself, which means every compileRuntime() in this file
   // exercises the rule; this pins the rule's own behaviour.
   //
@@ -143,15 +143,30 @@ test("a port left unbound stops the container from finishing its boot", () => {
   // scheduled run. For the persistence port it is worse than a late crash --
   // it is what the AI provider's attempt recording is built with, so usage
   // accounting and fallback-rate alerting would go dark at the first call.
-  const bound = createLateBoundPort<{ ok(): void }>("bound");
+  const registry = new LateBoundPortRegistry();
+  const bound = createLateBoundPort<{ ok(): void }>("bound", registry);
   bound.bind({ ok() {} });
-  const unbound = createLateBoundPort<{ ok(): void }>("unbound");
+  assert.doesNotThrow(() => registry.assertAllBound());
 
-  assert.doesNotThrow(() => assertPortsBound([["bound", bound]]));
-  assert.throws(
-    () => assertPortsBound([["bound", bound], ["unbound", unbound]]),
-    /left late-bound ports unbound: unbound/,
-  );
+  // The registry is populated at creation, so a port added to a composition is
+  // covered without anyone remembering to list it. A hand-maintained list left
+  // exactly this gap: a new port omitted from it was silent again.
+  createLateBoundPort<{ ok(): void }>("forgotten", registry);
+  assert.equal(registry.size, 2);
+  assert.throws(() => registry.assertAllBound(), /left late-bound ports unbound: forgotten/);
+});
+
+test("the composition root registers every one of its ports, so none can be forgotten", async () => {
+  // Counts the ports the real root creates. If someone adds a sixth and does
+  // not pass the registry, this fails rather than silently losing coverage.
+  const moduleRef = await compileRuntime();
+  try {
+    const registry = moduleRef.get(LateBoundPortRegistry, { strict: false });
+    assert.equal(registry.size, 5);
+    assert.deepEqual(registry.unbound(), []);
+  } finally {
+    await moduleRef.close();
+  }
 });
 
 test("registering with no AI provider at all fails from the provider composition", () => {

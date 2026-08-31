@@ -10,7 +10,7 @@ const health = await import("../dist/runtime/runtime-health.js");
 assert.equal(typeof cli.runHealthCli, "function");
 assert.equal(typeof check.checkRuntimeHealth, "function");
 assert.equal(typeof health.RuntimeHealthWorker, "function");
-assert.equal(health.RUNTIME_HEALTH_SCHEMA_VERSION, 1);
+assert.equal(health.RUNTIME_HEALTH_SCHEMA_VERSION, 2);
 
 // No readiness file, no database contact: the check must decide "unhealthy"
 // rather than throw, because a probe that throws is indistinguishable from a

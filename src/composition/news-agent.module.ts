@@ -68,7 +68,7 @@ import { RuntimeHealthWorker } from "../runtime/runtime-health.js";
 import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
 import { randomUUID } from "node:crypto";
 
-import { assertPortsBound, createLateBoundPort } from "./late-bound-port.js";
+import { createLateBoundPort, LateBoundPortRegistry } from "./late-bound-port.js";
 
 /** Worker tokens, in the coordinator's required start order. */
 export const TELEGRAM_POLLING_WORKER = Symbol("TELEGRAM_POLLING_WORKER");
@@ -91,6 +91,16 @@ export type NewsAgentModuleOptions = {
   env?: NodeJS.ProcessEnv;
   appVersion?: string;
 };
+
+/**
+ * The workers this module registers ahead of the health worker.
+ *
+ * Exported so the health CLI can require exactly this set rather than
+ * hardcoding names: a runtime that came up without its scheduler polls fine and
+ * silently runs nothing on a schedule, and start order cannot express that --
+ * the health worker is last either way.
+ */
+export const RUNTIME_STARTED_WORKERS = ["telegram-polling", "news-scheduler"] as const;
 
 /**
  * The composition root: the one place that assembles every application module
@@ -121,17 +131,24 @@ export class NewsAgentModule {
     // container exists, but is satisfied by a singleton that only exists
     // inside it. `RuntimeBinder.onModuleInit` fills them, which Nest runs
     // during context creation and therefore strictly before any worker starts.
-    const legacyPersistence = createLateBoundPort<LegacyPersistence>("legacy-persistence");
+    // Every port created against this registry is automatically covered by the
+    // unbound check below -- there is no list to keep in step.
+    const ports = new LateBoundPortRegistry();
+    const legacyPersistence = createLateBoundPort<LegacyPersistence>("legacy-persistence", ports);
     const editorialWorkflow = createLateBoundPort<EditorialWorkflowApplicationPort>(
       "editorial-workflow",
+      ports,
     );
-    const pipelineLease = createLateBoundPort<PipelineLeaseApplicationPort>("pipeline-lease");
+    const pipelineLease = createLateBoundPort<PipelineLeaseApplicationPort>(
+      "pipeline-lease",
+      ports,
+    );
     const reviewDelivery = createLateBoundPort<{
       execute(input: Record<string, unknown>): Promise<{ status: string }>;
-    }>("telegram-review-delivery");
+    }>("telegram-review-delivery", ports);
     const researchExecution = createLateBoundPort<{
       execute(request: never, signal?: AbortSignal): Promise<never>;
-    }>("research-execution");
+    }>("research-execution", ports);
 
 
     // Eagerly constructible: these depend only on configuration, not on the
@@ -240,6 +257,10 @@ export class NewsAgentModule {
         }),
       ],
       providers: [
+        // Exposed so a check can count what the root actually created; a sixth
+        // port added without the registry would otherwise lose its coverage
+        // quietly.
+        { provide: LateBoundPortRegistry, useValue: ports },
         {
           provide: RuntimeBinder,
           inject: [
@@ -271,13 +292,7 @@ export class NewsAgentModule {
               // attempt recording is built with, so a missed bind would take
               // out usage accounting and fallback-rate alerting at the first
               // provider call.
-              assertPortsBound([
-                ["legacy-persistence", legacyPersistence],
-                ["editorial-workflow", editorialWorkflow],
-                ["pipeline-lease", pipelineLease],
-                ["telegram-review-delivery", reviewDelivery],
-                ["research-execution", researchExecution],
-              ]);
+ports.assertAllBound();
             }),
         },
         {
@@ -315,6 +330,11 @@ export class NewsAgentModule {
               channelId: identity.channelId,
               pollerLeaseName: TELEGRAM_CONTROL_POLLER_LEASE_NAME,
               pollerLeaseOwnerId: pollerOwnerId,
+              // Not a constant dressed as data: getPollingConfig throws unless
+              // this is "polling", and runtime-entry calls it before the
+              // container is built, so recording it states what was validated.
+              updateMode: env.TELEGRAM_UPDATE_MODE?.trim().toLowerCase() ?? "polling",
+              startedWorkers: RUNTIME_STARTED_WORKERS,
               ...(options.healthFilePath ? { filePath: options.healthFilePath } : {}),
             }),
         },
