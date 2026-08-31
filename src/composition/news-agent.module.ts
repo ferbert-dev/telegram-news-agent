@@ -68,7 +68,7 @@ import { RuntimeHealthWorker } from "../runtime/runtime-health.js";
 import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
 import { randomUUID } from "node:crypto";
 
-import { createLateBoundPort } from "./late-bound-port.js";
+import { assertPortsBound, createLateBoundPort } from "./late-bound-port.js";
 
 /** Worker tokens, in the coordinator's required start order. */
 export const TELEGRAM_POLLING_WORKER = Symbol("TELEGRAM_POLLING_WORKER");
@@ -262,6 +262,22 @@ export class NewsAgentModule {
               pipelineLease.bind(lease);
               reviewDelivery.bind(delivery);
               researchExecution.bind(research);
+
+              // Refuse to finish booting with a port left unbound. Without
+              // this, dropping a bind above is silent: the container starts,
+              // the workers start, and the first call through that port throws
+              // deep inside a poll or a scheduled run. For the persistence port
+              // it is worse than a late crash -- it is what the AI provider's
+              // attempt recording is built with, so a missed bind would take
+              // out usage accounting and fallback-rate alerting at the first
+              // provider call.
+              assertPortsBound([
+                ["legacy-persistence", legacyPersistence],
+                ["editorial-workflow", editorialWorkflow],
+                ["pipeline-lease", pipelineLease],
+                ["telegram-review-delivery", reviewDelivery],
+                ["research-execution", researchExecution],
+              ]);
             }),
         },
         {

@@ -72,6 +72,8 @@ Two runtimes coexist by design, and this is the single most important fact about
 
 The `Dockerfile` now builds and ships `dist/` from a separate `build` stage (devDependencies stay in that stage), so the image *can* execute the TypeScript layer — but it does not. `CMD` is still `node src/telegram-bot.js`, and `compose.yaml`'s `bot` service still overrides it with the same command. **What runs in production is the legacy JS runtime; the compiled runtime is carried, not started.** Flipping it is `compose.nest.yaml`, an overlay no deployment path passes — `ops/deploy.sh` and CI compose only `compose.yaml` (plus `compose.test.yaml` / `compose.ssh-access.yaml`). Cutover means a reviewed change to a compose file, not a rebuild.
 
+`docs/nestjs-cutover-readiness.md` records what has and has not been verified about the NestJS runtime, and what cutover would involve.
+
 Keep the legacy path working. Do not "clean up" a legacy module by pointing it at the Nest layer.
 
 ### Nest layering

@@ -18,6 +18,10 @@ import {
   TelegramPollingWorker,
 } from "../../src/telegram/telegram-polling-worker.js";
 import { RuntimeHealthWorker } from "../../src/runtime/runtime-health.js";
+import {
+  assertPortsBound,
+  createLateBoundPort,
+} from "../../src/composition/late-bound-port.js";
 import { DRIZZLE_DB, PG_POOL } from "../../src/database/database.tokens.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../../src/editorial/editorial-application.tokens.js";
 import { PIPELINE_LEASE_APPLICATION } from "../../src/operations/operations-application.tokens.js";
@@ -126,6 +130,28 @@ test("late-bound ports are filled during init, before any worker could run", asy
   } finally {
     await moduleRef.close();
   }
+});
+
+test("a port left unbound stops the container from finishing its boot", () => {
+  // The test above passes with every bind() deleted -- resolving a service does
+  // not go through the proxies, so nothing observed a missing binding. The
+  // binder now verifies itself, which means every compileRuntime() in this file
+  // exercises the rule; this pins the rule's own behaviour.
+  //
+  // The failure it prevents is silent: the container starts, the workers start,
+  // and the first call through the missed port throws deep inside a poll or a
+  // scheduled run. For the persistence port it is worse than a late crash --
+  // it is what the AI provider's attempt recording is built with, so usage
+  // accounting and fallback-rate alerting would go dark at the first call.
+  const bound = createLateBoundPort<{ ok(): void }>("bound");
+  bound.bind({ ok() {} });
+  const unbound = createLateBoundPort<{ ok(): void }>("unbound");
+
+  assert.doesNotThrow(() => assertPortsBound([["bound", bound]]));
+  assert.throws(
+    () => assertPortsBound([["bound", bound], ["unbound", unbound]]),
+    /left late-bound ports unbound: unbound/,
+  );
 });
 
 test("registering with no AI provider at all fails from the provider composition", () => {
