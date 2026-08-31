@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -361,4 +361,67 @@ test("a readiness file written by a different runtime is rejected, not confirmed
     leases: leaseReader({}),
   });
   assert.equal(matching.healthy, true);
+});
+
+test("a worker that never published does not delete somebody else's readiness file", async () => {
+  // Two runtimes share the default path. If B aborts during startup -- a bad
+  // token, a failed ensurePollingMode -- its health worker's stop() must not
+  // touch the file, or A's probe reads "no readiness file" and a healthy
+  // runtime gets restarted.
+  const { filePath } = await readySnapshot();
+  const owned = await readFile(filePath, "utf8");
+
+  const aborted = new AbortController();
+  aborted.abort();
+  const neverStarted = worker(filePath, { runtimeId: "runtime-2" });
+  await neverStarted.start(aborted.signal);
+  await neverStarted.stop();
+
+  assert.equal(await readFile(filePath, "utf8"), owned);
+});
+
+test("a stop landing during start does not leave an uncancellable heartbeat", async () => {
+  const filePath = await temporaryFile();
+  const health = worker(filePath, { heartbeatIntervalMs: 1 });
+
+  // stop() while the first publish is still in flight: it finds no interval to
+  // clear, so start() must not go on to create one.
+  const starting = health.start(new AbortController().signal);
+  const stopping = health.stop();
+  await Promise.all([starting, stopping]);
+
+  const internals = health as unknown as { heartbeat: NodeJS.Timeout | null };
+  assert.equal(internals.heartbeat, null);
+  await assert.rejects(readFile(filePath, "utf8"), /ENOENT/);
+});
+
+test("a second concurrent stop waits for the first rather than reporting done early", async () => {
+  const filePath = await temporaryFile();
+  const health = worker(filePath);
+  await health.start(new AbortController().signal);
+
+  const [first, second] = [health.stop(), health.stop()];
+  // The coordinator can call stop twice during an escalated shutdown. If the
+  // second returned immediately it would report teardown complete while the
+  // file was still on disk.
+  await second;
+  await assert.rejects(readFile(filePath, "utf8"), /ENOENT/);
+  await first;
+});
+
+test("a failed publish leaves no orphaned temp file behind", async () => {
+  // The temp suffix is unique per attempt, so cleanup that only covered part
+  // of the write would leak a new file every heartbeat until /tmp filled.
+  // A directory at the target makes the rename fail after the temp file exists.
+  const filePath = await temporaryFile();
+  await mkdir(filePath);
+  const health = worker(filePath, { heartbeatIntervalMs: 5 });
+
+  await assert.rejects(health.start(new AbortController().signal));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await health.stop().catch(() => undefined);
+
+  // Only the directory itself: no `health.json.<pid>.<n>.tmp` survivors.
+  assert.deepEqual(await readdir(dirname(filePath)), ["health.json"]);
+  assert.deepEqual(await readdir(filePath), []);
 });

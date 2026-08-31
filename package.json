@@ -12,6 +12,7 @@
     "test:persistence": "tsx --test checks/persistence/*.ts",
     "test:application": "tsx --test checks/application/*.ts",
     "test:architecture": "tsx --test checks/architecture/*.ts",
+    "test:runtime": "tsx --test checks/runtime/*.ts",
     "test:integration:drizzle": "RUN_DATABASE_INTEGRATION=1 tsx --test checks/integration/*.ts",
     "test:integration": "RUN_DATABASE_INTEGRATION=1 node --test test/integration/*.test.js",
     "typecheck": "tsc --noEmit",

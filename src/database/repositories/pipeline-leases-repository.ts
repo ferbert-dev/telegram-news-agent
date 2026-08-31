@@ -83,8 +83,11 @@ export class PipelineLeasesRepository
           acquiredAt: pipelineLeases.acquiredAt,
           expiresAt: pipelineLeases.expiresAt,
           // Read in the same statement, so expiry is decided against the clock
-          // that generated it rather than against the probe container's.
-          serverNowAt: sql<string>`now()`,
+          // that generated it rather than against the probe container's. Cast
+          // in SQL: a raw `sql` field carries no Drizzle decoder, so an
+          // uncast now() would arrive as a Date and the declared type would be
+          // a lie that only production sees.
+          serverNowAt: sql<string>`now()::text`,
         })
         .from(pipelineLeases)
         .where(eq(pipelineLeases.name, name))

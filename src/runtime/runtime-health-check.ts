@@ -67,7 +67,8 @@ function parseSnapshot(raw: string): RuntimeHealthSnapshot | null {
 }
 
 /**
- * Decides whether the runtime is genuinely serving, not merely running.
+ * Decides whether the runtime holds the poller lease, rather than merely
+ * running.
  *
  * The runtime's own file is treated as a *claim*, never as the answer. Every
  * check below either validates the claim's freshness or confirms it against
@@ -75,6 +76,9 @@ function parseSnapshot(raw: string): RuntimeHealthSnapshot | null {
  *
  * 1. the file parses and matches the schema version this checker understands;
  * 2. it says `ready`, not `stopping`;
+ * 2b. it describes the runtime this probe was pointed at, when the caller
+ *    supplies the expected identity -- checked before the database is touched,
+ *    so a probe never confirms a lease it was not asked about;
  * 3. its heartbeat is recent — a wedged process stops advancing it;
  * 4. the pid it names is actually alive — a stale file from a crashed run
  *    would otherwise pass every check above;
@@ -118,15 +122,6 @@ export async function checkRuntimeHealth(
     return { healthy: false, reason: `runtime reports state ${snapshot.state}` };
   }
 
-  const heartbeatAt = Date.parse(snapshot.heartbeatAt);
-  if (Number.isNaN(heartbeatAt)) {
-    return { healthy: false, reason: "readiness heartbeat timestamp is unparseable" };
-  }
-  const age = now().valueOf() - heartbeatAt;
-  if (age > maxAge) {
-    return { healthy: false, reason: `readiness heartbeat is ${age}ms old, over ${maxAge}ms` };
-  }
-
   const expected = options.expect;
   if (expected?.botId !== undefined && snapshot.botId !== expected.botId) {
     return {
@@ -139,6 +134,15 @@ export async function checkRuntimeHealth(
       healthy: false,
       reason: `readiness file belongs to channel ${snapshot.channelId}, not ${expected.channelId}`,
     };
+  }
+
+  const heartbeatAt = Date.parse(snapshot.heartbeatAt);
+  if (Number.isNaN(heartbeatAt)) {
+    return { healthy: false, reason: "readiness heartbeat timestamp is unparseable" };
+  }
+  const age = now().valueOf() - heartbeatAt;
+  if (age > maxAge) {
+    return { healthy: false, reason: `readiness heartbeat is ${age}ms old, over ${maxAge}ms` };
   }
 
   if (!isProcessAlive(snapshot.pid)) {

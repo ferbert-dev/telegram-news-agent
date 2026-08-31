@@ -79,6 +79,7 @@ jobs:
           npm run test:persistence
           npm run test:application
           npm run test:architecture
+          npm run test:runtime
           npm run test:nest:build
 
       - name: Build test image

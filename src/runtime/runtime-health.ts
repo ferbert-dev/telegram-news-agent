@@ -51,6 +51,10 @@ export type RuntimeHealthWorkerOptions = {
  * independently confirms the lease row actually names this runtime's owner id
  * and has not expired.
  *
+ * The heartbeat is this worker's own timer and says nothing about the poll
+ * loop: a runtime whose `getUpdates` fails permanently keeps ticking here. See
+ * `runtime-health-check.ts` for what a healthy result does and does not prove.
+ *
  * The file is written temp-then-rename so a reader never observes a partial
  * document, and chmod 0600 because it names the lease owner.
  */
@@ -74,6 +78,16 @@ export class RuntimeHealthWorker implements RuntimeWorker {
    */
   private publishing: Promise<void> = Promise.resolve();
   private publishSequence = 0;
+  /**
+   * Whether this worker has ever published. `stop()` must not touch the file
+   * otherwise: a runtime that aborts during startup would delete the readiness
+   * file of a *different* runtime sharing the default path, and that runtime's
+   * probe would then read "no readiness file" and restart a healthy process.
+   */
+  private published = false;
+  /** Memoized so a concurrent second stop() awaits the first rather than
+   * reporting teardown complete while the file is still on disk. */
+  private stopPromise: Promise<void> | null = null;
 
   constructor(options: RuntimeHealthWorkerOptions) {
     this.options = {
@@ -100,10 +114,9 @@ export class RuntimeHealthWorker implements RuntimeWorker {
   }
 
   private publish(state: RuntimeHealthSnapshot["state"]): Promise<void> {
-    const next = this.publishing.then(
-      () => this.write(state),
-      () => this.write(state),
-    );
+    // Chained off the settled tail so a failed publish does not wedge the
+    // queue; `publishing` never rejects, so only the success arm is needed.
+    const next = this.publishing.then(() => this.write(state));
     this.publishing = next.catch(() => undefined);
     return next;
   }
@@ -113,25 +126,34 @@ export class RuntimeHealthWorker implements RuntimeWorker {
     // Same directory, so the rename is atomic rather than a cross-device copy.
     // The sequence number keeps two publishes from ever sharing a temp path.
     const temporary = `${target}.${this.options.pid}.${(this.publishSequence += 1)}.tmp`;
-    // Narrow at creation rather than after: a chmod that follows the write
-    // leaves the snapshot briefly readable at the default umask, and it names
-    // the lease owner.
-    await writeFile(temporary, `${JSON.stringify(this.snapshot(state))}\n`, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    await chmod(temporary, 0o600);
     try {
+      // Narrow at creation rather than after: a chmod that follows the write
+      // leaves the snapshot briefly readable at the default umask, and it names
+      // the lease owner.
+      await writeFile(temporary, `${JSON.stringify(this.snapshot(state))}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+      await chmod(temporary, 0o600);
       await rename(temporary, target);
     } catch (error) {
+      // The whole write, not just the rename: a writeFile that fails after
+      // creating the file (ENOSPC) or a failing chmod would otherwise orphan a
+      // temp file -- and since the suffix is unique per attempt, a 10s
+      // heartbeat would leave a new one behind every tick until /tmp filled.
       await unlink(temporary).catch(() => undefined);
       throw error;
     }
+    this.published = true;
   }
 
   async start(shutdownSignal: AbortSignal): Promise<void> {
     if (this.stopped || shutdownSignal.aborted) return;
     await this.publish("ready");
+    // Re-checked after the await: a stop() landing during that publish finds
+    // heartbeat still null and completes, and without this the interval below
+    // would then be created with nothing left to clear it.
+    if (this.stopped || shutdownSignal.aborted) return;
     this.heartbeat = setInterval(() => {
       // A tick can fire between clearInterval and the stopping publish; without
       // this the runtime could re-publish "ready" on its way out.
@@ -147,13 +169,25 @@ export class RuntimeHealthWorker implements RuntimeWorker {
     this.heartbeat.unref();
   }
 
-  async stop(): Promise<void> {
-    if (this.stopped) return;
+  stop(): Promise<void> {
+    this.stopPromise ??= this.runStop();
+    return this.stopPromise;
+  }
+
+  private async runStop(): Promise<void> {
     this.stopped = true;
     if (this.heartbeat !== null) {
       clearInterval(this.heartbeat);
       this.heartbeat = null;
     }
+    // Settle any publish still in flight before deciding. A stop() racing
+    // start()'s first publish would otherwise see `published` still false,
+    // return early, and let that publish land afterwards -- leaving a "ready"
+    // file on disk for a worker that has already stopped.
+    await this.publishing;
+    // Never published, so there is nothing of ours on disk. Writing or
+    // unlinking here would act on a file belonging to whoever did publish.
+    if (!this.published) return;
     // Mark not-ready first, then remove. A reader that catches the window sees
     // "stopping" rather than a stale "ready". Serialized behind any in-flight
     // heartbeat, so this is genuinely the last state written.

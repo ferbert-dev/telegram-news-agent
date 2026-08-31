@@ -23,10 +23,15 @@ export async function runHealthCli(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ healthy: boolean; reason?: string }> {
   // Read directly rather than through getTelegramConfig, which throws on an
-  // incomplete environment: a probe should report unhealthy, never crash. The
-  // channel is optional here for the same reason -- when it is absent the
-  // identity comparison is simply skipped.
+  // incomplete environment: a probe should report unhealthy, never crash.
   const channelId = env.TELEGRAM_CHANNEL_ID;
+  // Fail closed. Skipping the identity comparison when the variable is missing
+  // would drop the guard in precisely the misconfigured case where two
+  // runtimes end up sharing the default readiness path -- and this probe would
+  // then confirm the neighbour's lease and report the wrong runtime healthy.
+  if (!channelId) {
+    return { healthy: false, reason: "TELEGRAM_CHANNEL_ID is not set, so the runtime cannot be identified" };
+  }
   const application = await createRuntimeApplicationContext({
     module: class HealthCliModule {},
     imports: [DatabaseModule, OperationsPersistenceModule],
@@ -38,7 +43,7 @@ export async function runHealthCli(
     const result = await checkRuntimeHealth({
       leases,
       ...(filePath ? { filePath } : {}),
-      ...(channelId ? { expect: { channelId } } : {}),
+      expect: { channelId },
     });
     return result.healthy ? { healthy: true } : { healthy: false, reason: result.reason };
   } finally {
