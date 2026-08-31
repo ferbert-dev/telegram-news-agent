@@ -1,6 +1,10 @@
 import "reflect-metadata";
 
+import { once } from "node:events";
+import { pathToFileURL } from "node:url";
+
 import { callTelegram, getTelegramConfig } from "../telegram.js";
+import { ensurePollingMode, getPollingConfig } from "../telegram-polling.js";
 import { bootstrapRuntime, type RuntimeBootstrapRun } from "../runtime/runtime-bootstrap.js";
 import {
   NEWS_SCHEDULER_WORKER,
@@ -47,7 +51,22 @@ export async function startNewsAgentRuntime(
   options: StartNewsAgentRuntimeOptions = {},
 ): Promise<RuntimeBootstrapRun> {
   const env = options.env ?? process.env;
+  // getTelegramConfig reads process.env directly and takes no argument, so the
+  // bot token and channel are process-global even when `env` is supplied.
+  // Stated rather than hidden: an `env` override changes AI, Notion and version
+  // configuration but NOT which bot this talks to.
   const { token, channelId } = getTelegramConfig();
+
+  // Must precede any getUpdates. A bot with a webhook still configured answers
+  // every poll with 409 Conflict forever, and the poller would sit holding the
+  // control lease reporting nothing useful. Legacy does this before starting
+  // its poller (src/telegram-bot.js).
+  await ensurePollingMode({
+    token,
+    migrateWebhook: getPollingConfig(env).migrateWebhook,
+    callTelegram,
+  });
+
   const identity = options.identity ?? (await resolveRuntimeIdentity(token, channelId));
 
   // One reference, used once. bootstrapRuntime passes this same object to both
@@ -76,12 +95,36 @@ async function main(): Promise<void> {
   process.stdout.write(
     `${JSON.stringify({ event: "runtime_started", workers: ["telegram-polling", "news-scheduler"] })}\n`,
   );
-  await run.coordinator.stopSignal.aborted;
+
+  // `stopSignal.aborted` is a boolean, so awaiting it resolves immediately and
+  // main() would return while the workers were still running -- leaving the
+  // process alive only incidentally (the poller's handles are ref'd; the
+  // scheduler's interval is unref'd), and exiting 0 on a fatal worker failure
+  // so that restart policies and health-gated rollback saw a clean shutdown.
+  // Wait for the actual abort event instead.
+  const stopSignal = run.coordinator.stopSignal;
+  if (!stopSignal.aborted) {
+    await once(stopSignal, "abort");
+  }
+  await run.stop().catch(() => undefined);
+
+  const fatal = run.coordinator.fatalCause;
+  if (fatal !== null) {
+    process.stderr.write(
+      `${JSON.stringify({
+        event: "runtime_stopped_fatal",
+        error: fatal instanceof Error ? fatal.message : String(fatal),
+      })}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  process.stdout.write(`${JSON.stringify({ event: "runtime_stopped" })}\n`);
 }
 
 // Only run when executed directly, so importing this module from a test does
 // not start a runtime.
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error: unknown) => {
     process.stderr.write(
       `${JSON.stringify({

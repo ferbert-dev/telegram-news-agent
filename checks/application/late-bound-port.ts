@@ -54,6 +54,31 @@ test("feature detection with `in` works unbound instead of throwing", () => {
   assert.equal("missing" in late.port, false);
 });
 
+test("lifecycle hooks are hidden in both states, so app.close() cannot reach the target twice", async () => {
+  // Each port is a useValue provider, and editorialWorkflow.port is registered
+  // under two tokens. If the proxy forwarded onModuleDestroy, closing the
+  // context would invoke the real singleton's hook once per proxy on top of
+  // its own -- three times for that one.
+  const hooks = ["onModuleInit", "onModuleDestroy", "onApplicationBootstrap", "beforeApplicationShutdown", "onApplicationShutdown"] as const;
+  const late = createLateBoundPort<Record<string, unknown>>("hooks");
+
+  for (const hook of hooks) {
+    assert.equal(late.port[hook], undefined, `${hook} must be hidden while unbound`);
+    assert.equal(hook in late.port, false);
+  }
+
+  let destroyed = 0;
+  late.bind({ onModuleDestroy: () => { destroyed += 1; }, work: () => "ok" });
+
+  for (const hook of hooks) {
+    assert.equal(late.port[hook], undefined, `${hook} must stay hidden once bound`);
+    assert.equal(hook in late.port, false);
+  }
+  assert.equal(destroyed, 0);
+  // Real methods still forward.
+  assert.equal((late.port.work as () => string)(), "ok");
+});
+
 test("onModuleInit binds before anything can use the port, inside a real container", async () => {
   // This is the ordering the whole approach rests on: NestFactory runs every
   // onModuleInit during context creation, and bootstrapRuntime awaits that

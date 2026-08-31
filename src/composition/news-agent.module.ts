@@ -99,20 +99,42 @@ export class NewsAgentModule {
     const { token, identity } = options;
     const appVersion = options.appVersion ?? env.APP_VERSION ?? "local";
 
+    // --- Late-bound ports -------------------------------------------------
+    // Each of these is required by a `register()` call that runs before the
+    // container exists, but is satisfied by a singleton that only exists
+    // inside it. `RuntimeBinder.onModuleInit` fills them, which Nest runs
+    // during context creation and therefore strictly before any worker starts.
+    const legacyPersistence = createLateBoundPort<LegacyPersistence>("legacy-persistence");
+    const editorialWorkflow = createLateBoundPort<EditorialWorkflowApplicationPort>(
+      "editorial-workflow",
+    );
+    const pipelineLease = createLateBoundPort<PipelineLeaseApplicationPort>("pipeline-lease");
+    const reviewDelivery = createLateBoundPort<{
+      execute(input: Record<string, unknown>): Promise<{ status: string }>;
+    }>("telegram-review-delivery");
+    const researchExecution = createLateBoundPort<{
+      execute(request: never, signal?: AbortSignal): Promise<never>;
+    }>("research-execution");
+
+
     // Eagerly constructible: these depend only on configuration, not on the
     // container. Everything that needs a container singleton goes through a
     // late-bound port instead (see below).
-    const aiProvider = createAiProvider(env) as Record<string, unknown> & {
-      names: string[];
-      generateStructured?: unknown;
-    };
+    // The attempt repository matters: without it every provider fallback,
+    // retry and quota exhaustion goes unrecorded, so the usage dashboard and
+    // any fallback-rate alerting show nothing. Legacy passes it
+    // (src/telegram-bot.js: createAiProvider(env, { attemptRepository })), and
+    // the late-bound facade is filled long before the first AI call.
+    const aiProvider = createAiProvider(env, {
+      attemptRepository: legacyPersistence.port as never,
+    }) as Record<string, unknown> & { names: string[]; generateStructured?: unknown };
+    // src/draft.js reads `model` only on the branch taken when no aiProvider
+    // is supplied -- unreachable here, since createAiProvider throws when
+    // nothing is configured. Legacy passes undefined all the way down, so
+    // refusing to boot over an unresolvable model would reject a working
+    // Exa-plus-provider deployment over a value nothing reads.
     const draftModel =
-      getOpenAiConfig(env)?.model ?? getGeminiProviderConfig(env)?.model ?? null;
-    if (!draftModel) {
-      throw new Error(
-        "A draft model is required: set OPENAI_API_KEY or GEMINI_API_KEY so a model can be resolved",
-      );
-    }
+      getOpenAiConfig(env)?.model ?? getGeminiProviderConfig(env)?.model ?? "";
     const botApi = new TelegramBotApiGateway(
       token,
       identity.channelId,
@@ -130,23 +152,6 @@ export class NewsAgentModule {
       finish: (run, finalization) =>
         auditLogger.finish(run, finalization as never) as Promise<unknown>,
     });
-
-    // --- Late-bound ports -------------------------------------------------
-    // Each of these is required by a `register()` call that runs before the
-    // container exists, but is satisfied by a singleton that only exists
-    // inside it. `RuntimeBinder.onModuleInit` fills them, which Nest runs
-    // during context creation and therefore strictly before any worker starts.
-    const legacyPersistence = createLateBoundPort<LegacyPersistence>("legacy-persistence");
-    const editorialWorkflow = createLateBoundPort<EditorialWorkflowApplicationPort>(
-      "editorial-workflow",
-    );
-    const pipelineLease = createLateBoundPort<PipelineLeaseApplicationPort>("pipeline-lease");
-    const reviewDelivery = createLateBoundPort<{
-      execute(input: Record<string, unknown>): Promise<{ status: string }>;
-    }>("telegram-review-delivery");
-    const researchExecution = createLateBoundPort<{
-      execute(request: never, signal?: AbortSignal): Promise<never>;
-    }>("research-execution");
 
     const legacyFeatureArgs = [
       token,
@@ -206,7 +211,9 @@ export class NewsAgentModule {
           pipelineLease: pipelineLease.port,
           reviewDelivery: new TelegramSchedulerReviewDeliveryAdapter(reviewDelivery.port as never),
           audit: new LegacySchedulerAuditAdapter(
-            new NotionAuditLogger(getNotionAuditConfig(env)),
+            // Same logger instance as the operations gateway above, so the two
+            // audit paths cannot drift in configuration.
+            auditLogger as never,
             legacyPersistence.port as never,
           ),
           notification: new TelegramSchedulerNotificationAdapter(

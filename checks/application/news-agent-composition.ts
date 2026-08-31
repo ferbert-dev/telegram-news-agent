@@ -117,28 +117,11 @@ test("late-bound ports are filled during init, before any worker could run", asy
   }
 });
 
-test("registering with a search-only provider set fails loudly rather than building an unusable runtime", () => {
-  // Exa can satisfy search but cannot generate structured output, so a runtime
-  // configured with Exa alone would construct fine and then fail at the first
-  // draft. Catch it at definition time instead.
-  assert.throws(
-    () =>
-      NewsAgentModule.register({
-        token: "t",
-        identity,
-        env: {
-          ...env,
-          OPENAI_API_KEY: undefined,
-          GEMINI_API_KEY: undefined,
-          EXA_ENABLED: "true",
-          EXA_API_KEY: "test-exa-key",
-        } as NodeJS.ProcessEnv,
-      }),
-    /draft model is required/,
-  );
-});
-
-test("registering with no AI provider at all fails from the provider composition itself", () => {
+test("registering with no AI provider at all fails from the provider composition", () => {
+  // An Exa-only deployment is legitimate (search works; drafting falls to
+  // another provider), so the composition root deliberately does NOT refuse
+  // over an unresolvable draft model -- src/draft.js only reads `model` on the
+  // no-aiProvider branch, which createAiProvider makes unreachable.
   assert.throws(
     () =>
       NewsAgentModule.register({
@@ -147,6 +130,22 @@ test("registering with no AI provider at all fails from the provider composition
         env: { ...env, OPENAI_API_KEY: undefined, GEMINI_API_KEY: undefined } as NodeJS.ProcessEnv,
       }),
     /No AI provider is configured/,
+  );
+});
+
+test("an Exa-only provider set still composes, rather than being refused at boot", () => {
+  assert.doesNotThrow(() =>
+    NewsAgentModule.register({
+      token: "t",
+      identity,
+      env: {
+        ...env,
+        OPENAI_API_KEY: undefined,
+        GEMINI_API_KEY: undefined,
+        EXA_ENABLED: "true",
+        EXA_API_KEY: "test-exa-key",
+      } as NodeJS.ProcessEnv,
+    }),
   );
 });
 

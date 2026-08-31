@@ -43,11 +43,17 @@ export type LateBoundPort<T extends object> = {
  * semantically right -- a late-bound port must not claim lifecycle hooks, since
  * the binder and the runtime coordinator own that.
  */
-const PROBE_PROPERTIES = new Set([
-  "then",
-  "constructor",
-  "inspect",
-  "toJSON",
+const PROBE_PROPERTIES = new Set(["then", "constructor", "inspect", "toJSON"]);
+
+/**
+ * Nest probes every provider instance for these during init and close. A port
+ * must never claim them -- in either state. While unbound, answering would be
+ * a false positive; once bound, forwarding would let `app.close()` invoke the
+ * real singleton's hook once per proxy pointed at it, on top of the singleton's
+ * own invocation. `editorialWorkflow.port` alone is registered under two
+ * tokens, so that would be three calls.
+ */
+const LIFECYCLE_HOOKS = new Set([
   "onModuleInit",
   "onModuleDestroy",
   "onApplicationBootstrap",
@@ -60,6 +66,9 @@ export function createLateBoundPort<T extends object>(name: string): LateBoundPo
 
   const port = new Proxy({} as T, {
     get(_unused, property) {
+      if (typeof property === "string" && LIFECYCLE_HOOKS.has(property)) {
+        return undefined;
+      }
       if (target === null) {
         // Nest probes a useValue provider while resolving it -- notably
         // reading `then` to decide whether it is a promise -- which happens
@@ -79,6 +88,9 @@ export function createLateBoundPort<T extends object>(name: string): LateBoundPo
     // `in` before the first call, and throwing there would be a false negative
     // about the port's shape rather than a real wiring error.
     has(_unused, property) {
+      if (typeof property === "string" && LIFECYCLE_HOOKS.has(property)) {
+        return false;
+      }
       return target === null ? false : Reflect.has(target as object, property);
     },
   });
