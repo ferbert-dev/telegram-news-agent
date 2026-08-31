@@ -681,10 +681,12 @@ test("AI news-search fallback supplies a candidate when feed discovery also yiel
 
 test("a curation failure is recorded and the run still finishes, and its attached usage is still billed", async () => {
   // research.js treats curation as advisory: if the ranking call fails, the
-  // already-acquired candidates are kept in their existing order and the run
-  // completes. The part that is easy to lose in a port is the usage attached to
-  // the *failed* call -- that call was still billed, and dropping it under-reports
-  // spend in exactly the case where a provider is misbehaving.
+  // already-acquired candidates are kept and the run completes. (Their relative
+  // order is also preserved, which this fixture does not prove -- it has a
+  // single candidate. What is proven below is the part easy to lose in a port:
+  // the usage attached to the *failed* call. That call was still billed, and
+  // dropping it under-reports spend in exactly the case where a provider is
+  // misbehaving.)
   const recordedUsage: unknown[] = [];
   const finishes: Record<string, unknown>[] = [];
   const curationError = Object.assign(new Error("curation upstream failed"), {
@@ -888,7 +890,13 @@ test("semantic story classification stops at its budget and falls back determini
     }),
   });
 
-  await gateway.execute({ input: { query: "AI news" } }).catch(() => undefined);
+  // Nothing is selected -- every candidate is a duplicate or past the cap -- so
+  // the run ends in the terminal no-evidence path. Asserted rather than
+  // swallowed, so an unrelated throw cannot pass for the expected one.
+  await assert.rejects(
+    gateway.execute({ input: { query: "AI news" } }),
+    /No ranked news evidence could be extracted/,
+  );
 
   // The cap is enforced in two independent places -- MAX_SEMANTIC_STORY_AI_CALLS
   // at the call site and a Math.min(3, ...) inside StorySemanticAttemptBudget --
