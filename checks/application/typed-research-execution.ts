@@ -898,12 +898,11 @@ test("semantic story classification stops at its budget and falls back determini
     /No ranked news evidence could be extracted/,
   );
 
-  // The cap is enforced in two independent places -- MAX_SEMANTIC_STORY_AI_CALLS
-  // at the call site and a Math.min(3, ...) inside StorySemanticAttemptBudget --
-  // so raising either one alone changes nothing. That is worth knowing before
-  // someone "raises the limit" and finds it has no effect; it also means this
-  // assertion only moves if both are lifted, which is the behaviour that
-  // matters.
+  // The cap now comes from one named constant, SEMANTIC_ATTEMPT_CEILING, which
+  // both the call site and StorySemanticAttemptBudget's clamp read. It used to
+  // be a bare 3 in several places, so raising any one of them silently did
+  // nothing -- that is what this assertion is really guarding against coming
+  // back.
   assert.equal(
     semanticCalls.length,
     MAX,

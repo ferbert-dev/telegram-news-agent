@@ -3,8 +3,14 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import test from "node:test";
 
-import { EvidenceCurationService, InvalidNewsCandidateCurationError } from "../../src/research/curation/evidence-curation.engine.js";
+import {
+  EvidenceCurationService,
+  InvalidNewsCandidateCurationError,
+  SEMANTIC_ATTEMPT_CEILING,
+  StorySemanticAttemptBudget,
+} from "../../src/research/curation/evidence-curation.engine.js";
 import { PinnedEvidenceHttpTransport } from "../../src/research/curation/evidence-curation.http.js";
+import { resolveSemanticAttemptLimit } from "../../src/research/curation/evidence-curation.module.js";
 import { EvidenceCurationModule } from "../../src/research/curation/evidence-curation.module.js";
 import { evaluateStoryDuplicate as legacyDedup, storyFingerprint as legacyFingerprint } from "../../src/story-deduplication.js";
 import { extractArticleText as legacyExtract } from "../../src/article-extractor.js";
@@ -254,7 +260,7 @@ test("typed fact search fallback only returns evidence after provenance check", 
 
 test("EvidenceCurationModule exposes replaceable provider ports without wiring legacy runtime", () => {
   const factSearch = { async searchFact() { return { value:{ fact:null }, sourceUrls:[] }; } };
-  const module = EvidenceCurationModule.register({ factSearch, semanticAttemptLimit:9 });
+  const module = EvidenceCurationModule.register({ factSearch, semanticAttemptLimit: SEMANTIC_ATTEMPT_CEILING });
   assert.equal(module.module, EvidenceCurationModule);
   assert.equal(module.exports?.includes(EvidenceCurationService), true);
   assert.equal(module.imports?.length, 1);
@@ -291,4 +297,25 @@ test("typed candidate curation rejects unknown IDs and preserves recognized orde
       && error.code === "invalid_candidate_ids"
       && error.usageEvents[0]?.inputTokens === 5,
   );
+});
+
+test("an over-limit semantic attempt configuration is refused rather than silently clamped", () => {
+  // Each attempt is a paid AI call, so the ceiling stays -- but it used to
+  // clamp in silence, which meant a deployment configured for 5 ran with 3 and
+  // nothing said so. It is also why raising the limit appeared to do nothing.
+  assert.equal(resolveSemanticAttemptLimit(undefined), SEMANTIC_ATTEMPT_CEILING);
+  assert.equal(resolveSemanticAttemptLimit(0), 0);
+  assert.equal(resolveSemanticAttemptLimit(SEMANTIC_ATTEMPT_CEILING), SEMANTIC_ATTEMPT_CEILING);
+  assert.throws(
+    () => resolveSemanticAttemptLimit(SEMANTIC_ATTEMPT_CEILING + 1),
+    /exceeds the ceiling/,
+  );
+  assert.throws(() => resolveSemanticAttemptLimit(-1), /non-negative integer/);
+  assert.throws(() => resolveSemanticAttemptLimit(Number.NaN), /non-negative integer/);
+
+  // The budget object still clamps rather than throwing: it is the last line of
+  // defence, and throwing there would surface a misconfiguration deep inside a
+  // run instead of at boot.
+  assert.equal(new StorySemanticAttemptBudget(99).limit, SEMANTIC_ATTEMPT_CEILING);
+  assert.equal(new StorySemanticAttemptBudget(-5).limit, 0);
 });

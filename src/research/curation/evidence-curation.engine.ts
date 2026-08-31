@@ -41,12 +41,25 @@ function sanitizedUsageEvents(value: unknown): Array<Record<string, unknown>> { 
 type SemanticDecision = { relation: "same_story" | "meaningful_update" | "distinct"; matchedPublishedArticleId: string | null; confidence: number; reason: string };
 function semanticDecision(value: unknown): SemanticDecision | null { const object=value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:null;const expected=new Set(["relation","matchedPublishedArticleId","confidence","reason"]);if(!object||Object.keys(object).length!==expected.size||Object.keys(object).some((key)=>!expected.has(key)))return null;const relation=object.relation,matched=object.matchedPublishedArticleId,confidence=object.confidence,reason=object.reason;if(typeof relation!=="string"||!["same_story","meaningful_update","distinct"].includes(relation)||(matched!==null&&typeof matched!=="string")||typeof confidence!=="number"||!Number.isFinite(confidence)||confidence<0||confidence>1||typeof reason!=="string"||!reason.trim()||reason.length>280)return null;return{relation:relation as SemanticDecision["relation"],matchedPublishedArticleId:matched as string|null,confidence,reason}; }
 
+/**
+ * The most paid semantic classifications one research run may make.
+ *
+ * A cost ceiling, matching legacy `research.js`'s MAX_SEMANTIC_STORY_AI_CALLS.
+ * Named rather than written as a bare 3 in two places, because it was: the
+ * duplication is why raising either one alone silently did nothing.
+ */
+export const SEMANTIC_ATTEMPT_CEILING = 3;
+
 export class StorySemanticAttemptBudget {
   private attemptsUsed = 0;
   readonly limit: number;
 
   constructor(limit: number) {
-    this.limit = Math.max(0, Math.min(3, Math.trunc(Number(limit) || 0)));
+    // Still clamps rather than throws: this is the last line of defence, and a
+    // budget object that throws would turn a misconfiguration into a failure
+    // deep inside a run. The configuration boundary rejects an over-limit value
+    // loudly instead -- see EvidenceCurationModule.register.
+    this.limit = Math.max(0, Math.min(SEMANTIC_ATTEMPT_CEILING, Math.trunc(Number(limit) || 0)));
   }
 
   get used(): number { return this.attemptsUsed; }
@@ -79,7 +92,7 @@ export class EvidenceCurationService {
     @Optional() @Inject(CURATION_NOW) private readonly now: () => Date = () => new Date(),
     @Optional()
     @Inject(CURATION_SEMANTIC_ATTEMPT_LIMIT)
-    private readonly semanticAttemptLimit: number = 3,
+    private readonly semanticAttemptLimit: number = SEMANTIC_ATTEMPT_CEILING,
     @Optional() @Inject(CURATION_RANDOM) private readonly random: RandomPort = Math.random,
   ) {}
 
