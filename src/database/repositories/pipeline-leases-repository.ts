@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Pool } from "pg";
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import type {
   PipelineLeaseReadPort,
@@ -14,6 +14,7 @@ import type { DrizzleDatabase } from "../drizzle-client.js";
 import {
   postgresScalar,
   RepositorySupport,
+  toIsoTimestamp,
 } from "./repository-support.js";
 
 const acquirePipelineLeaseFunction = postgresScalar<boolean>(
@@ -81,6 +82,9 @@ export class PipelineLeasesRepository
           ownerId: pipelineLeases.ownerId,
           acquiredAt: pipelineLeases.acquiredAt,
           expiresAt: pipelineLeases.expiresAt,
+          // Read in the same statement, so expiry is decided against the clock
+          // that generated it rather than against the probe container's.
+          serverNowAt: sql<string>`now()`,
         })
         .from(pipelineLeases)
         .where(eq(pipelineLeases.name, name))
@@ -93,9 +97,11 @@ export class PipelineLeasesRepository
             ownerId: row.ownerId,
             // The timestamps are the proof the health check reasons about, so
             // they are normalized to ISO strings at this boundary rather than
-            // left as driver-shaped values.
-            acquiredAt: new Date(row.acquiredAt as unknown as string).toISOString(),
-            expiresAt: new Date(row.expiresAt as unknown as string).toISOString(),
+            // left as driver-shaped values. toIsoTimestamp raises a domain
+            // error on an unparseable value instead of a bare RangeError.
+            acquiredAt: toIsoTimestamp(row.acquiredAt as unknown as string),
+            expiresAt: toIsoTimestamp(row.expiresAt as unknown as string),
+            serverNowAt: toIsoTimestamp(row.serverNowAt),
           };
     });
   }

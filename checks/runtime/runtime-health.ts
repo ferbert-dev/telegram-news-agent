@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import type { PipelineLeaseReadPort } from "../../src/operations/operations.interfaces.js";
@@ -37,7 +37,7 @@ function worker(filePath: string, overrides: Record<string, unknown> = {}) {
 
 /** A lease the checker will accept, unless a test overrides a field. */
 function leaseReader(
-  snapshot: Partial<{ ownerId: string; expiresAt: string }> | null,
+  snapshot: Partial<{ ownerId: string; expiresAt: string; serverNowAt: string }> | null,
   onRead?: (name: string) => void,
 ): PipelineLeaseReadPort {
   return {
@@ -49,17 +49,28 @@ function leaseReader(
         ownerId: snapshot.ownerId ?? "owner-1",
         acquiredAt: "2026-08-31T11:59:00.000Z",
         expiresAt: snapshot.expiresAt ?? "2026-08-31T12:01:00.000Z",
+        serverNowAt: snapshot.serverNowAt ?? NOW.toISOString(),
       };
     },
   };
 }
 
+const started: RuntimeHealthWorker[] = [];
+
+/** Publishes a ready snapshot and registers the worker for teardown. */
 async function readySnapshot(): Promise<{ filePath: string }> {
   const filePath = await temporaryFile();
   const health = worker(filePath);
+  started.push(health);
   await health.start(new AbortController().signal);
   return { filePath };
 }
+
+test.after(async () => {
+  // Otherwise every started worker leaves a live (unref'd) heartbeat behind for
+  // the rest of the run.
+  await Promise.all(started.map((health) => health.stop()));
+});
 
 test("start publishes a ready snapshot the checker's schema accepts, readable only by its owner", async () => {
   const { filePath } = await readySnapshot();
@@ -93,6 +104,32 @@ test("stop removes the readiness file, and is idempotent", async () => {
   // Called again by the coordinator during an escalated shutdown: must not
   // throw on the already-missing file.
   await health.stop();
+});
+
+test("a heartbeat landing during stop cannot leave a ready file behind", async () => {
+  // The failure this guards: clearInterval cannot cancel a heartbeat whose
+  // write is already in flight. With publishes racing on one temp path, one
+  // rename lost with ENOENT, the unlink was skipped, and the readiness file
+  // survived the drain -- sometimes still saying "ready". A probe arriving in
+  // the 45s shutdown window would then report healthy for a runtime on its way
+  // out, with a live pid, a fresh heartbeat and a lease not yet released.
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    const filePath = await temporaryFile();
+    const health = worker(filePath, { heartbeatIntervalMs: 1 });
+    await health.start(new AbortController().signal);
+    // Land squarely in the middle of a heartbeat tick.
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await health.stop();
+
+    await assert.rejects(
+      readFile(filePath, "utf8"),
+      /ENOENT/,
+      `attempt ${attempt}: readiness file survived stop()`,
+    );
+    // And no temp file left orphaned in the directory either.
+    const leftovers = await readdir(dirname(filePath));
+    assert.deepEqual(leftovers, [], `attempt ${attempt}: ${leftovers.join(", ")}`);
+  }
 });
 
 test("a stopping snapshot is reported unhealthy rather than ready", async () => {
@@ -249,6 +286,33 @@ test("a duplicate runtime that has not won the lease is unhealthy, which is the 
   assert.match(expired.healthy ? "" : expired.reason, /expired/);
 });
 
+test("lease expiry is judged on PostgreSQL's clock, so a skewed probe host is not a restart loop", async () => {
+  // The renewal margin is 40s (20s renew against a 60s TTL). If expiry were
+  // compared against the probe's own clock, a host running two minutes fast
+  // would report a perfectly healthy runtime as expired on every single probe.
+  // Here the runtime and the probe share a clock two minutes ahead of the
+  // database, so the heartbeat is fresh and only the lease comparison is at
+  // issue.
+  const skewed = new Date(NOW.valueOf() + 120_000);
+  const filePath = await temporaryFile();
+  const health = worker(filePath, { now: () => skewed });
+  started.push(health);
+  await health.start(new AbortController().signal);
+
+  const result = await checkRuntimeHealth({
+    filePath,
+    leases: leaseReader({
+      // Issued by the database a minute before its own now: still valid there.
+      expiresAt: "2026-08-31T12:01:00.000Z",
+      serverNowAt: NOW.toISOString(),
+    }),
+    now: () => skewed,
+    isProcessAlive: () => true,
+  });
+
+  assert.equal(result.healthy, true);
+});
+
 test("an unreachable database is unhealthy, not a thrown probe", async () => {
   const { filePath } = await readySnapshot();
   const result = await checkRuntimeHealth({
@@ -263,4 +327,38 @@ test("an unreachable database is unhealthy, not a thrown probe", async () => {
   });
   assert.equal(result.healthy, false);
   assert.match(result.healthy ? "" : result.reason, /database is unreachable/);
+});
+
+test("a readiness file written by a different runtime is rejected, not confirmed", async () => {
+  // Two runtimes sharing a filesystem namespace clobber the default path. The
+  // snapshot has always carried the identity; without comparing it, this
+  // probe would go on to confirm the *other* runtime's lease and report the
+  // wrong one healthy.
+  const { filePath } = await readySnapshot();
+  let reachedDatabase = false;
+
+  const result = await checkRuntimeHealth({
+    filePath,
+    expect: { channelId: "@a-different-channel" },
+    now: () => NOW,
+    isProcessAlive: () => true,
+    leases: leaseReader({}, () => {
+      reachedDatabase = true;
+    }),
+  });
+
+  assert.equal(result.healthy, false);
+  assert.match(result.healthy ? "" : result.reason, /belongs to channel @channel/);
+  assert.equal(reachedDatabase, false, "must not confirm a lease it was not asked about");
+
+  // The matching identity still passes, so this is a mismatch check and not a
+  // blanket refusal.
+  const matching = await checkRuntimeHealth({
+    filePath,
+    expect: { channelId: "@channel", botId: 4242 },
+    now: () => NOW,
+    isProcessAlive: () => true,
+    leases: leaseReader({}),
+  });
+  assert.equal(matching.healthy, true);
 });

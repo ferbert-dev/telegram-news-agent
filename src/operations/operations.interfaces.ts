@@ -56,6 +56,18 @@ export type PipelineLeaseSnapshot = {
   ownerId: string;
   acquiredAt: string;
   expiresAt: string;
+  /**
+   * PostgreSQL's clock, read in the same statement as the lease.
+   *
+   * `expires_at` is generated server-side, so comparing it against the
+   * probe's own clock crosses two clocks. The renewal margin is only 40
+   * seconds (20s renew against a 60s TTL), so under a minute of skew a
+   * healthy runtime would read as expired on every probe -- a healthcheck
+   * driven restart loop -- and with the skew the other way an expired lease
+   * would read as valid. Comparing both values from the same clock removes
+   * the question.
+   */
+  serverNowAt: string;
 };
 
 export interface NotionAuditOutboxRepositoryPort {

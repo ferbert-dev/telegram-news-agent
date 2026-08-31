@@ -213,6 +213,7 @@ test("reading a pipeline lease is a plain select that never mutates the lease it
             "owner-1",
             "2026-08-31 13:59:00.123456+02",
             "2026-08-31 14:01:00.123456+02",
+            "2026-08-31 14:00:00.000000+02",
           ],
         ],
       };
@@ -229,6 +230,9 @@ test("reading a pipeline lease is a plain select that never mutates the lease it
     // clock, so driver-shaped offsets must not leak out of the repository.
     acquiredAt: "2026-08-31T11:59:00.123Z",
     expiresAt: "2026-08-31T12:01:00.123Z",
+    // Read in the same statement so lease expiry is never judged across two
+    // clocks.
+    serverNowAt: "2026-08-31T12:00:00.000Z",
   });
 
   assert.equal(calls.length, 1);
@@ -236,6 +240,7 @@ test("reading a pipeline lease is a plain select that never mutates the lease it
   // A health probe must be incapable of acquiring, renewing, or extending the
   // lease it is asserting about.
   assert.match(text, /^select /i);
+  assert.match(text, /now\(\)/i);
   assert.doesNotMatch(text, /acquire_pipeline_lease|renew_pipeline_lease|update|insert|delete/i);
   assert.deepEqual(values, ["telegram_control_poller", 1]);
 });

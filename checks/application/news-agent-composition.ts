@@ -8,7 +8,10 @@ import {
   RUNTIME_HEALTH_WORKER,
   TELEGRAM_POLLING_WORKER,
 } from "../../src/composition/news-agent.module.js";
-import { resolveRuntimeIdentity } from "../../src/composition/runtime-entry.js";
+import {
+  RUNTIME_WORKER_TOKENS,
+  resolveRuntimeIdentity,
+} from "../../src/composition/runtime-entry.js";
 import { NewsSchedulerWorker } from "../../src/scheduler/news-scheduler-worker.js";
 import {
   TELEGRAM_CONTROL_POLLER_LEASE_NAME,
@@ -217,4 +220,18 @@ test("two registrations get distinct owner ids, so a redeploy cannot impersonate
   } finally {
     await Promise.all([first.close(), second.close()]);
   }
+});
+
+test("the health worker starts last, which is what makes the readiness file mean anything", () => {
+  // The coordinator starts in this order and stops in reverse. If the health
+  // worker moved anywhere but the end, the readiness file would be published
+  // during the poller's 70-second lease-acquire wait -- a duplicate poller that
+  // is about to fail would report itself ready, which is the exact failure this
+  // protocol exists to catch. Every other check in this file still passes with
+  // that order broken, so it is asserted directly.
+  assert.deepEqual(
+    [...RUNTIME_WORKER_TOKENS],
+    [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER, RUNTIME_HEALTH_WORKER],
+  );
+  assert.equal(RUNTIME_WORKER_TOKENS.at(-1), RUNTIME_HEALTH_WORKER);
 });

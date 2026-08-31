@@ -20,7 +20,13 @@ import type { PipelineLeaseReadPort } from "../operations/operations.interfaces.
  */
 export async function runHealthCli(
   filePath?: string,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ healthy: boolean; reason?: string }> {
+  // Read directly rather than through getTelegramConfig, which throws on an
+  // incomplete environment: a probe should report unhealthy, never crash. The
+  // channel is optional here for the same reason -- when it is absent the
+  // identity comparison is simply skipped.
+  const channelId = env.TELEGRAM_CHANNEL_ID;
   const application = await createRuntimeApplicationContext({
     module: class HealthCliModule {},
     imports: [DatabaseModule, OperationsPersistenceModule],
@@ -32,6 +38,7 @@ export async function runHealthCli(
     const result = await checkRuntimeHealth({
       leases,
       ...(filePath ? { filePath } : {}),
+      ...(channelId ? { expect: { channelId } } : {}),
     });
     return result.healthy ? { healthy: true } : { healthy: false, reason: result.reason };
   } finally {

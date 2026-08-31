@@ -18,6 +18,16 @@ export type RuntimeHealthCheckOptions = {
   filePath?: string;
   maxHeartbeatAgeMs?: number;
   leases: PipelineLeaseReadPort;
+  /**
+   * What this probe expects the runtime to be.
+   *
+   * The default readiness path is a fixed per-host constant, so two runtimes
+   * sharing a filesystem namespace (staging and production on one box) would
+   * clobber each other's file -- and without this, runtime A's probe would
+   * confirm runtime B's lease and report A healthy. The snapshot has always
+   * carried the identity; this is what compares it.
+   */
+  expect?: { botId?: number; channelId?: string };
   now?: () => Date;
   /** Injected so the check can be tested without signalling a real process. */
   isProcessAlive?: (pid: number) => boolean;
@@ -69,7 +79,9 @@ function parseSnapshot(raw: string): RuntimeHealthSnapshot | null {
  * 4. the pid it names is actually alive — a stale file from a crashed run
  *    would otherwise pass every check above;
  * 5. the database is reachable, and the poller lease row genuinely names this
- *    runtime's owner id and has not expired.
+ *    runtime's owner id and has not expired -- judged against PostgreSQL's own
+ *    clock, read in the same statement, so a skewed probe container cannot
+ *    declare a healthy lease expired.
  *
  * Step 5 is what makes this meaningful. The current container check passes
  * while a duplicate poller waits out its 70-second lease-acquire timeout and
@@ -115,6 +127,20 @@ export async function checkRuntimeHealth(
     return { healthy: false, reason: `readiness heartbeat is ${age}ms old, over ${maxAge}ms` };
   }
 
+  const expected = options.expect;
+  if (expected?.botId !== undefined && snapshot.botId !== expected.botId) {
+    return {
+      healthy: false,
+      reason: `readiness file belongs to bot ${snapshot.botId}, not ${expected.botId}`,
+    };
+  }
+  if (expected?.channelId !== undefined && snapshot.channelId !== expected.channelId) {
+    return {
+      healthy: false,
+      reason: `readiness file belongs to channel ${snapshot.channelId}, not ${expected.channelId}`,
+    };
+  }
+
   if (!isProcessAlive(snapshot.pid)) {
     return { healthy: false, reason: `process ${snapshot.pid} is not running` };
   }
@@ -137,7 +163,7 @@ export async function checkRuntimeHealth(
       reason: `poller lease is owned by another runtime (${lease.ownerId})`,
     };
   }
-  if (Date.parse(lease.expiresAt) <= now().valueOf()) {
+  if (Date.parse(lease.expiresAt) <= Date.parse(lease.serverNowAt)) {
     return { healthy: false, reason: `poller lease expired at ${lease.expiresAt}` };
   }
 
