@@ -1,7 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Pool } from "pg";
 
-import type { PipelineLeasesRepositoryPort } from "../../operations/operations.interfaces.js";
+import { eq } from "drizzle-orm";
+
+import type {
+  PipelineLeaseReadPort,
+  PipelineLeaseSnapshot,
+  PipelineLeasesRepositoryPort,
+} from "../../operations/operations.interfaces.js";
+import { pipelineLeases } from "../schema/operations.js";
 import { DRIZZLE_DB, PG_POOL } from "../database.tokens.js";
 import type { DrizzleDatabase } from "../drizzle-client.js";
 import {
@@ -25,7 +32,7 @@ const releasePipelineLeaseFunction = postgresScalar<boolean>(
 @Injectable()
 export class PipelineLeasesRepository
   extends RepositorySupport
-  implements PipelineLeasesRepositoryPort
+  implements PipelineLeasesRepositoryPort, PipelineLeaseReadPort
 {
   constructor(
     @Inject(PG_POOL) pool: Pool,
@@ -64,5 +71,32 @@ export class PipelineLeasesRepository
       releasePipelineLeaseFunction,
       [name, ownerId],
     );
+  }
+
+  readPipelineLease(name: string): Promise<PipelineLeaseSnapshot | null> {
+    return this.operation("Read pipeline lease", async () => {
+      const rows = await this.database
+        .select({
+          name: pipelineLeases.name,
+          ownerId: pipelineLeases.ownerId,
+          acquiredAt: pipelineLeases.acquiredAt,
+          expiresAt: pipelineLeases.expiresAt,
+        })
+        .from(pipelineLeases)
+        .where(eq(pipelineLeases.name, name))
+        .limit(1);
+      const row = this.optionalOne(rows, "Read pipeline lease");
+      return row === null
+        ? null
+        : {
+            name: row.name,
+            ownerId: row.ownerId,
+            // The timestamps are the proof the health check reasons about, so
+            // they are normalized to ISO strings at this boundary rather than
+            // left as driver-shaped values.
+            acquiredAt: new Date(row.acquiredAt as unknown as string).toISOString(),
+            expiresAt: new Date(row.expiresAt as unknown as string).toISOString(),
+          };
+    });
   }
 }

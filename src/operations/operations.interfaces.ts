@@ -37,6 +37,27 @@ export interface PipelineLeasesRepositoryPort {
   releasePipelineLease(name: string, ownerId: string): Promise<boolean>;
 }
 
+/**
+ * Read-only lease inspection for the readiness check.
+ *
+ * A separate port rather than a fourth method on PipelineLeasesRepositoryPort,
+ * for two reasons. Health must never mutate the lease it is asserting about --
+ * a probe that could renew would be a way to steal one. And the legacy
+ * persistence facade unions over that port, so widening it would drag a
+ * health-only method into the NewsRepository-shaped compatibility surface that
+ * exists to shrink, not grow.
+ */
+export interface PipelineLeaseReadPort {
+  readPipelineLease(name: string): Promise<PipelineLeaseSnapshot | null>;
+}
+
+export type PipelineLeaseSnapshot = {
+  name: string;
+  ownerId: string;
+  acquiredAt: string;
+  expiresAt: string;
+};
+
 export interface NotionAuditOutboxRepositoryPort {
   enqueueNotionAuditBackfill(
     record: EnqueueNotionAuditBackfillInput,

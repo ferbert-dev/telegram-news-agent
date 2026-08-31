@@ -9,6 +9,7 @@ import { bootstrapRuntime, type RuntimeBootstrapRun } from "../runtime/runtime-b
 import {
   NEWS_SCHEDULER_WORKER,
   NewsAgentModule,
+  RUNTIME_HEALTH_WORKER,
   TELEGRAM_POLLING_WORKER,
   type NewsAgentRuntimeIdentity,
 } from "./news-agent.module.js";
@@ -76,7 +77,7 @@ export async function startNewsAgentRuntime(
 
   return bootstrapRuntime({
     applicationModule,
-    workerTokens: [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER],
+    workerTokens: [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER, RUNTIME_HEALTH_WORKER],
     ...(options.stopGracePeriodMs === undefined
       ? {}
       : { stopGracePeriodMs: options.stopGracePeriodMs }),
@@ -93,7 +94,7 @@ export async function startNewsAgentRuntime(
 async function main(): Promise<void> {
   const run = await startNewsAgentRuntime();
   process.stdout.write(
-    `${JSON.stringify({ event: "runtime_started", workers: ["telegram-polling", "news-scheduler"] })}\n`,
+    `${JSON.stringify({ event: "runtime_started", workers: ["telegram-polling", "news-scheduler", "runtime-health"] })}\n`,
   );
 
   // `stopSignal.aborted` is a boolean, so awaiting it resolves immediately and

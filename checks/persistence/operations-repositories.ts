@@ -195,3 +195,58 @@ test("OperationsPersistenceModule exports narrow interface tokens backed by one 
     await moduleRef.close();
   }
 });
+
+test("reading a pipeline lease is a plain select that never mutates the lease it reports on", async () => {
+  const calls: RecordedCall[] = [];
+  // Drizzle selects run with rowMode "array", so the fake answers positionally
+  // in the order the repository's select projection declares.
+  const pool = {
+    async query(
+      query: string | { text: string; values?: unknown[] },
+      parameters: unknown[] = [],
+    ) {
+      calls.push(queryParts(query, parameters));
+      return {
+        rows: [
+          [
+            "telegram_control_poller",
+            "owner-1",
+            "2026-08-31 13:59:00.123456+02",
+            "2026-08-31 14:01:00.123456+02",
+          ],
+        ],
+      };
+    },
+  } as unknown as Pool;
+  const repository = new PipelineLeasesRepository(pool, createDrizzleDatabase(pool));
+
+  const lease = await repository.readPipelineLease("telegram_control_poller");
+
+  assert.deepEqual(lease, {
+    name: "telegram_control_poller",
+    ownerId: "owner-1",
+    // Normalized at the boundary: the health check compares these against a
+    // clock, so driver-shaped offsets must not leak out of the repository.
+    acquiredAt: "2026-08-31T11:59:00.123Z",
+    expiresAt: "2026-08-31T12:01:00.123Z",
+  });
+
+  assert.equal(calls.length, 1);
+  const [text, values] = calls[0] as RecordedCall;
+  // A health probe must be incapable of acquiring, renewing, or extending the
+  // lease it is asserting about.
+  assert.match(text, /^select /i);
+  assert.doesNotMatch(text, /acquire_pipeline_lease|renew_pipeline_lease|update|insert|delete/i);
+  assert.deepEqual(values, ["telegram_control_poller", 1]);
+});
+
+test("an absent pipeline lease reads as null rather than an error", async () => {
+  const pool = {
+    async query() {
+      return { rows: [] };
+    },
+  } as unknown as Pool;
+  const repository = new PipelineLeasesRepository(pool, createDrizzleDatabase(pool));
+
+  assert.equal(await repository.readPipelineLease("telegram_control_poller"), null);
+});

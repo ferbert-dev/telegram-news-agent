@@ -11,6 +11,7 @@ const { PG_POOL, DRIZZLE_DB } = await import("../dist/database/database.tokens.j
 assert.equal(typeof composition.NewsAgentModule.register, "function");
 assert.equal(typeof composition.TELEGRAM_POLLING_WORKER, "symbol");
 assert.equal(typeof composition.NEWS_SCHEDULER_WORKER, "symbol");
+assert.equal(typeof composition.RUNTIME_HEALTH_WORKER, "symbol");
 assert.equal(typeof entry.startNewsAgentRuntime, "function");
 assert.equal(typeof entry.resolveRuntimeIdentity, "function");
 
@@ -50,6 +51,16 @@ try {
   assert.equal(scheduler.name, "news-scheduler");
   assert.equal(typeof poller.start, "function");
   assert.equal(typeof scheduler.start, "function");
+
+  // The health worker is what a container health check will run against, so it
+  // has to resolve from the compiled output, and its readiness snapshot has to
+  // name the same lease owner the emitted poller claims.
+  const health = moduleRef.get(composition.RUNTIME_HEALTH_WORKER, { strict: false });
+  assert.equal(health.name, "runtime-health");
+  const snapshot = health.snapshot("ready");
+  assert.equal(snapshot.pollerLeaseOwnerId, poller.ownerId);
+  assert.equal(snapshot.pollerLeaseName, poller.leaseName);
+  assert.equal(snapshot.state, "ready");
 } finally {
   await moduleRef.close();
 }

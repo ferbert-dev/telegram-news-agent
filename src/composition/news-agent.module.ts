@@ -47,7 +47,10 @@ import {
   TelegramLegacyStatusGateway,
 } from "../telegram/transport/telegram-legacy-feature.gateways.js";
 import { TelegramControlTransportHandler } from "../telegram/transport/telegram-control-transport.handler.js";
-import { TelegramPollingWorker } from "../telegram/telegram-polling-worker.js";
+import {
+  TELEGRAM_CONTROL_POLLER_LEASE_NAME,
+  TelegramPollingWorker,
+} from "../telegram/telegram-polling-worker.js";
 
 import { SchedulerApplicationModule } from "../scheduler/scheduler-application.module.js";
 import { SCHEDULER_APPLICATION } from "../scheduler/scheduler-application.tokens.js";
@@ -61,11 +64,16 @@ import { TypedSchedulerNewsWorkflowAdapter } from "../scheduler/typed-scheduler-
 import { TypedResearchExecutionGatewayModule } from "../research/typed-research-execution.module.js";
 import { RESEARCH_EXECUTION_GATEWAY } from "../research/research-gateway.tokens.js";
 
+import { RuntimeHealthWorker } from "../runtime/runtime-health.js";
+import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
+import { randomUUID } from "node:crypto";
+
 import { createLateBoundPort } from "./late-bound-port.js";
 
 /** Worker tokens, in the coordinator's required start order. */
 export const TELEGRAM_POLLING_WORKER = Symbol("TELEGRAM_POLLING_WORKER");
 export const NEWS_SCHEDULER_WORKER = Symbol("NEWS_SCHEDULER_WORKER");
+export const RUNTIME_HEALTH_WORKER = Symbol("RUNTIME_HEALTH_WORKER");
 
 export type NewsAgentRuntimeIdentity = {
   botUsername: string;
@@ -75,6 +83,9 @@ export type NewsAgentRuntimeIdentity = {
 
 export type NewsAgentModuleOptions = {
   token: string;
+  /** Stable identity for this process, echoed into the readiness file. */
+  runtimeId?: string;
+  healthFilePath?: string;
   /** Resolved by the entry point via a getMe call before the container is built. */
   identity: NewsAgentRuntimeIdentity;
   env?: NodeJS.ProcessEnv;
@@ -98,6 +109,12 @@ export class NewsAgentModule {
     const env = options.env ?? process.env;
     const { token, identity } = options;
     const appVersion = options.appVersion ?? env.APP_VERSION ?? "local";
+    const runtimeId = options.runtimeId ?? randomUUID();
+    // Generated here rather than left to the worker's own default, because the
+    // readiness file must name the same owner id the lease row will carry --
+    // that equality is what makes the health check verifiable rather than
+    // self-asserted.
+    const pollerOwnerId = randomUUID();
 
     // --- Late-bound ports -------------------------------------------------
     // Each of these is required by a `register()` call that runs before the
@@ -258,6 +275,7 @@ export class NewsAgentModule {
             new TelegramPollingWorker({
               token,
               callTelegram: callTelegram as never,
+              ownerId: pollerOwnerId,
               transport: new TelegramControlTransportHandler(application, outcomeRenderer, identity),
               updates,
               leaseApplication,
@@ -269,8 +287,23 @@ export class NewsAgentModule {
           useFactory: (scheduler: SchedulerApplicationPort) =>
             new NewsSchedulerWorker({ scheduler }),
         },
+        {
+          // Started last and therefore stopped first: it only reports ready
+          // once the poller owns its lease and the scheduler is running, and
+          // it marks itself stopping before either begins draining.
+          provide: RUNTIME_HEALTH_WORKER,
+          useFactory: () =>
+            new RuntimeHealthWorker({
+              runtimeId,
+              botId: identity.botId,
+              channelId: identity.channelId,
+              pollerLeaseName: TELEGRAM_CONTROL_POLLER_LEASE_NAME,
+              pollerLeaseOwnerId: pollerOwnerId,
+              ...(options.healthFilePath ? { filePath: options.healthFilePath } : {}),
+            }),
+        },
       ],
-      exports: [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER],
+      exports: [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER, RUNTIME_HEALTH_WORKER],
     };
   }
 }
