@@ -39,8 +39,16 @@ function fakeWorker(name, drainMs) {
 // runs the compiled output the way production would.
 const run = await bootstrapRuntime({
   applicationModule: { module: class EmptyApplicationModule {} },
-  workers: [fakeWorker("first", 0), fakeWorker("second", 50)],
-  stopGracePeriodMs: 5_000,
+  // SLOW_DRAIN_MS makes the drain outlast a second signal, so the escalation
+  // path can be observed. Unset in the normal case.
+  workers: [
+    fakeWorker("first", 0),
+    fakeWorker("second", Number(process.env.SLOW_DRAIN_MS ?? 50)),
+  ],
+  // Must stay under the coordinator's own 45s cap, which exists to stay under
+  // compose's stop_grace_period -- a longer value is rejected at registration,
+  // which is the guard working.
+  stopGracePeriodMs: Number(process.env.SLOW_DRAIN_MS ?? 0) > 0 ? 40_000 : 5_000,
 });
 
 process.stdout.write(`${JSON.stringify({ event: "ready" })}\n`);

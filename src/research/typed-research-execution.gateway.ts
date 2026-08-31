@@ -16,7 +16,10 @@ import type { UsageReportingPersistence } from "../usage/usage-persistence.contr
 import { USAGE_REPORTING_PERSISTENCE } from "../usage/usage-persistence.tokens.js";
 import type { ResearchIngestionPersistence } from "./research-persistence.contracts.js";
 import { RESEARCH_INGESTION_PERSISTENCE } from "./research-persistence.tokens.js";
-import { EvidenceCurationService } from "./curation/evidence-curation.engine.js";
+import {
+  EvidenceCurationService,
+  SEMANTIC_ATTEMPT_CEILING,
+} from "./curation/evidence-curation.engine.js";
 import { SOURCE_ACQUISITION } from "./source-acquisition.tokens.js";
 import type { SourceAcquisition } from "./source-acquisition.contracts.js";
 import type {
@@ -33,7 +36,9 @@ const MAX_ENTRIES_PER_FEED = 40;
 const MAX_PERSISTED_CANDIDATES = 80;
 const STORY_HISTORY_DAYS = 14;
 const MAX_STORY_HISTORY = 100;
-const MAX_SEMANTIC_STORY_AI_CALLS = 3;
+// The paid-call ceiling, imported rather than restated. It was a separate
+// literal here, which is why raising either copy alone silently did nothing.
+const MAX_SEMANTIC_STORY_AI_CALLS = SEMANTIC_ATTEMPT_CEILING;
 
 export class NoResearchCandidatesError extends Error {
   constructor(message: string) {

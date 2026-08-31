@@ -92,7 +92,7 @@ export class EvidenceCurationService {
     @Optional() @Inject(CURATION_NOW) private readonly now: () => Date = () => new Date(),
     @Optional()
     @Inject(CURATION_SEMANTIC_ATTEMPT_LIMIT)
-    private readonly semanticAttemptLimit: number = 3,
+    private readonly semanticAttemptLimit: number = SEMANTIC_ATTEMPT_CEILING,
     @Optional() @Inject(CURATION_RANDOM) private readonly random: RandomPort = Math.random,
   ) {}
 
