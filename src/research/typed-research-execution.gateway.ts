@@ -219,7 +219,11 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
   constructor(
     @Inject(SOURCE_ACQUISITION) private readonly acquisition: SourceAcquisition,
-    private readonly curation: EvidenceCurationService,
+    // Explicit token rather than relying on emitted `design:paramtypes`:
+    // tsc emits decorator metadata but tsx does not, so a bare class
+    // parameter resolves in the compiled build and fails under the test
+    // runner. An explicit token behaves identically in both.
+    @Inject(EvidenceCurationService) private readonly curation: EvidenceCurationService,
     @Inject(AI_PROVIDER) private readonly ai: FallbackAiProvider,
     @Inject(CATALOG_PERSISTENCE) private readonly catalog: CatalogPersistence,
     @Inject(RESEARCH_INGESTION_PERSISTENCE) private readonly research: ResearchIngestionPersistence,
