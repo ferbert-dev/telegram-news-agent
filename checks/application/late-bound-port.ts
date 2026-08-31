@@ -3,7 +3,12 @@ import test from "node:test";
 import { Inject, Injectable, Module, type OnModuleInit } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 
-import { createLateBoundPort } from "../../src/composition/late-bound-port.js";
+import { LateBoundPortRegistry } from "../../src/composition/late-bound-port.js";
+
+// Creation lives on the registry, so there is no un-registered constructor to
+// forget. These tests go through it like the composition root does.
+const createLateBoundPort = <T extends object>(name: string) =>
+  new LateBoundPortRegistry().create<T>(name);
 
 type Port = { work(value: string): string; label: string };
 

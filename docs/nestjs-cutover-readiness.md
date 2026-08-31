@@ -19,8 +19,8 @@ would run it instead.
 | The composition root refuses to boot with a late-bound port unbound | `checks/application/news-agent-composition.ts` — verified by deleting each of the five `bind()` calls in turn |
 | Readiness is decided by the lease row, not by the runtime | `checks/integration/runtime-readiness.ts` — real acquire/lose/expire/release cycle |
 | Lease expiry is judged on PostgreSQL's clock, not the probe's | Same file — the process clock is shifted ten minutes and `serverNowAt` does not follow it |
-| The composition root cannot forget a late-bound port | `checks/application/news-agent-composition.ts` — ports register themselves at creation, and a sixth unlisted port fails the suite |
-| A runtime that came up without its scheduler is not ready | `checks/runtime/runtime-health.ts` — the readiness file records which workers started, and the probe requires the full set |
+| The composition root cannot forget a late-bound port | `checks/application/news-agent-composition.ts` — creation lives only on the registry, so there is no unregistered constructor to omit |
+| A runtime that came up without its scheduler is not ready | `checks/application/news-agent-composition.ts` — the readiness file is derived from the token list actually started, and the probe requires the full set from a separate declaration |
 | The compiled output survives `tsc` emit | `checks/emitted-*.mjs`, run against `dist/` |
 | `dist/` imports and the health probe fails closed, without devDependencies | `.github/workflows/deploy.yml` — run inside the built image |
 | The image still starts the legacy entrypoint | Same step — `CMD` asserted byte-for-byte |

@@ -544,10 +544,11 @@ test("a runtime in another update mode is rejected rather than polled for", asyn
   assert.match(result.healthy ? "" : result.reason, /webhook mode, not polling/);
 });
 
-test("a schema-1 readiness file is rejected, not read with the new fields missing", async () => {
-  // The snapshot gained updateMode and startedWorkers, so a file written by the
-  // previous runtime must not be interpreted optimistically during a rollout
-  // where both versions briefly exist.
+test("a schema-1 readiness file is rejected on its version, not incidentally", async () => {
+  // The v2 fields are present, so the version is the only defect and the check
+  // that fires is the one this test is named for. Without them the file is
+  // simply malformed and the version branch is never reached -- which is how
+  // the first version of this test passed with the version check deleted.
   const result = await checkRuntimeHealth({
     filePath: "ignored",
     leases: leaseReader({}),
@@ -561,10 +562,44 @@ test("a schema-1 readiness file is rejected, not read with the new fields missin
         channelId: "@channel",
         pollerLeaseName: "telegram_control_poller",
         pollerLeaseOwnerId: "owner-1",
+        updateMode: "polling",
+        startedWorkers: ["telegram-polling", "news-scheduler"],
         state: "ready",
         heartbeatAt: NOW.toISOString(),
       }),
   });
   assert.equal(result.healthy, false);
-  assert.match(result.healthy ? "" : result.reason, /schema|malformed/);
+  assert.match(result.healthy ? "" : result.reason, /schema 1 is not 2/);
+});
+
+test("a malformed startedWorkers is unhealthy rather than silently satisfied", async () => {
+  // Two concrete ways the shape matters. A string passes `includes` by
+  // substring, so "telegram-polling,news-scheduler" would satisfy a required
+  // set it never actually declares as a list; null would throw straight out of
+  // the checker, breaking the contract that a probe reports rather than raises.
+  for (const startedWorkers of ["telegram-polling,news-scheduler", null, [1, 2], "" ]) {
+    const result = await checkRuntimeHealth({
+      filePath: "ignored",
+      leases: leaseReader({}),
+      now: () => NOW,
+      isProcessAlive: () => true,
+      expect: { startedWorkers: ["telegram-polling", "news-scheduler"] },
+      readSnapshotFile: async () =>
+        JSON.stringify({
+          schemaVersion: RUNTIME_HEALTH_SCHEMA_VERSION,
+          runtimeId: "runtime-1",
+          pid: process.pid,
+          botId: 4242,
+          channelId: "@channel",
+          pollerLeaseName: "telegram_control_poller",
+          pollerLeaseOwnerId: "owner-1",
+          updateMode: "polling",
+          startedWorkers,
+          state: "ready",
+          heartbeatAt: NOW.toISOString(),
+        }),
+    });
+    assert.equal(result.healthy, false, `expected unhealthy for ${JSON.stringify(startedWorkers)}`);
+    assert.match(result.healthy ? "" : result.reason, /malformed/);
+  }
 });

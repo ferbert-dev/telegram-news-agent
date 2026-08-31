@@ -68,7 +68,7 @@ import { RuntimeHealthWorker } from "../runtime/runtime-health.js";
 import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
 import { randomUUID } from "node:crypto";
 
-import { createLateBoundPort, LateBoundPortRegistry } from "./late-bound-port.js";
+import { LateBoundPortRegistry } from "./late-bound-port.js";
 
 /** Worker tokens, in the coordinator's required start order. */
 export const TELEGRAM_POLLING_WORKER = Symbol("TELEGRAM_POLLING_WORKER");
@@ -90,17 +90,37 @@ export type NewsAgentModuleOptions = {
   identity: NewsAgentRuntimeIdentity;
   env?: NodeJS.ProcessEnv;
   appVersion?: string;
+  /**
+   * The workers that will start before the health worker, and the update mode
+   * the entry point validated. Both are passed in rather than assumed, so the
+   * readiness file describes the runtime that was actually started.
+   */
+  startedWorkers?: readonly string[];
+  updateMode?: string;
 };
 
+/** The name each worker token resolves to, so a token list can be described. */
+export const RUNTIME_WORKER_NAMES: ReadonlyMap<symbol, string> = new Map([
+  [TELEGRAM_POLLING_WORKER, "telegram-polling"],
+  [NEWS_SCHEDULER_WORKER, "news-scheduler"],
+  [RUNTIME_HEALTH_WORKER, "runtime-health"],
+]);
+
 /**
- * The workers this module registers ahead of the health worker.
+ * The workers that will have started by the time the health worker publishes.
  *
- * Exported so the health CLI can require exactly this set rather than
- * hardcoding names: a runtime that came up without its scheduler polls fine and
- * silently runs nothing on a schedule, and start order cannot express that --
- * the health worker is last either way.
+ * Derived from the token list the runtime is actually about to start, not
+ * declared separately. That distinction is the whole point: a hardcoded
+ * constant compared against a hardcoded expectation is a tautology, and the
+ * failure this field exists to catch -- a token list built by a filter or a
+ * conditional that drops the scheduler -- would not change either side of it.
+ * Here, dropping a token drops a name.
  */
-export const RUNTIME_STARTED_WORKERS = ["telegram-polling", "news-scheduler"] as const;
+export function startedWorkerNames(tokens: readonly symbol[]): string[] {
+  return tokens
+    .filter((token) => token !== RUNTIME_HEALTH_WORKER)
+    .map((token) => RUNTIME_WORKER_NAMES.get(token) ?? String(token.description ?? token));
+}
 
 /**
  * The composition root: the one place that assembles every application module
@@ -131,24 +151,22 @@ export class NewsAgentModule {
     // container exists, but is satisfied by a singleton that only exists
     // inside it. `RuntimeBinder.onModuleInit` fills them, which Nest runs
     // during context creation and therefore strictly before any worker starts.
-    // Every port created against this registry is automatically covered by the
-    // unbound check below -- there is no list to keep in step.
+    // The only way to make a late-bound port, so every one is covered by the
+    // unbound check below. There is no list, and no count, to keep in step.
     const ports = new LateBoundPortRegistry();
-    const legacyPersistence = createLateBoundPort<LegacyPersistence>("legacy-persistence", ports);
-    const editorialWorkflow = createLateBoundPort<EditorialWorkflowApplicationPort>(
+    const legacyPersistence = ports.create<LegacyPersistence>("legacy-persistence");
+    const editorialWorkflow = ports.create<EditorialWorkflowApplicationPort>(
       "editorial-workflow",
-      ports,
     );
-    const pipelineLease = createLateBoundPort<PipelineLeaseApplicationPort>(
+    const pipelineLease = ports.create<PipelineLeaseApplicationPort>(
       "pipeline-lease",
-      ports,
     );
-    const reviewDelivery = createLateBoundPort<{
+    const reviewDelivery = ports.create<{
       execute(input: Record<string, unknown>): Promise<{ status: string }>;
-    }>("telegram-review-delivery", ports);
-    const researchExecution = createLateBoundPort<{
+    }>("telegram-review-delivery");
+    const researchExecution = ports.create<{
       execute(request: never, signal?: AbortSignal): Promise<never>;
-    }>("research-execution", ports);
+    }>("research-execution");
 
 
     // Eagerly constructible: these depend only on configuration, not on the
@@ -257,10 +275,6 @@ export class NewsAgentModule {
         }),
       ],
       providers: [
-        // Exposed so a check can count what the root actually created; a sixth
-        // port added without the registry would otherwise lose its coverage
-        // quietly.
-        { provide: LateBoundPortRegistry, useValue: ports },
         {
           provide: RuntimeBinder,
           inject: [
@@ -292,7 +306,7 @@ export class NewsAgentModule {
               // attempt recording is built with, so a missed bind would take
               // out usage accounting and fallback-rate alerting at the first
               // provider call.
-ports.assertAllBound();
+              ports.assertAllBound();
             }),
         },
         {
@@ -330,11 +344,14 @@ ports.assertAllBound();
               channelId: identity.channelId,
               pollerLeaseName: TELEGRAM_CONTROL_POLLER_LEASE_NAME,
               pollerLeaseOwnerId: pollerOwnerId,
-              // Not a constant dressed as data: getPollingConfig throws unless
-              // this is "polling", and runtime-entry calls it before the
-              // container is built, so recording it states what was validated.
-              updateMode: env.TELEGRAM_UPDATE_MODE?.trim().toLowerCase() ?? "polling",
-              startedWorkers: RUNTIME_STARTED_WORKERS,
+              // Both are supplied by the entry point, which is what validated
+              // the mode and owns the token list. Absence fails closed rather
+              // than defaulting: a default here would be a constant claiming
+              // something nothing checked, which is the tautology this field
+              // exists to avoid. An empty worker set fails the probe's required
+              // set, so a caller that did not say is reported unhealthy.
+              updateMode: options.updateMode ?? "unknown",
+              startedWorkers: options.startedWorkers ?? [],
               ...(options.healthFilePath ? { filePath: options.healthFilePath } : {}),
             }),
         },

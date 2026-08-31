@@ -5,10 +5,12 @@ import { Test } from "@nestjs/testing";
 import {
   NEWS_SCHEDULER_WORKER,
   NewsAgentModule,
+  startedWorkerNames,
   RUNTIME_HEALTH_WORKER,
   TELEGRAM_POLLING_WORKER,
 } from "../../src/composition/news-agent.module.js";
 import {
+  composeRuntime,
   RUNTIME_WORKER_TOKENS,
   resolveRuntimeIdentity,
 } from "../../src/composition/runtime-entry.js";
@@ -18,10 +20,8 @@ import {
   TelegramPollingWorker,
 } from "../../src/telegram/telegram-polling-worker.js";
 import { RuntimeHealthWorker } from "../../src/runtime/runtime-health.js";
-import {
-  createLateBoundPort,
-  LateBoundPortRegistry,
-} from "../../src/composition/late-bound-port.js";
+import { checkRuntimeHealth } from "../../src/runtime/runtime-health-check.js";
+import { LateBoundPortRegistry } from "../../src/composition/late-bound-port.js";
 import { DRIZZLE_DB, PG_POOL } from "../../src/database/database.tokens.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../../src/editorial/editorial-application.tokens.js";
 import { PIPELINE_LEASE_APPLICATION } from "../../src/operations/operations-application.tokens.js";
@@ -135,7 +135,7 @@ test("late-bound ports are filled during init, before any worker could run", asy
 test("a port left unbound stops the container from finishing its boot", () => {
   // Resolving a service does not go through the proxies, so no test observed a
   // missing binding: deleting any bind() used to fail nothing at all. The
-  // binder now verifies itself, which means every compileRuntime() in this file
+  // binder now verifies itself, so every compileRuntime() in this file
   // exercises the rule; this pins the rule's own behaviour.
   //
   // The failure it prevents is silent: the container starts, the workers start,
@@ -144,26 +144,61 @@ test("a port left unbound stops the container from finishing its boot", () => {
   // it is what the AI provider's attempt recording is built with, so usage
   // accounting and fallback-rate alerting would go dark at the first call.
   const registry = new LateBoundPortRegistry();
-  const bound = createLateBoundPort<{ ok(): void }>("bound", registry);
+  const bound = registry.create<{ ok(): void }>("bound");
   bound.bind({ ok() {} });
   assert.doesNotThrow(() => registry.assertAllBound());
 
-  // The registry is populated at creation, so a port added to a composition is
-  // covered without anyone remembering to list it. A hand-maintained list left
-  // exactly this gap: a new port omitted from it was silent again.
-  createLateBoundPort<{ ok(): void }>("forgotten", registry);
-  assert.equal(registry.size, 2);
+  // Creation lives on the registry and nowhere else, so a port cannot be added
+  // to a composition without being covered. Two earlier versions of this rule
+  // took a hand-maintained list and then a hand-maintained count, and both were
+  // silent for a port nobody remembered to add.
+  registry.create<{ ok(): void }>("forgotten");
   assert.throws(() => registry.assertAllBound(), /left late-bound ports unbound: forgotten/);
 });
 
-test("the composition root registers every one of its ports, so none can be forgotten", async () => {
-  // Counts the ports the real root creates. If someone adds a sixth and does
-  // not pass the registry, this fails rather than silently losing coverage.
-  const moduleRef = await compileRuntime();
+test("the worker names in the readiness file come from the tokens actually started", () => {
+  // The failure this exists to catch is a token list built by a filter or a
+  // conditional that drops the scheduler. If the names were a constant, both
+  // sides of the probe's comparison would still say "news-scheduler" and the
+  // runtime would report healthy while running nothing on a schedule.
+  assert.deepEqual(startedWorkerNames([...RUNTIME_WORKER_TOKENS]), [
+    "telegram-polling",
+    "news-scheduler",
+  ]);
+  // Drop the scheduler token and the name disappears with it.
+  assert.deepEqual(
+    startedWorkerNames([TELEGRAM_POLLING_WORKER, RUNTIME_HEALTH_WORKER]),
+    ["telegram-polling"],
+  );
+  // The health worker never lists itself: it is what publishes the file.
+  assert.ok(!startedWorkerNames([...RUNTIME_WORKER_TOKENS]).includes("runtime-health"));
+});
+
+test("the readiness snapshot reports the reduced worker set it was actually given", async () => {
+  // End to end through the real module, not just the helper: a runtime composed
+  // without its scheduler must say so in the file it publishes.
+  const moduleRef = await Test.createTestingModule({
+    imports: [
+      NewsAgentModule.register({
+        token: "test-token",
+        identity,
+        env,
+        updateMode: "polling",
+        startedWorkers: startedWorkerNames([TELEGRAM_POLLING_WORKER, RUNTIME_HEALTH_WORKER]),
+      }),
+    ],
+  })
+    .overrideProvider(PG_POOL)
+    .useValue(fakePool)
+    .overrideProvider(DRIZZLE_DB)
+    .useValue(fakeDrizzle)
+    .compile();
+  await moduleRef.init();
   try {
-    const registry = moduleRef.get(LateBoundPortRegistry, { strict: false });
-    assert.equal(registry.size, 5);
-    assert.deepEqual(registry.unbound(), []);
+    const health = moduleRef.get(RUNTIME_HEALTH_WORKER, { strict: false }) as RuntimeHealthWorker;
+    const snapshot = health.snapshot("ready");
+    assert.deepEqual([...snapshot.startedWorkers], ["telegram-polling"]);
+    assert.equal(snapshot.updateMode, "polling");
   } finally {
     await moduleRef.close();
   }
@@ -275,4 +310,59 @@ test("the health worker starts last, which is what makes the readiness file mean
     [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER, RUNTIME_HEALTH_WORKER],
   );
   assert.equal(RUNTIME_WORKER_TOKENS.at(-1), RUNTIME_HEALTH_WORKER);
+});
+
+test("a module told nothing about its workers reports an empty set, not a plausible one", async () => {
+  // Failing closed rather than defaulting. A default here would be a constant
+  // asserting something nothing checked -- exactly the tautology the derived
+  // list exists to avoid -- and the probe's required set would accept it.
+  const moduleRef = await compileRuntime();
+  try {
+    const health = moduleRef.get(RUNTIME_HEALTH_WORKER, { strict: false }) as RuntimeHealthWorker;
+    const snapshot = health.snapshot("ready");
+    assert.deepEqual([...snapshot.startedWorkers], []);
+    assert.equal(snapshot.updateMode, "unknown");
+
+    const result = await checkRuntimeHealth({
+      filePath: "ignored",
+      leases: { async readPipelineLease() { throw new Error("must not be reached"); } },
+      isProcessAlive: () => true,
+      expect: { startedWorkers: ["telegram-polling", "news-scheduler"], updateMode: "polling" },
+      readSnapshotFile: async () => JSON.stringify(snapshot),
+    });
+    assert.equal(result.healthy, false);
+  } finally {
+    await moduleRef.close();
+  }
+});
+
+test("whatever token list the runtime starts, the readiness file describes that list", async () => {
+  // The invariant, pinned over more than the production list: the file cannot
+  // disagree with the tokens actually being started. startNewsAgentRuntime
+  // itself cannot be tested -- it calls Telegram twice before composing --
+  // which is why the wiring lives in composeRuntime.
+  for (const tokens of [
+    [...RUNTIME_WORKER_TOKENS],
+    [TELEGRAM_POLLING_WORKER, RUNTIME_HEALTH_WORKER],
+    [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER],
+  ]) {
+    const composed = composeRuntime({ token: "test-token", identity, env, workerTokens: tokens });
+    const moduleRef = await Test.createTestingModule({ imports: [composed.applicationModule] })
+      .overrideProvider(PG_POOL)
+      .useValue(fakePool)
+      .overrideProvider(DRIZZLE_DB)
+      .useValue(fakeDrizzle)
+      .compile();
+    await moduleRef.init();
+    try {
+      const health = moduleRef.get(RUNTIME_HEALTH_WORKER, { strict: false }) as RuntimeHealthWorker;
+      assert.deepEqual(
+        [...health.snapshot("ready").startedWorkers],
+        startedWorkerNames(composed.workerTokens),
+        `readiness file disagreed with the tokens for ${tokens.map(String).join(", ")}`,
+      );
+    } finally {
+      await moduleRef.close();
+    }
+  }
 });

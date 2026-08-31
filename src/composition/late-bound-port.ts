@@ -61,10 +61,7 @@ const LIFECYCLE_HOOKS = new Set([
   "onApplicationShutdown",
 ]);
 
-export function createLateBoundPort<T extends object>(
-  name: string,
-  registry?: LateBoundPortRegistry,
-): LateBoundPort<T> {
+function buildLateBoundPort<T extends object>(name: string): LateBoundPort<T> {
   let target: T | null = null;
 
   const port = new Proxy({} as T, {
@@ -110,31 +107,35 @@ export function createLateBoundPort<T extends object>(
       return target !== null;
     },
   };
-  // Registered at creation, so a port cannot be added to a composition without
-  // also being covered by its unbound check.
-  registry?.add(name, handle);
   return handle;
 }
 
 /**
- * Collects every port a composition creates, so nothing has to be remembered.
+ * Creates every late-bound port a composition uses, and refuses a composition
+ * that left one unbound.
  *
- * The first version of this rule took a hand-written list. That closed the
- * failure it was written for and left the same one open a level up: a *new*
- * late-bound port added without a matching list entry was silent again, which
- * a review demonstrated by adding a sixth port and watching every test pass.
- * Registering at creation removes the step someone can forget, and removes the
- * duplicated name literals, which could otherwise drift and make the error
- * message name the wrong port.
+ * Creation lives here, and only here, on purpose. The first version of this
+ * rule took a hand-written list, which closed one silent failure and left the
+ * same one open a level up: a *new* port added without a matching entry was
+ * silent again. The second version registered ports at creation but left the
+ * registry argument optional and guarded it with an expected-count assertion --
+ * which is silent in exactly the case it was written for, because a port
+ * created without a registry does not change the count. A hand-maintained list
+ * had become a hand-maintained count.
+ *
+ * There is now no way to construct a port outside a registry, so there is
+ * nothing left to remember.
  */
 export class LateBoundPortRegistry {
-  private readonly ports: { name: string; port: { readonly isBound: boolean } }[] = [];
+  private readonly ports: { name: string; port: LateBoundPort<object> }[] = [];
 
-  add(name: string, port: { readonly isBound: boolean }): void {
-    this.ports.push({ name, port });
+  create<T extends object>(name: string): LateBoundPort<T> {
+    const handle = buildLateBoundPort<T>(name);
+    this.ports.push({ name, port: handle as LateBoundPort<object> });
+    return handle;
   }
 
-  /** Every port created against this registry that is still unbound. */
+  /** Every port this registry created that is still unbound. */
   unbound(): string[] {
     return this.ports.filter(({ port }) => !port.isBound).map(({ name }) => name);
   }
@@ -146,9 +147,9 @@ export class LateBoundPortRegistry {
   /**
    * Refuses a composition that left a port unbound.
    *
-   * A separate method rather than an inline check in the binder so the rule
-   * itself is testable: the failure it prevents is silent, and a check that can
-   * only observe fully-correct wiring cannot tell you the rule is still there.
+   * A method rather than an inline check in the binder so the rule itself is
+   * testable: the failure it prevents is silent, and a check that can only
+   * observe fully-correct wiring cannot tell you the rule is still there.
    */
   assertAllBound(): void {
     const unbound = this.unbound();
