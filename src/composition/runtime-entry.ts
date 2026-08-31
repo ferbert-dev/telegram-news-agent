@@ -101,11 +101,12 @@ export async function startNewsAgentRuntime(
 }
 
 /**
- * Local entry point. Deliberately not the container command: the production
- * image still runs `src/telegram-bot.js` and ships no `dist/`. Starting this
- * while the legacy runtime is also running would put two pollers on the same
- * bot, which the control lease is designed to prevent but which no one should
- * do on purpose.
+ * Local entry point. The image ships `dist/`, but does not start it: `CMD` and
+ * `compose.yaml` both still run `src/telegram-bot.js`, and no deployment path
+ * passes the `compose.nest.yaml` overlay that would run this instead. Starting
+ * this while the legacy runtime is also running would put two pollers on the
+ * same bot, which the control lease is designed to prevent but which no one
+ * should do on purpose.
  */
 async function main(): Promise<void> {
   const run = await startNewsAgentRuntime();

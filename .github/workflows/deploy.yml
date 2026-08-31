@@ -67,6 +67,13 @@ jobs:
             -f compose.yaml \
             -f compose.ssh-access.yaml \
             config --quiet --no-env-resolution
+          # Not a deployment path, but it must stay valid: it is how cutover
+          # will be performed, and a broken overlay would only be discovered
+          # then.
+          docker compose \
+            -f compose.yaml \
+            -f compose.nest.yaml \
+            config --quiet --no-env-resolution
 
       - name: Run unit tests
         run: npm test
@@ -84,6 +91,48 @@ jobs:
 
       - name: Build test image
         run: docker build --tag "$APP_IMAGE" .
+
+      # The image is the only place the compiled runtime meets production-only
+      # dependencies. `test:nest:build` proves dist/ works against the full
+      # devDependency tree; this proves it works without one.
+      - name: Verify the image ships a runnable compiled runtime
+        run: |
+          docker run --rm --entrypoint node "$APP_IMAGE" \
+            -e "import('/app/dist/composition/runtime-entry.js').then((m) => {
+                  if (typeof m.startNewsAgentRuntime !== 'function') {
+                    throw new Error('dist/ does not export startNewsAgentRuntime');
+                  }
+                })"
+          # The health probe must fail closed on an unidentifiable runtime. The
+          # verdict is asserted, not just the exit code: a probe whose imports
+          # cannot resolve against production-only dependencies also exits
+          # non-zero, so an exit-code-only check would pass on exactly the
+          # failure this step exists to catch. DATABASE_URL is deliberately
+          # unreachable -- reaching the identity verdict at all proves the probe
+          # returns before it opens a pool.
+          probe_output="$(
+            docker run --rm --entrypoint node \
+              -e DATABASE_URL=postgresql://nobody@127.0.0.1:1/nothing \
+              "$APP_IMAGE" dist/composition/health-cli.js 2>&1
+          )" && {
+            echo "health CLI reported healthy with no configuration" >&2
+            exit 1
+          }
+          # One line, and that line is the verdict. A substring search alone
+          # would still pass for a probe that printed the right verdict and
+          # then crashed.
+          case "$probe_output" in
+            '{"event":"runtime_unhealthy","reason":"TELEGRAM_CHANNEL_ID'*'}') ;;
+            *)
+              echo "health CLI did not fail closed with an identity verdict:" >&2
+              echo "$probe_output" >&2
+              exit 1
+              ;;
+          esac
+          # Production still runs the legacy entrypoint. Carrying dist/ must not
+          # change what the image starts.
+          test "$(docker inspect --format '{{json .Config.Cmd}}' "$APP_IMAGE")" \
+            = '["node","src/telegram-bot.js"]'
 
       - name: Run PostgreSQL migration and integration tests
         run: |

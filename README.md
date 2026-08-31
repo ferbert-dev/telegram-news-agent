@@ -338,6 +338,20 @@ reachable only through SSH. The one-shot `migrate` service applies the
 checked-in SQL migrations before each bot update. See the
 [read-only DBeaver setup](docs/database-access.md).
 
+The image also carries a compiled NestJS runtime (`dist/`), built in a separate
+Docker stage so the TypeScript toolchain never reaches the final image. It is
+**carried, not started**: the container command remains `node
+src/telegram-bot.js`, and no deployment path passes the `compose.nest.yaml`
+overlay that would run the new runtime instead. That overlay exists so the
+migration can be exercised against a real database, and so cutover becomes a
+reviewed compose change rather than an image rebuild. It needs the same
+environment every other compose recipe here does — `POSTGRES_PASSWORD`,
+`POSTGRES_APP_PASSWORD` and a `.env.production`:
+
+```bash
+docker compose -f compose.yaml -f compose.nest.yaml up -d bot
+```
+
 Database changes use SQL migrations as the source of truth and a Drizzle
 TypeScript snapshot for typed repository work and CI drift detection. See the
 [Drizzle migration roadmap](docs/database-migration.md). Useful commands:

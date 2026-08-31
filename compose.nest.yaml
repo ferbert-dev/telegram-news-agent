@@ -1,0 +1,37 @@
+# Runs the compiled NestJS runtime instead of the legacy entrypoint.
+#
+# NOT used by deployment. `ops/deploy.sh` and the CI workflow compose only
+# `compose.yaml` (plus `compose.test.yaml` / `compose.ssh-access.yaml`), so this
+# file changes nothing unless somebody passes it explicitly:
+#
+#   docker compose -f compose.yaml -f compose.nest.yaml up -d bot
+#
+# It exists so that cutover is a reviewed change to a compose file rather than
+# an edit to the image, and so the new runtime can be exercised against a real
+# database before anyone commits to it. Starting this while the legacy runtime
+# is also running would put two pollers on one bot; the control lease is
+# designed to prevent that, but it is not a thing to do on purpose.
+services:
+  bot:
+    command: ["node", "dist/composition/runtime-entry.js"]
+    # Only meaningful against this command: the legacy runtime writes no
+    # readiness file, so this healthcheck belongs with the runtime that does.
+    # The probe reads the readiness file as a claim and confirms the poller
+    # lease against PostgreSQL, so an "up" container that owns no lease is
+    # reported unhealthy rather than healthy.
+    #
+    # Note what this does NOT yet change: ops/deploy.sh gates a release on
+    # `.State.Running` and `.State.RestartCount`, not on `.State.Health`, so
+    # this healthcheck is visible in `docker ps` but does not gate deployment
+    # or trigger rollback. Teaching the deploy gate to read it is part of
+    # cutover, not of shipping the artifact.
+    healthcheck:
+      test: ["CMD", "node", "dist/composition/health-cli.js"]
+      # Longer than the 45s stale-heartbeat threshold would let a wedged
+      # runtime linger; shorter than the poller's 70s lease-acquire timeout
+      # would fail a runtime that is still legitimately waiting, which is what
+      # start_period covers.
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
