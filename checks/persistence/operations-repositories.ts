@@ -240,7 +240,10 @@ test("reading a pipeline lease is a plain select that never mutates the lease it
   // A health probe must be incapable of acquiring, renewing, or extending the
   // lease it is asserting about.
   assert.match(text, /^select /i);
-  assert.match(text, /now\(\)/i);
+  // Cast in SQL: a raw `sql` select field carries no Drizzle decoder, so an
+  // uncast now() arrives as a Date under real pg while the mock here hands
+  // back a string -- a production-only shape difference.
+  assert.match(text, /now\(\)::text/i);
   assert.doesNotMatch(text, /acquire_pipeline_lease|renew_pipeline_lease|update|insert|delete/i);
   assert.deepEqual(values, ["telegram_control_poller", 1]);
 });

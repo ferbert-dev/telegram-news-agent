@@ -409,19 +409,92 @@ test("a second concurrent stop waits for the first rather than reporting done ea
   await first;
 });
 
-test("a failed publish leaves no orphaned temp file behind", async () => {
-  // The temp suffix is unique per attempt, so cleanup that only covered part
-  // of the write would leak a new file every heartbeat until /tmp filled.
-  // A directory at the target makes the rename fail after the temp file exists.
+test("a publish that fails at the rename leaves no orphaned temp file, and does not kill the runtime", async () => {
+  // A directory at the target makes the rename fail after the temp file
+  // exists. (The writeFile/chmod arm of the same try is not separately
+  // reachable without injecting a filesystem, so this covers the cleanup path
+  // rather than every way into it.)
   const filePath = await temporaryFile();
   await mkdir(filePath);
-  const health = worker(filePath, { heartbeatIntervalMs: 5 });
+  const warnings: string[] = [];
+  const health = worker(filePath, {
+    heartbeatIntervalMs: 5,
+    log: { warn: (message: string) => warnings.push(message) },
+  });
 
-  await assert.rejects(health.start(new AbortController().signal));
+  // The readiness worker is the least important one: it must not veto startup
+  // for the poller and scheduler, which can serve perfectly well without it.
+  // A readiness file that never appears already reports unhealthy.
+  await health.start(new AbortController().signal);
   await new Promise((resolve) => setTimeout(resolve, 20));
-  await health.stop().catch(() => undefined);
+  await health.stop();
 
-  // Only the directory itself: no `health.json.<pid>.<n>.tmp` survivors.
+  assert.ok(
+    warnings.some((line) => line.includes("runtime_health_publish_failed")),
+    `expected a publish failure warning, got: ${warnings.join(" | ")}`,
+  );
+  // No `health.json.<pid>.<n>.tmp` survivors: with a unique suffix per attempt,
+  // leaking one per heartbeat would fill the filesystem.
   assert.deepEqual(await readdir(dirname(filePath)), ["health.json"]);
   assert.deepEqual(await readdir(filePath), []);
+});
+
+test("a runtime does not delete a readiness file another runtime has since claimed", async () => {
+  // The other half of the shared-path hazard: A publishes, B clobbers the file,
+  // then A drains. Without an ownership check A's unlink removes B's file and a
+  // healthy B looks dead to its probe.
+  const filePath = await temporaryFile();
+  const a = worker(filePath, { runtimeId: "runtime-a" });
+  await a.start(new AbortController().signal);
+
+  const b = worker(filePath, { runtimeId: "runtime-b" });
+  started.push(b);
+  await b.start(new AbortController().signal);
+
+  await a.stop();
+
+  const surviving = JSON.parse(await readFile(filePath, "utf8")) as RuntimeHealthSnapshot;
+  assert.equal(surviving.runtimeId, "runtime-b");
+  assert.equal(surviving.state, "ready");
+});
+
+test("a second concurrent stop does not republish, so the file cannot reappear after the unlink", async () => {
+  // Every published snapshot calls now() exactly once. Un-memoized, the second
+  // stop() re-runs teardown in full: a third publish that re-creates the file
+  // after the first unlink already removed it.
+  const filePath = await temporaryFile();
+  let publishes = 0;
+  const health = worker(filePath, {
+    now: () => {
+      publishes += 1;
+      return NOW;
+    },
+  });
+  await health.start(new AbortController().signal);
+
+  await Promise.all([health.stop(), health.stop()]);
+
+  assert.equal(publishes, 2, "expected exactly one ready and one stopping publish");
+  await assert.rejects(readFile(filePath, "utf8"), /ENOENT/);
+});
+
+test("a foreign readiness file is diagnosed as foreign, even when its heartbeat is also stale", async () => {
+  // Identity is compared before heartbeat age. With the order reversed this
+  // reports "heartbeat is Nms old" -- true, but it sends whoever is reading the
+  // probe output after the wrong problem entirely.
+  const filePath = await temporaryFile();
+  const health = worker(filePath, { runtimeId: "other", now: () => NOW });
+  started.push(health);
+  await health.start(new AbortController().signal);
+
+  const result = await checkRuntimeHealth({
+    filePath,
+    expect: { channelId: "@a-different-channel" },
+    now: () => new Date(NOW.valueOf() + 10 * 60_000),
+    isProcessAlive: () => true,
+    leases: leaseReader({}),
+  });
+
+  assert.equal(result.healthy, false);
+  assert.match(result.healthy ? "" : result.reason, /belongs to channel/);
 });

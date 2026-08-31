@@ -1,4 +1,4 @@
-import { chmod, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, readFile, rename, unlink, writeFile } from "node:fs/promises";
 
 import type { RuntimeWorker } from "./runtime-coordinator.js";
 
@@ -149,7 +149,17 @@ export class RuntimeHealthWorker implements RuntimeWorker {
 
   async start(shutdownSignal: AbortSignal): Promise<void> {
     if (this.stopped || shutdownSignal.aborted) return;
-    await this.publish("ready");
+    // Tolerated rather than thrown, for the same reason a failed heartbeat is:
+    // this is the least important worker, and letting it veto startup would
+    // take down a poller and scheduler that can serve perfectly well. A
+    // readiness file that never appears already reports unhealthy, which is
+    // the correct signal -- the compose filesystem is read_only with a 32m
+    // tmpfs, so EROFS and ENOSPC here are real possibilities.
+    try {
+      await this.publish("ready");
+    } catch (error) {
+      this.warn("runtime_health_publish_failed", error);
+    }
     // Re-checked after the await: a stop() landing during that publish finds
     // heartbeat still null and completes, and without this the interval below
     // would then be created with nothing left to clear it.
@@ -188,6 +198,11 @@ export class RuntimeHealthWorker implements RuntimeWorker {
     // Never published, so there is nothing of ours on disk. Writing or
     // unlinking here would act on a file belonging to whoever did publish.
     if (!this.published) return;
+    // Nor is the file still ours: on a shared path another runtime may have
+    // claimed it since. Publishing "stopping" over it would be just as
+    // destructive as the unlink -- it would mark a healthy runtime as draining
+    // under our identity, and then delete it.
+    if (!(await this.ownsPublishedFile())) return;
     // Mark not-ready first, then remove. A reader that catches the window sees
     // "stopping" rather than a stale "ready". Serialized behind any in-flight
     // heartbeat, so this is genuinely the last state written.
@@ -199,9 +214,31 @@ export class RuntimeHealthWorker implements RuntimeWorker {
     // Its own try: an unlink skipped because the publish above failed would
     // leave the readiness file on disk for the whole drain.
     try {
-      await unlink(this.options.filePath);
+      if (await this.ownsPublishedFile()) {
+        await unlink(this.options.filePath);
+      }
     } catch (error) {
       this.warn("runtime_health_teardown_failed", error);
+    }
+  }
+
+  /**
+   * Whether the file on disk is still the one this worker wrote.
+   *
+   * The `published` guard stops a worker that never wrote from deleting a
+   * neighbour's file; this closes the other half of the same hazard on a
+   * shared path -- A publishes, B clobbers the file, A drains and would
+   * otherwise unlink B's readiness file, leaving a healthy B looking dead.
+   */
+  private async ownsPublishedFile(): Promise<boolean> {
+    try {
+      const raw = await readFile(this.options.filePath, "utf8");
+      const snapshot = JSON.parse(raw) as Partial<RuntimeHealthSnapshot>;
+      return snapshot.runtimeId === this.options.runtimeId && snapshot.pid === this.options.pid;
+    } catch {
+      // Unreadable or malformed: not provably ours, so leave it alone. A file
+      // we did write is removed on the next start anyway.
+      return false;
     }
   }
 

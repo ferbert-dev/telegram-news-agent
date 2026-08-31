@@ -18,19 +18,35 @@ import type { PipelineLeaseReadPort } from "../operations/operations.interfaces.
  * Only the database is booted here — no workers, no Telegram, no AI provider —
  * so the check cannot acquire a lease, send a message, or spend a token.
  */
+/**
+ * The identity this probe expects the runtime to have.
+ *
+ * Read directly rather than through `getTelegramConfig`, which throws on an
+ * incomplete environment: a probe should report unhealthy, never crash. The
+ * value is trimmed because `getTelegramConfig` trims before the runtime writes
+ * it into the snapshot -- comparing a raw value against a trimmed one turns a
+ * trailing space or a CRLF in `.env` into "belongs to channel @x, not @x ", a
+ * visually identical mismatch that would fail every probe on a working bot.
+ */
+export function expectedIdentity(env: NodeJS.ProcessEnv): { channelId: string } | null {
+  const channelId = env.TELEGRAM_CHANNEL_ID?.trim();
+  return channelId ? { channelId } : null;
+}
+
 export async function runHealthCli(
   filePath?: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ healthy: boolean; reason?: string }> {
-  // Read directly rather than through getTelegramConfig, which throws on an
-  // incomplete environment: a probe should report unhealthy, never crash.
-  const channelId = env.TELEGRAM_CHANNEL_ID;
+  const expect = expectedIdentity(env);
   // Fail closed. Skipping the identity comparison when the variable is missing
   // would drop the guard in precisely the misconfigured case where two
   // runtimes end up sharing the default readiness path -- and this probe would
   // then confirm the neighbour's lease and report the wrong runtime healthy.
-  if (!channelId) {
-    return { healthy: false, reason: "TELEGRAM_CHANNEL_ID is not set, so the runtime cannot be identified" };
+  if (expect === null) {
+    return {
+      healthy: false,
+      reason: "TELEGRAM_CHANNEL_ID is not set, so the runtime cannot be identified",
+    };
   }
   const application = await createRuntimeApplicationContext({
     module: class HealthCliModule {},
@@ -43,7 +59,7 @@ export async function runHealthCli(
     const result = await checkRuntimeHealth({
       leases,
       ...(filePath ? { filePath } : {}),
-      expect: { channelId },
+      expect,
     });
     return result.healthy ? { healthy: true } : { healthy: false, reason: result.reason };
   } finally {
