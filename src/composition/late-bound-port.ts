@@ -108,3 +108,19 @@ export function createLateBoundPort<T extends object>(name: string): LateBoundPo
     },
   };
 }
+
+/**
+ * Refuses a composition that left a late-bound port unbound.
+ *
+ * Kept here rather than inline in the binder so the rule itself is testable:
+ * the failure it prevents is silent, and a check that can only observe the
+ * fully-correct wiring cannot tell you the rule is still there.
+ */
+export function assertPortsBound(
+  ports: readonly (readonly [string, { readonly isBound: boolean }])[],
+): void {
+  const unbound = ports.filter(([, port]) => !port.isBound).map(([name]) => name);
+  if (unbound.length > 0) {
+    throw new Error(`Runtime composition left late-bound ports unbound: ${unbound.join(", ")}`);
+  }
+}

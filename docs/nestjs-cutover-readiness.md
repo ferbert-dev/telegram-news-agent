@@ -10,18 +10,29 @@ compiled NestJS runtime in `dist/`, built in a separate Docker stage — carried
 not started. No deployment path passes `compose.nest.yaml`, the overlay that
 would run it instead.
 
-## Verified
+## Covered by a check that runs in CI
+
+| Claim | Where |
+|---|---|
+| The whole application graph constructs with real adapters | `checks/application/news-agent-composition.ts` |
+| It also constructs against a real PostgreSQL, and reaches it | `checks/integration/news-agent-composition.ts` — drives the lease application through to the atomic function |
+| The composition root refuses to boot with a late-bound port unbound | `checks/application/news-agent-composition.ts` — verified by deleting each of the five `bind()` calls in turn |
+| Readiness is decided by the lease row, not by the runtime | `checks/integration/runtime-readiness.ts` — real acquire/lose/expire/release cycle |
+| Lease expiry is judged on PostgreSQL's clock, not the probe's | Same file — the process clock is shifted ten minutes and `serverNowAt` does not follow it |
+| The compiled output survives `tsc` emit | `checks/emitted-*.mjs`, run against `dist/` |
+| `dist/` imports and the health probe fails closed, without devDependencies | `.github/workflows/deploy.yml` — run inside the built image |
+| The image still starts the legacy entrypoint | Same step — `CMD` asserted byte-for-byte |
+
+## Rehearsed by hand, not regression-protected
+
+These were run once, against a local PostgreSQL, and nothing in CI would notice
+if they broke. They are evidence, not coverage.
 
 | Claim | How |
 |---|---|
-| The whole application graph constructs with real adapters | `checks/application/news-agent-composition.ts` |
-| It also constructs against a real PostgreSQL, and reaches it | `checks/integration/news-agent-composition.ts` — drives the lease application through to the atomic function, reads settings through the late-bound facade |
-| Readiness is decided by the lease row, not by the runtime | `checks/integration/runtime-readiness.ts` — real acquire/lose/expire/release cycle |
-| The compiled output survives `tsc` emit | `checks/emitted-*.mjs`, run against `dist/` |
-| `dist/` works without devDependencies | CI runs the compiled entry point and the health probe inside the built image |
-| The shipped probe reports healthy only while the lease is held | Rehearsed in the production image, over the compose network, as `USER node` on a read-only filesystem, against a real database |
-| A misconfigured runtime fails fast rather than holding a lease | Rehearsed: an invalid token fails at `ensurePollingMode` before anything is acquired, and the container healthcheck reports `unhealthy` |
-| The new runtime needs no new environment variables | Rehearsed with the legacy runtime's documented environment; it reached Telegram authentication on it. `TELEGRAM_UPDATE_MODE=polling` is already required and enforced by `ops/validate-production-env.sh` |
+| The shipped probe reports healthy only while the lease is held | Run in the production image, over the compose network, as `USER node` on a read-only filesystem |
+| A misconfigured runtime fails fast rather than holding a lease | An invalid token fails at `ensurePollingMode` before anything is acquired, and the container healthcheck reports `unhealthy` |
+| The new runtime needs no new environment variables | Rehearsed on the legacy runtime's documented environment; it reached Telegram authentication. `TELEGRAM_UPDATE_MODE=polling` is already required and enforced by `ops/validate-production-env.sh` |
 
 ## Not verified
 

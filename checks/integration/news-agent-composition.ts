@@ -99,20 +99,27 @@ test(
       assert.equal(await leaseApplication.renew({ name: leaseName, ownerId }), true);
       assert.equal(await leaseApplication.release({ name: leaseName, ownerId }), true);
 
-      // The late-bound persistence facade is bound and reaches the database --
-      // the AI provider's attempt recording depends on this being real, and a
-      // proxy that was never bound would throw here rather than return.
+      // The persistence facade reaches PostgreSQL. Note what this does NOT
+      // prove: resolving LEGACY_PERSISTENCE returns the container singleton the
+      // binder binds *from*, not the late-bound proxy, which is never registered
+      // under a token. Late binding is covered instead by the composition root
+      // refusing to boot with an unbound port, pinned in
+      // checks/application/news-agent-composition.ts.
       const persistence = moduleRef.get<LegacyPersistence>(LEGACY_PERSISTENCE, { strict: false });
       // A read, not a create: this check must not leave settings rows behind.
-      // null is the correct answer for an unconfigured channel -- what is being
-      // proven is that the call reaches PostgreSQL through a bound proxy rather
-      // than throwing "used before the container finished wiring it".
-      const settings = await persistence.getNewsSettings("@integration");
+      // The channel is namespaced because these files run as concurrent
+      // processes against one database, so an unqualified "@integration" would
+      // become flaky the day another check writes settings for it.
+      const settings = await persistence.getNewsSettings(`@integration-${randomUUID()}`);
       assert.equal(settings, null);
     } finally {
       await pool
         .query("delete from public.pipeline_leases where name = $1", [leaseName])
         .catch(() => {});
+      // close() ends the pool through DatabaseLifecycle, which was injected
+      // with the overridden PG_POOL. The end() below is belt-and-braces for a
+      // close() that failed part-way, hence the catch -- not a redundancy to
+      // tidy away.
       await moduleRef.close();
       await pool.end().catch(() => undefined);
     }

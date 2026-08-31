@@ -2,7 +2,7 @@ import "reflect-metadata";
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -33,11 +33,14 @@ test(
   { skip: !enabled || !connectionString },
   async () => {
     const pool = new Pool({ connectionString, max: 2 });
+    const temporaryDirectories: string[] = [];
     const leases = new PipelineLeasesRepository(pool, createDrizzleDatabase(pool));
     // Namespaced so a failed run cannot strand the real poller lease name.
     const leaseName = `${TELEGRAM_CONTROL_POLLER_LEASE_NAME}-check-${randomUUID()}`;
     const ownerId = randomUUID();
-    const filePath = join(await mkdtemp(join(tmpdir(), "readiness-")), "health.json");
+    const directory = await mkdtemp(join(tmpdir(), "readiness-"));
+    temporaryDirectories.push(directory);
+    const filePath = join(directory, "health.json");
     const health = new RuntimeHealthWorker({
       runtimeId: randomUUID(),
       botId: 4242,
@@ -72,14 +75,51 @@ test(
       for (const value of [snapshot.acquiredAt, snapshot.expiresAt, snapshot.serverNowAt]) {
         assert.match(value, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
       }
-      // now() is the database's clock, read in the same statement, and the
-      // lease it was read with is genuinely still in the future there.
-      assert.ok(Date.parse(snapshot.expiresAt) > Date.parse(snapshot.serverNowAt));
+      // The TTL was applied by PostgreSQL, not by the caller.
+      assert.equal(Date.parse(snapshot.expiresAt) - Date.parse(snapshot.acquiredAt), 60_000);
+
+      // serverNowAt really is the database's clock, and not this process's.
+      // Asserting `expiresAt > serverNowAt` proves nothing here -- the TTL has
+      // 60 seconds of slack and CI runs both on one machine -- so the process
+      // clock is moved instead. An implementation that filled serverNowAt from
+      // `new Date()` would follow the shifted clock; one that reads now() in
+      // the same statement does not. This is the regression that would restore
+      // a cross-clock comparison and, with a 40-second renewal margin, restart
+      // loop a healthy runtime on a skewed probe host.
+      const RealDate = Date;
+      const skewMs = 10 * 60_000;
+      class SkewedDate extends RealDate {
+        constructor(...args: unknown[]) {
+          if (args.length === 0) {
+            super(RealDate.now() + skewMs);
+          } else {
+            super(...(args as ConstructorParameters<typeof Date>));
+          }
+        }
+        static override now(): number {
+          return RealDate.now() + skewMs;
+        }
+      }
+      let skewed;
+      try {
+        globalThis.Date = SkewedDate as DateConstructor;
+        skewed = await leases.readPipelineLease(leaseName);
+      } finally {
+        globalThis.Date = RealDate;
+      }
+      assert.ok(skewed);
+      const drift = Math.abs(RealDate.parse(skewed.serverNowAt) - RealDate.now());
+      assert.ok(
+        drift < skewMs / 2,
+        `serverNowAt followed the process clock (drift ${drift}ms), so it is not the database's`,
+      );
 
       // 3. A second runtime that has not won the lease. Its file is fresh, its
       //    pid is alive, its heartbeat is current -- and it is serving nothing.
       //    This is the case a process-alive check gets wrong.
-      const duplicatePath = join(await mkdtemp(join(tmpdir(), "readiness-dup-")), "health.json");
+      const duplicateDirectory = await mkdtemp(join(tmpdir(), "readiness-dup-"));
+      temporaryDirectories.push(duplicateDirectory);
+      const duplicatePath = join(duplicateDirectory, "health.json");
       const duplicate = new RuntimeHealthWorker({
         runtimeId: randomUUID(),
         botId: 4242,
@@ -121,7 +161,15 @@ test(
       await pool
         .query("delete from public.pipeline_leases where name = $1", [leaseName])
         .catch(() => {});
-      await pool.end();
+      // Guarded: an unguarded rejection here would mask the assertion error
+      // that actually failed the test.
+      await pool.end().catch(() => undefined);
+      // stop() unlinks the readiness file, not the directory holding it.
+      await Promise.all(
+        temporaryDirectories.map((path) =>
+          rm(path, { recursive: true, force: true }).catch(() => undefined),
+        ),
+      );
     }
   },
 );
