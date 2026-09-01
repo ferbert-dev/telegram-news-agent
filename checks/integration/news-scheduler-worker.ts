@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 
 import { Pool } from "pg";
+import { withDueScheduleLock } from "./support/scheduler-lock.js";
 
 import { createDrizzleDatabase } from "../../src/database/drizzle-client.js";
 import { EditorialRepository } from "../../src/database/repositories/editorial-repository.js";
@@ -168,6 +169,7 @@ test(
   "worker resumes a checkpointed draft after a crash instead of repeating research",
   { skip: !enabled || !connectionString },
   async () => {
+    await withDueScheduleLock(connectionString as string, async () => {
     const pool = new Pool({ connectionString, max: 6 });
     const suffix = randomUUID();
     const channelId = `@worker-recovery-${suffix}`;
@@ -281,5 +283,6 @@ test(
       );
       await pool.end();
     }
+    });
   },
 );
