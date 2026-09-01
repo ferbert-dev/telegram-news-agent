@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { Pool, type PoolClient } from "pg";
 
+import { withDueScheduleLock } from "./support/scheduler-lock.js";
 import { createDrizzleDatabase } from "../../src/database/drizzle-client.js";
 import { SchedulerRepository } from "../../src/database/repositories/scheduler-repository.js";
 
@@ -117,6 +118,9 @@ test(
   "Scheduler persistence preserves claims, checkpoints, recurrence, unresolved pause, and Madrid DST boundaries",
   { skip: !enabled || !connectionString },
   async () => {
+    // Serialized against every other test that parks a row as due: the claim
+    // function is global, so two such files steal each other's row.
+    await withDueScheduleLock(connectionString as string, async () => {
     const pool = new Pool({ connectionString, max: 8 });
     const repository = new SchedulerRepository(
       pool,
@@ -596,5 +600,6 @@ test(
         .catch(() => {});
       await pool.end();
     }
+    });
   },
 );
