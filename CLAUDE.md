@@ -59,7 +59,7 @@ DATABASE_TEST_URL=postgresql://telegram_news_app:$POSTGRES_APP_PASSWORD@127.0.0.
   npm run test:integration:drizzle
 ```
 
-CI (`.github/workflows/deploy.yml`) runs this gate order on merge to `main`: `npm test` → `typecheck` → `test:drizzle` → `test:drizzle:sources` → `test:persistence` → `test:application` → `test:architecture` → `test:runtime` → `test:nest:build` → Docker image build → clean-database migrations (applied twice, to prove idempotency) + `database:status --require-applied` + `database:contract` + `database:drift` + both integration suites → image push → SSH deploy with health-gated rollback.
+CI (`.github/workflows/deploy.yml`) runs this gate order on merge to `main`: `npm test` → `typecheck` → `test:drizzle` → `test:drizzle:sources` → `test:persistence` → `test:application` → `test:architecture` → `test:runtime` → `test:nest:build` → Docker image build → clean-database migrations (applied twice, to prove idempotency) + `database:status --require-applied` + `database:contract` + `database:drift` + both integration suites → image push → SSH deploy with automatic rollback on failure. The gate is liveness, not health: three consecutive checks of `.State.Running` and `.RestartCount == 0`, then `ops/verify-production-runtime.sh`. `.State.Health` is read only for the `db` service, so the NestJS readiness probe is visible in `docker ps` but gates nothing — see `docs/nestjs-cutover-runbook.md`.
 
 Operator CLIs (all load `.env`): `npm run pipeline:run`, `npm run drafts -- list|preview|approve|publish|reconcile-sent|reconcile-not-sent`, `npm run sources -- list|add|disable|enable`, `npm run research`, `npm run telegram:check|control|smoke|send`, `npm run audit:flush`, `npm run usage:dashboard` (this one builds first and runs from `dist/`).
 
@@ -72,7 +72,7 @@ Two runtimes coexist by design, and this is the single most important fact about
 
 The `Dockerfile` now builds and ships `dist/` from a separate `build` stage (devDependencies stay in that stage), so the image *can* execute the TypeScript layer — but it does not. `CMD` is still `node src/telegram-bot.js`, and `compose.yaml`'s `bot` service still overrides it with the same command. **What runs in production is the legacy JS runtime; the compiled runtime is carried, not started.** Flipping it is `compose.nest.yaml`, an overlay no deployment path passes — `ops/deploy.sh` and CI compose only `compose.yaml` (plus `compose.test.yaml` / `compose.ssh-access.yaml`). Cutover means a reviewed change to a compose file, not a rebuild.
 
-`docs/nestjs-cutover-readiness.md` records what has and has not been verified about the NestJS runtime, and what cutover would involve.
+`docs/nestjs-cutover-readiness.md` records what has and has not been verified about the NestJS runtime; `docs/nestjs-cutover-runbook.md` is the release and rollback procedure. The legacy JS runtime stays in the repository and in the image through cutover and at least one stable release afterwards — it *is* the rollback. Do not delete `src/*.js`, including `research.js`, on the grounds that a typed replacement exists.
 
 Keep the legacy path working. Do not "clean up" a legacy module by pointing it at the Nest layer.
 
