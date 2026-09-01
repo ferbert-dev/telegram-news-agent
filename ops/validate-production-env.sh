@@ -105,6 +105,23 @@ for variable in "${credential_variables[@]}"; do
   fi
 done
 
+# The cutover switch. Optional -- an environment that never mentions it runs the
+# legacy entrypoint, which is compose.yaml's default. But a typo here does not
+# produce a helpful error at deploy time, it produces a container that cannot
+# start and a rollback that has to be driven by hand, so only the two real
+# runtimes are accepted. Checked in every mode, including --rollback-base: a bad
+# value is dangerous whichever direction it is travelling.
+if grep -Eq '^BOT_ENTRYPOINT=' "$env_file"; then
+  bot_entrypoint="$(sed -nE 's/^BOT_ENTRYPOINT=//p' "$env_file")"
+  case "$bot_entrypoint" in
+    src/telegram-bot.js|dist/composition/runtime-entry.js) ;;
+    *)
+      echo "BOT_ENTRYPOINT must be src/telegram-bot.js or dist/composition/runtime-entry.js, got '${bot_entrypoint}'" >&2
+      exit 1
+      ;;
+  esac
+fi
+
 if [[ "$mode" != "--legacy-complete" && "$mode" != "--rollback-base" ]]; then
   present_variables=(
     EXA_MODEL
