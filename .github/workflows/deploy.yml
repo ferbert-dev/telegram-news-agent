@@ -81,18 +81,15 @@ jobs:
           # would start the wrong runtime. Assert both directions so the default
           # cannot be flipped by accident.
           resolved_command() {
-            docker compose -f compose.yaml config \
-              | sed -n '/^  bot:/,/^  [a-z]/p' \
-              | sed -n '/command:/,/^    [a-z]/p' \
-              | sed -nE 's/^      - (.+)$/\1/p' \
-              | tr '\n' ' '
+            docker compose -f compose.yaml config --format json \
+              | jq -r '.services.bot.command | join(" ")'
           }
-          test "$(resolved_command)" = "node src/telegram-bot.js " || {
+          test "$(resolved_command)" = "node src/telegram-bot.js" || {
             echo "compose.yaml no longer defaults to the legacy entrypoint: $(resolved_command)" >&2
             exit 1
           }
           test "$(BOT_ENTRYPOINT=dist/composition/runtime-entry.js resolved_command)" \
-            = "node dist/composition/runtime-entry.js " || {
+            = "node dist/composition/runtime-entry.js" || {
             echo "BOT_ENTRYPOINT no longer selects the compiled runtime" >&2
             exit 1
           }

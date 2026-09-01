@@ -81,6 +81,11 @@ services:
     # Defaults to the legacy entrypoint, so an environment that never mentions
     # it behaves exactly as before. ops/validate-production-env.sh rejects any
     # value other than the two known runtimes.
+    #
+    # One caveat for whoever reads this next: a BOT_ENTRYPOINT exported in the
+    # shell that runs docker compose overrides --env-file, and rollback() would
+    # not restore it. Nothing in the ssh deploy path exports it, and nothing
+    # should start.
     command: ["node", "${BOT_ENTRYPOINT:-src/telegram-bot.js}"]
     depends_on:
       db:

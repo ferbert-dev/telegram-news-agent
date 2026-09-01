@@ -116,7 +116,7 @@ if grep -Eq '^BOT_ENTRYPOINT=' "$env_file"; then
   case "$bot_entrypoint" in
     src/telegram-bot.js|dist/composition/runtime-entry.js) ;;
     *)
-      echo "BOT_ENTRYPOINT must be src/telegram-bot.js or dist/composition/runtime-entry.js, got '${bot_entrypoint}'" >&2
+      echo "BOT_ENTRYPOINT must be src/telegram-bot.js or dist/composition/runtime-entry.js, or the line removed entirely, got '${bot_entrypoint}'" >&2
       exit 1
       ;;
   esac
