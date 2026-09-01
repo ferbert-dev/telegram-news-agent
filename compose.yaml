@@ -70,7 +70,23 @@ services:
       DATABASE_URL: postgresql://telegram_news_app:${POSTGRES_APP_PASSWORD}@db:5432/telegram_news
       DATABASE_POOL_MAX: 4
       APP_VERSION: ${APP_VERSION:-local}
-    command: ["node", "src/telegram-bot.js"]
+    # The cutover switch, and therefore the rollback switch.
+    #
+    # Interpolated from the same --env-file deploy.sh already snapshots to
+    # .env.production.rollback and restores in rollback(). That is the whole
+    # point: rollback restores the image and the environment but NOT this file,
+    # so a command written literally here would survive a rollback and the
+    # restored image would start the wrong runtime.
+    #
+    # Defaults to the legacy entrypoint, so an environment that never mentions
+    # it behaves exactly as before. ops/validate-production-env.sh rejects any
+    # value other than the two known runtimes.
+    #
+    # One caveat for whoever reads this next: a BOT_ENTRYPOINT exported in the
+    # shell that runs docker compose overrides --env-file, and rollback() would
+    # not restore it. Nothing in the ssh deploy path exports it, and nothing
+    # should start.
+    command: ["node", "${BOT_ENTRYPOINT:-src/telegram-bot.js}"]
     depends_on:
       db:
         condition: service_healthy

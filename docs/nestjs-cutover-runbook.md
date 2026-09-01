@@ -54,18 +54,38 @@ Three ways to close it, in order of preference:
 | **B. Snapshot the compose file** | `deploy.sh` copies `compose.yaml` to `compose.yaml.rollback` alongside the env snapshot and restores it in `rollback()` | Explicit, but adds a second restore path to the highest-stakes script. |
 | **C. Ship the overlay** | Add `compose.nest.yaml` to the bundle and to every `docker compose` invocation, including the two inside `rollback()` | Most invasive: four call sites, and forgetting the ones in `rollback()` reintroduces the same bug silently. |
 
-**Option A is the recommendation.** It reuses the environment rollback that
-already exists and is exercised on every deploy, rather than adding a parallel
-mechanism that is only exercised during an incident.
+**Option A was chosen and is implemented.** `compose.yaml` now reads
+`command: ["node", "${BOT_ENTRYPOINT:-src/telegram-bot.js}"]`, interpolated from
+the same `--env-file` that `deploy.sh` already snapshots to
+`.env.production.rollback` and restores in `rollback()`. It reuses a path that
+runs on every deploy rather than one that only runs during an incident.
 
-Whichever is chosen, it lands as its own reviewed PR **before** the cutover
-release, and is a no-op until the value actually changes.
+Two guardrails came with it:
+
+- `ops/validate-production-env.sh` accepts only the two real runtimes as a value,
+  in every mode. A typo does not produce a helpful error at deploy time — it
+  produces a container that cannot start and a rollback driven by hand.
+- CI asserts both directions: with no variable the resolved command is the legacy
+  entrypoint, with the variable set it is the compiled one. The default cannot be
+  flipped by accident.
+
+Proven against real containers before merge: the default starts
+`src/telegram-bot.js`; setting the variable starts
+`dist/composition/runtime-entry.js`; and restoring the previous environment file
+— exactly what `rollback()` does — brings the legacy runtime back.
+
+### How rollback behaves in each case
+
+| When it fails | What the environment restore does | Result |
+| --- | --- | --- |
+| The cutover deploy itself | Restores the previous file, which has no `BOT_ENTRYPOINT` | Back on legacy — correct |
+| A later deploy, already cut over | Restores a file that still selects the compiled runtime | Stays on the new runtime with the previous image — also correct |
 
 ## Prerequisites
 
 Do not start the release until all of these are true.
 
-- [ ] The rollback gap above is closed and merged.
+- [x] ~~The rollback gap above is closed and merged.~~ Done — `BOT_ENTRYPOINT`.
 - [ ] A **separate test bot and channel** exist, and the full smoke matrix has
       been run against them on the new runtime: `/news`, draft preview, approve,
       publish, reject, a scheduled run, quiet-hours deferral, `/stats`,
@@ -80,12 +100,37 @@ Do not start the release until all of these are true.
 - [ ] Deployment is scheduled **outside** 22:00–08:00 Europe/Madrid, so the
       quiet-hours path is not exercised for the first time during a release.
 
+## Where the value actually lives — read this before touching anything
+
+The production environment is **not** authored on the host. It is decrypted from
+`secrets/production.env.sops` in the repository on every deploy, shipped as
+`.env.production.incoming`, and promoted by `deploy.sh`.
+
+That has one consequence which matters more than anything else in this document:
+
+> **A host-side edit to `.env.production` is temporary.** The next merge to
+> `main` — for anything at all, an unrelated one-line change — re-decrypts SOPS
+> and promotes it. A cutover rolled back only on the host will silently come
+> back at the next deploy, hours or days later, with nobody connecting the two
+> events.
+
+So every change to `BOT_ENTRYPOINT` exists in two places, and both have to move:
+
+| Where | What it is | When it takes effect |
+| --- | --- | --- |
+| `secrets/production.env.sops` | the source of truth, in git | at the next deploy |
+| `.env.production` on the host | the running value | immediately |
+
+The host edit is how you stop an incident **now**. The SOPS revert is how you
+stop it coming back. Do the host edit first, then the revert — never only one.
+
 ## The release
 
 The switch is one value. Everything else is the existing, unchanged deploy path.
 
-1. **Set the entrypoint.** With option A, add `BOT_ENTRYPOINT=dist/composition/runtime-entry.js`
-   to the production environment. This is the entire cutover.
+1. **Set the entrypoint** in `secrets/production.env.sops`:
+   `BOT_ENTRYPOINT=dist/composition/runtime-entry.js`. This is the entire
+   cutover. It reaches the host through the normal deploy.
 2. **Merge and let CI deploy.** The workflow builds the image, runs migrations as
    a separate service, then `deploy.sh` brings up the bot.
 3. **Watch the gate.** `deploy.sh` requires three consecutive liveness checks and
@@ -106,16 +151,19 @@ The switch is one value. Everything else is the existing, unchanged deploy path.
 ### It is automatic during the deploy
 
 If the gate fails, `deploy.sh` restores the previous image and environment
-without intervention. With option A in place, restoring the environment also
-restores the entrypoint, so the container comes back on the legacy runtime.
+without intervention. Restoring the environment also restores the
+entrypoint, so the container comes back on the legacy runtime.
 Nothing further is required.
 
 ### Manual rollback, after the deploy reported success
 
-On the host, in `/opt/telegram-news-agent`:
+**Two steps, and the second is not optional.** Step 1 stops the incident; step 2
+stops it returning at the next unrelated deploy.
+
+#### Step 1 — on the host, in `/opt/telegram-news-agent`
 
 ```bash
-# 1. Put the entrypoint back. This is the whole rollback.
+# Put the entrypoint back. This stops the incident, and lasts until the next deploy.
 sed -i 's|^BOT_ENTRYPOINT=.*|BOT_ENTRYPOINT=src/telegram-bot.js|' .env.production
 
 # 2. Recreate the bot only. The database is untouched.
@@ -130,7 +178,17 @@ docker compose --env-file .env.production -f compose.yaml -f compose.ssh-access.
 ```
 
 The image does not need to change, because it carries both runtimes. If the image
-itself is suspect, add `APP_IMAGE=<previous digest>` to step 2.
+itself is suspect, add `APP_IMAGE=<previous digest>` to the recreate.
+
+If the recreate appears to do nothing, check the image reference before blaming
+the entrypoint: a missing or unpullable `APP_IMAGE` makes `up` fail and leaves
+the old container running, which looks exactly like a rollback that was ignored.
+
+#### Step 2 — in the repository, same session
+
+Revert `BOT_ENTRYPOINT` in `secrets/production.env.sops` to
+`src/telegram-bot.js` (or remove the line) and merge it. Until that lands, the
+next deploy of anything at all puts the failed runtime back.
 
 ### Rollback triggers
 
