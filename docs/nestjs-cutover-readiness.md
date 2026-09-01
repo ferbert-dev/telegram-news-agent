@@ -52,6 +52,10 @@ without surrendering the lease, so every readiness condition holds while
 nothing is served. Closing it needs the poller to publish a
 last-successful-poll timestamp into the readiness snapshot.
 
+The release and rollback procedure lives in
+[nestjs-cutover-runbook.md](nestjs-cutover-runbook.md), including a rollback gap
+that must be closed before any cutover attempt.
+
 ## What cutover would involve
 
 1. A test bot and channel, and a full manual pass on the new runtime: `/news`,
