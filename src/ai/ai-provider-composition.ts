@@ -64,6 +64,29 @@ export type FallbackAiProvider = {
 
 const FALLBACK_PROVIDER_DEADLINE_MS = 30_000;
 const FALLBACK_PROVIDER_ATTEMPTS = 3;
+
+/**
+ * How many consecutive throttled calls make a provider unusable for a while.
+ *
+ * Counts consecutive throttled CALLS, not attempts, so a single call's retries
+ * cannot open it. Per-call retry was already bounded at
+ * FALLBACK_PROVIDER_ATTEMPTS; nothing was bounded ACROSS calls, and that is the gap that hurt: a research run classifies
+ * one candidate at a time, so a provider returning 429 to everything was asked
+ * again for every remaining candidate. Measured on a real run: 344 calls x 3
+ * attempts = 1005 requests at 2.8/sec for six minutes, 986 of them 429s, and it
+ * only stopped because the process was killed.
+ */
+const THROTTLE_BREAKER_THRESHOLD = 5;
+
+/**
+ * How long a throttled provider is skipped before being tried again. Long
+ * enough that a rate limit has a chance to clear, short enough that a brief
+ * burst does not disable the provider for the life of the process.
+ */
+const THROTTLE_BREAKER_COOLDOWN_MS = 60_000;
+
+/** Error codes that mean "you are asking too often", as opposed to "this call failed". */
+const THROTTLE_ERROR_CODES = new Set(["rate_limited", "quota_exhausted"]);
 const FALLBACK_RETRY_BASE_DELAY_MS = 250;
 const FALLBACK_RETRY_MAX_DELAY_MS = 2_000;
 const FALLBACK_RETRY_JITTER_RATIO = 0.3;
@@ -134,6 +157,40 @@ export function createFallbackAiProvider(
 ): FallbackAiProvider {
   const available = providers.filter((provider): provider is AiProviderPort => Boolean(provider));
   if (!available.length) throw new Error("No AI provider is configured; enable Exa or set an OpenAI/Gemini API key");
+
+  /** Consecutive throttled calls, and when the provider may be tried again. */
+  const throttleState = new Map<string, { consecutive: number; openUntilMs: number }>();
+
+  const throttleFor = (name: string) => {
+    let state = throttleState.get(name);
+    if (!state) {
+      state = { consecutive: 0, openUntilMs: 0 };
+      throttleState.set(name, state);
+    }
+    return state;
+  };
+
+  const isThrottleOpen = (name: string) => now().getTime() < throttleFor(name).openUntilMs;
+
+  const recordThrottleOutcome = (name: string, errorCode: string | null) => {
+    const state = throttleFor(name);
+    if (errorCode === null) {
+      // A success clears the streak. A provider that answers is not throttling.
+      state.consecutive = 0;
+      state.openUntilMs = 0;
+      return;
+    }
+    if (!THROTTLE_ERROR_CODES.has(errorCode)) {
+      // A different failure is not evidence of throttling, so it must not
+      // accumulate toward opening the breaker.
+      state.consecutive = 0;
+      return;
+    }
+    state.consecutive += 1;
+    if (state.consecutive >= THROTTLE_BREAKER_THRESHOLD) {
+      state.openUntilMs = now().getTime() + THROTTLE_BREAKER_COOLDOWN_MS;
+    }
+  };
 
   const runAttempt = async (
     operation: AiProviderOperation,
@@ -271,6 +328,12 @@ export function createFallbackAiProvider(
     let attemptNumber = 0;
     for (const provider of available) {
       if (!provider[operation]) continue;
+      if (isThrottleOpen(provider.name)) {
+        // Skipped without a request. This is the whole point: the next 300
+        // candidates cost nothing instead of three requests each.
+        errors.push(new Error(`${provider.name} is throttled; skipped without calling`));
+        continue;
+      }
       throwIfAborted(parentSignal);
       const deadlineAtMs = now().getTime() + providerDeadlineMs;
       const controller = new AbortController();
@@ -284,7 +347,7 @@ export function createFallbackAiProvider(
           throwIfAborted(parentSignal);
           providerAttempt += 1;
           try {
-            return await runAttempt(
+            const result = await runAttempt(
               operation,
               input,
               provider,
@@ -293,6 +356,8 @@ export function createFallbackAiProvider(
               deadlineAtMs,
               controller,
             );
+            recordThrottleOutcome(provider.name, null);
+            return result;
           } catch (error) {
             errors.push(error);
             warn(operation, provider, error);
@@ -311,6 +376,9 @@ export function createFallbackAiProvider(
         }
       } catch (error) {
         throwIfAborted(parentSignal);
+        // Once per call, not once per attempt: the threshold counts consecutive
+        // throttled *calls*, so one call's three retries cannot open it alone.
+        recordThrottleOutcome(provider.name, classifyProviderError(error) ?? "unknown");
         if (traitsOf(provider.name, descriptors).haltsCascadeOnQuotaExhaustion && classifyProviderError(error) === "quota_exhausted") {
           throw new AiProvidersExhaustedError(typeof input.usageOperation === "string" ? input.usageOperation : operation, errors, correlationId);
         }
