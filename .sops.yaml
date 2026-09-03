@@ -3,3 +3,7 @@ creation_rules:
     input_type: dotenv
     output_type: dotenv
     age: age1hu8sepn3kau25tzy98nwlny9yr267k4xpnjlxhf9ek4lwlqpeumqlk5jkr
+  - path_regex: ^secrets/integration\.env\.sops$
+    input_type: dotenv
+    output_type: dotenv
+    age: age1hu8sepn3kau25tzy98nwlny9yr267k4xpnjlxhf9ek4lwlqpeumqlk5jkr

@@ -105,6 +105,48 @@ for variable in "${credential_variables[@]}"; do
   fi
 done
 
+# Stage guard. The two stages share this validator, one age recipient and one
+# host, so the only thing standing between them is which environment file is
+# promoted. A file that says which stage it belongs to lets the deploy refuse a
+# mismatch outright, instead of discovering it when the wrong bot starts posting
+# to the wrong channel.
+#
+# Absent means production, so today's file needs no change.
+# Absent means production, so today's file needs no change. Present-but-empty is
+# rejected rather than defaulted: an integration file whose stage was blanked by
+# accident would otherwise read as production, and this is the one value where
+# guessing has real consequences.
+if grep -Eq '^DEPLOY_STAGE=[[:space:]]*$' "$env_file"; then
+  echo "DEPLOY_STAGE is present but empty; remove the line or set production or integration" >&2
+  exit 1
+fi
+stage="$(sed -nE 's/^DEPLOY_STAGE=//p' "$env_file" | head -1)"
+case "${stage:-production}" in
+  production|integration) ;;
+  *)
+    echo "DEPLOY_STAGE must be production or integration, got '${stage}'" >&2
+    exit 1
+    ;;
+esac
+
+if [[ -n "${EXPECTED_DEPLOY_STAGE:-}" && "${stage:-production}" != "$EXPECTED_DEPLOY_STAGE" ]]; then
+  echo "This environment is for '${stage:-production}' but the deploy expects '${EXPECTED_DEPLOY_STAGE}'" >&2
+  exit 1
+fi
+
+# Integration must never be able to reach production's channel. The validator
+# cannot see production's value -- it is encrypted, and decrypting it here would
+# be worse than the problem -- so the rule is expressed the other way round: the
+# integration file has to name its own channel, and the deploy passes the one it
+# expects.
+if [[ "${stage:-production}" == "integration" && -n "${EXPECTED_CHANNEL_ID:-}" ]]; then
+  channel="$(sed -nE 's/^TELEGRAM_CHANNEL_ID=//p' "$env_file" | head -1)"
+  if [[ "$channel" != "$EXPECTED_CHANNEL_ID" ]]; then
+    echo "Integration environment names channel '${channel}', not the expected integration channel" >&2
+    exit 1
+  fi
+fi
+
 # The cutover switch. Optional -- an environment that never mentions it runs the
 # legacy entrypoint, which is compose.yaml's default. But a typo here does not
 # produce a helpful error at deploy time, it produces a container that cannot
