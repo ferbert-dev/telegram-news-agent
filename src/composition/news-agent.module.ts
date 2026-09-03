@@ -27,8 +27,16 @@ import type { PipelineLeaseApplicationPort } from "../operations/operations-appl
 import { LegacyNotionAuditGateway } from "../operations/legacy-notion-audit.gateway.js";
 
 import { TelegramPersistenceModule } from "../telegram/telegram-persistence.module.js";
-import { TELEGRAM_UPDATES_PERSISTENCE } from "../telegram/telegram-persistence.tokens.js";
-import type { TelegramUpdatesPersistence } from "../telegram/telegram-persistence.contracts.js";
+import {
+  TELEGRAM_CHECKPOINTS_PERSISTENCE,
+  TELEGRAM_NEWS_JOBS_PERSISTENCE,
+  TELEGRAM_UPDATES_PERSISTENCE,
+} from "../telegram/telegram-persistence.tokens.js";
+import type {
+  TelegramCheckpointsPersistence,
+  TelegramNewsJobsPersistence,
+  TelegramUpdatesPersistence,
+} from "../telegram/telegram-persistence.contracts.js";
 import { TelegramControlApplicationModule } from "../telegram/telegram-control-application.module.js";
 import {
   TELEGRAM_CONTROL_APPLICATION,
@@ -47,6 +55,9 @@ import {
   TelegramLegacyStatusGateway,
 } from "../telegram/transport/telegram-legacy-feature.gateways.js";
 import { TelegramControlTransportHandler } from "../telegram/transport/telegram-control-transport.handler.js";
+import { TelegramNewsJobWorker } from "../telegram/telegram-news-job-worker.js";
+import { TypedNewsJobWorkflowAdapter } from "../telegram/typed-news-job-workflow.adapter.js";
+import { TypedNewsJobDeliveryAdapter } from "../telegram/typed-news-job-delivery.adapter.js";
 import {
   TELEGRAM_CONTROL_POLLER_LEASE_NAME,
   TelegramPollingWorker,
@@ -64,6 +75,10 @@ import { TypedSchedulerNewsWorkflowAdapter } from "../scheduler/typed-scheduler-
 import { TypedResearchExecutionGatewayModule } from "../research/typed-research-execution.module.js";
 import { RESEARCH_EXECUTION_GATEWAY } from "../research/research-gateway.tokens.js";
 
+import { EditorialPersistenceModule } from "../editorial/editorial-persistence.module.js";
+import { EDITORIAL_PERSISTENCE } from "../editorial/editorial-persistence.tokens.js";
+import type { EditorialPersistence } from "../editorial/editorial-persistence.contracts.js";
+
 import { RuntimeHealthWorker } from "../runtime/runtime-health.js";
 import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
 import { randomUUID } from "node:crypto";
@@ -73,6 +88,7 @@ import { LateBoundPortRegistry } from "./late-bound-port.js";
 /** Worker tokens, in the coordinator's required start order. */
 export const TELEGRAM_POLLING_WORKER = Symbol("TELEGRAM_POLLING_WORKER");
 export const NEWS_SCHEDULER_WORKER = Symbol("NEWS_SCHEDULER_WORKER");
+export const TELEGRAM_NEWS_JOB_WORKER = Symbol("TELEGRAM_NEWS_JOB_WORKER");
 export const RUNTIME_HEALTH_WORKER = Symbol("RUNTIME_HEALTH_WORKER");
 
 export type NewsAgentRuntimeIdentity = {
@@ -103,6 +119,7 @@ export type NewsAgentModuleOptions = {
 export const RUNTIME_WORKER_NAMES: ReadonlyMap<symbol, string> = new Map([
   [TELEGRAM_POLLING_WORKER, "telegram-polling"],
   [NEWS_SCHEDULER_WORKER, "news-scheduler"],
+  [TELEGRAM_NEWS_JOB_WORKER, "telegram-news-jobs"],
   [RUNTIME_HEALTH_WORKER, "runtime-health"],
 ]);
 
@@ -145,6 +162,7 @@ export class NewsAgentModule {
     // that equality is what makes the health check verifiable rather than
     // self-asserted.
     const pollerOwnerId = randomUUID();
+    const newsJobOwnerId = randomUUID();
 
     // --- Late-bound ports -------------------------------------------------
     // Each of these is required by a `register()` call that runs before the
@@ -218,6 +236,11 @@ export class NewsAgentModule {
         DatabaseModule,
         PersistenceFacadeModule,
         TelegramPersistenceModule,
+        // The news-job workflow needs the draft row itself, to approve a
+        // review-status draft before publishing it on an automatic channel.
+        // `claim_draft_for_publication_with_policy` accepts only `approved`,
+        // so without this the automatic path could not publish at all.
+        EditorialPersistenceModule,
 
         TypedResearchExecutionGatewayModule.register({
           aiProvider: aiProvider as never,
@@ -333,6 +356,56 @@ export class NewsAgentModule {
             new NewsSchedulerWorker({ scheduler }),
         },
         {
+          provide: TELEGRAM_NEWS_JOB_WORKER,
+          inject: [
+            TELEGRAM_NEWS_JOBS_PERSISTENCE,
+            TELEGRAM_CHECKPOINTS_PERSISTENCE,
+            EDITORIAL_PERSISTENCE,
+            EDITORIAL_WORKFLOW_APPLICATION,
+            PIPELINE_LEASE_APPLICATION,
+            RESEARCH_EXECUTION_GATEWAY,
+            TELEGRAM_REVIEW_DELIVERY,
+          ],
+          useFactory: (
+            jobs: TelegramNewsJobsPersistence,
+            checkpoints: TelegramCheckpointsPersistence,
+            editorialPersistence: EditorialPersistence,
+            editorial: EditorialWorkflowApplicationPort,
+            leases: PipelineLeaseApplicationPort,
+            research: never,
+            delivery: never,
+          ) =>
+            // Registered unconditionally, with no equivalent of legacy's
+            // TELEGRAM_NEWS_JOB_MODE gate. On this runtime the gate would be a
+            // trap rather than a switch: RunTelegramNewsUseCase has no inline
+            // branch, so every `/news` enqueues a durable job. With no consumer
+            // the command answers "Research queued", nothing ever runs it, and
+            // the channel's next `/news` is suppressed as already-running --
+            // which is exactly the state the live test found the runtime in.
+            new TelegramNewsJobWorker({
+              jobs,
+              workflow: new TypedNewsJobWorkflowAdapter({
+                research: research as never,
+                editorial,
+                editorialPersistence,
+                checkpoints,
+                pipelineLease: leases,
+                // The same id the poller uses would let one worker renew the
+                // other's lease; a per-worker id keeps the holder identifiable.
+                ownerId: newsJobOwnerId,
+              }),
+              delivery: new TypedNewsJobDeliveryAdapter({
+                checkpoints,
+                reviewDelivery: delivery as never,
+                adminMessages: new TelegramSchedulerNotificationAdapter(
+                  token,
+                  callTelegram as unknown as never,
+                ),
+              }),
+              newClaimToken: () => randomUUID(),
+            }),
+        },
+        {
           // Started last and therefore stopped first: it only reports ready
           // once the poller owns its lease and the scheduler is running, and
           // it marks itself stopping before either begins draining.
@@ -356,7 +429,12 @@ export class NewsAgentModule {
             }),
         },
       ],
-      exports: [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER, RUNTIME_HEALTH_WORKER],
+      exports: [
+        TELEGRAM_POLLING_WORKER,
+        NEWS_SCHEDULER_WORKER,
+        TELEGRAM_NEWS_JOB_WORKER,
+        RUNTIME_HEALTH_WORKER,
+      ],
     };
   }
 }

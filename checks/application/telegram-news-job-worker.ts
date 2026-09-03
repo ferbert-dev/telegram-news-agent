@@ -247,3 +247,50 @@ test("a failure after delivery completes does not deliver again", async () => {
     `a completed delivery must never be retried, calls were ${calls.join(", ")}`,
   );
 });
+
+test("an outcome the delivery phase could not render is retried, not made durable", async () => {
+  // Each of these persists cleanly and then dies in delivery, ten attempts
+  // later, with the operator never told anything. The compiler covers `status`
+  // but not the fields that have to accompany it, which are the ones that
+  // cause the damage.
+  const unrenderable = [
+    { status: "review_ready", draftId: null },
+    { status: "published", draftId: "draft-1", publicationMessageId: null },
+    { status: "published", draftId: "draft-1", publicationMessageId: 0 },
+    { status: "published", draftId: "draft-1", publicationMessageId: -3 },
+    { status: "blocked_by_policy", draftId: null },
+  ];
+
+  for (const outcome of unrenderable) {
+    const { worker, calls } = build({
+      workflow: {
+        async run() {
+          calls.push("workflow");
+          return outcome;
+        },
+      },
+    });
+    assert.equal(await worker.runOnce(), "advanced");
+    assert.ok(
+      !calls.includes("recordOutcome"),
+      `${JSON.stringify(outcome)} must not be recorded as a durable outcome`,
+    );
+    assert.ok(
+      calls.includes("retryExecution"),
+      `${JSON.stringify(outcome)} must be retried`,
+    );
+  }
+});
+
+test("no_candidates needs no draft, so a dry run is not mistaken for a broken one", async () => {
+  const { worker, calls } = build({
+    workflow: {
+      async run() {
+        calls.push("workflow");
+        return { status: "no_candidates", draftId: null };
+      },
+    },
+  });
+  assert.equal(await worker.runOnce(), "advanced");
+  assert.deepEqual(calls, ["claim", "workflow", "renew", "recordOutcome"]);
+});

@@ -12,7 +12,9 @@ import {
   NEWS_SCHEDULER_WORKER,
   NewsAgentModule,
   RUNTIME_HEALTH_WORKER,
+  RUNTIME_WORKER_NAMES,
   startedWorkerNames,
+  TELEGRAM_NEWS_JOB_WORKER,
   TELEGRAM_POLLING_WORKER,
   type NewsAgentRuntimeIdentity,
 } from "./news-agent.module.js";
@@ -64,6 +66,7 @@ export const VALIDATED_UPDATE_MODE = "polling";
 export const RUNTIME_WORKER_TOKENS = [
   TELEGRAM_POLLING_WORKER,
   NEWS_SCHEDULER_WORKER,
+  TELEGRAM_NEWS_JOB_WORKER,
   RUNTIME_HEALTH_WORKER,
 ] as const;
 
@@ -152,8 +155,16 @@ export function composeRuntime(options: {
  */
 async function main(): Promise<void> {
   const run = await startNewsAgentRuntime();
+  // Derived from the token list, not restated. The hand-written version of
+  // this line went stale the moment a fourth worker was added, and a log that
+  // names the wrong workers is worse than one that names none.
   process.stdout.write(
-    `${JSON.stringify({ event: "runtime_started", workers: ["telegram-polling", "news-scheduler", "runtime-health"] })}\n`,
+    `${JSON.stringify({
+      event: "runtime_started",
+      workers: RUNTIME_WORKER_TOKENS.map(
+        (workerToken) => RUNTIME_WORKER_NAMES.get(workerToken) ?? String(workerToken.description),
+      ),
+    })}\n`,
   );
 
   // `stopSignal.aborted` is a boolean, so awaiting it resolves immediately and

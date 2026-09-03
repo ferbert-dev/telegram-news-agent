@@ -4,6 +4,7 @@ import { Test } from "@nestjs/testing";
 
 import {
   NEWS_SCHEDULER_WORKER,
+  TELEGRAM_NEWS_JOB_WORKER,
   NewsAgentModule,
   startedWorkerNames,
   RUNTIME_HEALTH_WORKER,
@@ -165,6 +166,7 @@ test("the worker names in the readiness file come from the tokens actually start
   assert.deepEqual(startedWorkerNames([...RUNTIME_WORKER_TOKENS]), [
     "telegram-polling",
     "news-scheduler",
+    "telegram-news-jobs",
   ]);
   // Drop the scheduler token and the name disappears with it.
   assert.deepEqual(
@@ -308,7 +310,12 @@ test("the health worker starts last, which is what makes the readiness file mean
   // that order broken, so it is asserted directly.
   assert.deepEqual(
     [...RUNTIME_WORKER_TOKENS],
-    [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER, RUNTIME_HEALTH_WORKER],
+    [
+      TELEGRAM_POLLING_WORKER,
+      NEWS_SCHEDULER_WORKER,
+      TELEGRAM_NEWS_JOB_WORKER,
+      RUNTIME_HEALTH_WORKER,
+    ],
   );
   assert.equal(RUNTIME_WORKER_TOKENS.at(-1), RUNTIME_HEALTH_WORKER);
 });
