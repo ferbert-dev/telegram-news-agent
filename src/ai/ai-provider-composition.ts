@@ -393,11 +393,26 @@ export function createFallbackAiProvider(
     const correlationId = typeof input.traceId === "string" ? input.traceId : newAttemptId();
     const parentSignal = isAbortSignal(input.signal) ? input.signal : null;
     throwIfAborted(parentSignal);
+    // The breaker applies here too. This path is bounded elsewhere -- the
+    // semantic dedup budget caps it at a few calls per run -- so the saving is
+    // small, but a 429 here is the same evidence of throttling as one from the
+    // cascading path, and it should count toward the same streak rather than
+    // being invisible to it.
+    if (isThrottleOpen(provider.name)) {
+      throw new AiProvidersExhaustedError(
+        operation,
+        [new Error(`${provider.name} is throttled; skipped without calling`)],
+        correlationId,
+      );
+    }
     const controller = new AbortController();
     try {
-      return await runAttempt(operation, input, provider, correlationId, 1, now().getTime() + providerDeadlineMs, controller);
+      const result = await runAttempt(operation, input, provider, correlationId, 1, now().getTime() + providerDeadlineMs, controller);
+      recordThrottleOutcome(provider.name, null);
+      return result;
     } catch (error) {
       throwIfAborted(parentSignal);
+      recordThrottleOutcome(provider.name, classifyProviderError(error) ?? "unknown");
       warn(operation, provider, error);
       throw new AiProvidersExhaustedError(operation, [error], (error as { traceId?: string }).traceId ?? correlationId);
     }

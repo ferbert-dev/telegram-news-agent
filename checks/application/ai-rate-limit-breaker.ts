@@ -140,3 +140,37 @@ test("a healthy call between throttles resets the streak", async () => {
   }
   assert.equal(calls, afterSuccess + 12, "the breaker must not still be counting the earlier streak");
 });
+
+test("the single-attempt path shares the breaker rather than being invisible to it", async () => {
+  // generateStructuredOnce is the non-cascading path, used by semantic story
+  // deduplication. It is bounded elsewhere, so it cannot storm on its own --
+  // but a 429 there is the same evidence of throttling, and once the breaker is
+  // open it must stop calling too.
+  let calls = 0;
+  const ai = createFallbackAiProvider(
+    [
+      provider("openai", async () => {
+        calls += 1;
+        throw rateLimited();
+      }) as never,
+    ],
+    { sleep: async () => undefined, log: { warn() {}, info() {} } as never },
+  );
+
+  // Five throttled single-attempt calls reach the threshold...
+  for (let i = 0; i < 5; i += 1) {
+    await ai.generateStructuredOnce({ schemaName: "s", input: {} } as never).catch(() => undefined);
+  }
+  const afterThreshold = calls;
+  assert.equal(afterThreshold, 5, "each single-attempt call makes exactly one request");
+
+  // ...and the next ones make no request at all.
+  for (let i = 0; i < 10; i += 1) {
+    await ai.generateStructuredOnce({ schemaName: "s", input: {} } as never).catch(() => undefined);
+  }
+  assert.equal(calls, afterThreshold, "an open breaker must stop the single-attempt path too");
+
+  // And the streak it built is shared: the cascading path is open as well.
+  await ai.generateStructured({ schemaName: "s", input: {} } as never).catch(() => undefined);
+  assert.equal(calls, afterThreshold, "the streak must be shared across both entry points");
+});
