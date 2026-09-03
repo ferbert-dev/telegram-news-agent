@@ -17,6 +17,7 @@ would run it instead.
 | The whole application graph constructs with real adapters | `checks/application/news-agent-composition.ts` |
 | It also constructs against a real PostgreSQL, and reaches it | `checks/integration/news-agent-composition.ts` — drives the lease application through to the atomic function |
 | The composition root refuses to boot with a late-bound port unbound | `checks/application/news-agent-composition.ts` — verified by deleting each of the five `bind()` calls in turn |
+| `/news` enqueues durably and a concurrent request is suppressed, not duplicated | `checks/integration/telegram-news-command.ts` — the real use case against the real atomic function |
 | Readiness is decided by the lease row, not by the runtime | `checks/integration/runtime-readiness.ts` — real acquire/lose/expire/release cycle |
 | Lease expiry is judged on PostgreSQL's clock, not the probe's | Same file — the process clock is shifted ten minutes and `serverNowAt` does not follow it |
 | The composition root cannot forget a late-bound port | `checks/application/news-agent-composition.ts` — creation lives only on the registry, so there is no unregistered constructor to omit |
