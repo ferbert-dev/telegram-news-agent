@@ -112,6 +112,14 @@ done
 # to the wrong channel.
 #
 # Absent means production, so today's file needs no change.
+# Absent means production, so today's file needs no change. Present-but-empty is
+# rejected rather than defaulted: an integration file whose stage was blanked by
+# accident would otherwise read as production, and this is the one value where
+# guessing has real consequences.
+if grep -Eq '^DEPLOY_STAGE=[[:space:]]*$' "$env_file"; then
+  echo "DEPLOY_STAGE is present but empty; remove the line or set production or integration" >&2
+  exit 1
+fi
 stage="$(sed -nE 's/^DEPLOY_STAGE=//p' "$env_file" | head -1)"
 case "${stage:-production}" in
   production|integration) ;;
