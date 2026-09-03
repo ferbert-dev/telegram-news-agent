@@ -74,6 +74,20 @@ jobs:
             -f compose.yaml \
             -f compose.nest.yaml \
             config --quiet --no-env-resolution
+          # Same reasoning for the integration stage: a broken overlay would
+          # only surface when a deploy tried to use it.
+          docker compose \
+            -f compose.yaml \
+            -f compose.integration.yaml \
+            config --quiet --no-env-resolution
+          # The two stages must never resolve to the same compose project, or
+          # they would share containers and the postgres volume.
+          prod_project="$(docker compose -f compose.yaml -f compose.ssh-access.yaml config --format json | jq -r .name)"
+          int_project="$(docker compose -f compose.yaml -f compose.integration.yaml config --format json | jq -r .name)"
+          test "$prod_project" != "$int_project" || {
+            echo "integration and production resolve to the same compose project: $prod_project" >&2
+            exit 1
+          }
           # The default must stay legacy. BOT_ENTRYPOINT is the cutover switch,
           # and the reason it is a variable is that deploy.sh restores the
           # environment file on rollback but not compose.yaml -- so a command

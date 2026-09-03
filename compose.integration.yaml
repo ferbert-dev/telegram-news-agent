@@ -1,0 +1,47 @@
+# The integration stage: a second, fully isolated stack on the same host.
+#
+# Used as `docker compose -p telegram-news-agent-int -f compose.yaml
+# -f compose.integration.yaml ...`. The project name is what isolates it: it
+# scopes the container names, the network and — importantly — the postgres
+# volume, so integration cannot read or write production's data even by
+# accident.
+#
+# Isolation, and where each boundary comes from:
+#   database   project-scoped volume, so a separate PGDATA entirely
+#   bot        a different TELEGRAM_BOT_TOKEN in secrets/integration.env.sops
+#   channel    a different TELEGRAM_CHANNEL_ID in the same file
+#   runtime    BOT_ENTRYPOINT selects the compiled NestJS runtime here, while
+#              production stays on the legacy entrypoint
+#   host dir   /opt/telegram-news-agent-int, so the two stacks never share a
+#              compose file or an environment file
+#
+# Deliberately NOT set here: memory limits. They inherit from compose.yaml until
+# the free memory on the box is known. Two full stacks at compose.yaml's budget
+# is roughly 768m of steady state, and an OOM kill would take production's bot
+# with it — so size these once, from a real measurement, rather than guessing.
+name: telegram-news-agent-int
+
+services:
+  db:
+    # A smaller footprint than production: integration holds one channel's test
+    # data, not a live history.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - effective_cache_size=128MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=12
+      - -c
+      - wal_buffers=4MB
+
+  bot:
+    environment:
+      # Distinguishable in logs and in /status, so nobody has to guess which
+      # stage a message came from.
+      APP_VERSION: ${APP_VERSION:-local}-int
