@@ -527,3 +527,44 @@ test("a failed admin message propagates, so the delivery phase retries it", asyn
     /telegram unavailable/,
   );
 });
+
+test("publication is keyed on the job row's channel, not the snapshot's copy of it", async () => {
+  // The snapshot is a point-in-time copy taken at enqueue. The row is what the
+  // atomic function recorded the request against, and it is what the
+  // one-job-per-channel rule and the policy-block lookup are keyed on. A drift
+  // between them must resolve to the row, or a job would publish to and be
+  // policy-checked against a channel other than the one it belongs to.
+  const publishInputs: Record<string, unknown>[] = [];
+  const { adapter } = harness({
+    checkpoints: checkpointRow({
+      settings_snapshot: {
+        ...SETTINGS,
+        approvalPolicy: "automatic",
+        channelId: "@stale-snapshot-channel",
+      } as never,
+    }),
+    draftStatus: "approved",
+  });
+  const inner = adapter as unknown as {
+    options: { editorial: { publishApprovedDraft: (input: unknown) => Promise<unknown> } };
+  };
+  const original = inner.options.editorial.publishApprovedDraft.bind(inner.options.editorial);
+  inner.options.editorial.publishApprovedDraft = async (input: unknown) => {
+    publishInputs.push(input as Record<string, unknown>);
+    return original(input);
+  };
+
+  await adapter.run(
+    job({
+      telegram_channel_id: "@real-channel",
+      settings_snapshot: {
+        ...SETTINGS,
+        approvalPolicy: "automatic",
+        channelId: "@stale-snapshot-channel",
+      } as never,
+    }),
+    {},
+  );
+
+  assert.equal(publishInputs[0]?.channelId, "@real-channel");
+});

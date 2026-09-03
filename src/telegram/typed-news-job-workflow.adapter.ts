@@ -142,7 +142,7 @@ export class TypedNewsJobWorkflowAdapter implements TelegramNewsJobWorkflowPort 
         existing.status === "review_ready" &&
         existingSettings.approvalPolicy === "automatic"
       ) {
-        return this.publishCheckpointedDraft(existing, existingSettings, signal);
+        return this.publishCheckpointedDraft(job, existing, existingSettings, signal);
       }
       return this.outcomeFromCheckpoint(existing);
     }
@@ -152,7 +152,12 @@ export class TypedNewsJobWorkflowAdapter implements TelegramNewsJobWorkflowPort 
 
     let generated: { draftId: string; preview: string; windowHours: number } | null = null;
     try {
-      generated = await this.research(settings, snapshot, signal);
+      generated = await this.research(
+        job.telegram_channel_id,
+        settings,
+        snapshot,
+        signal,
+      );
     } catch (error) {
       if (!isNoCandidates(error)) throw error;
       // A dry run is a normal terminal outcome, not a failure -- but it must be
@@ -182,7 +187,7 @@ export class TypedNewsJobWorkflowAdapter implements TelegramNewsJobWorkflowPort 
     });
 
     if (settings.approvalPolicy === "automatic") {
-      return this.publishCheckpointedDraft(checkpoint, settings, signal);
+      return this.publishCheckpointedDraft(job, checkpoint, settings, signal);
     }
     return this.outcomeFromCheckpoint(checkpoint);
   }
@@ -195,6 +200,7 @@ export class TypedNewsJobWorkflowAdapter implements TelegramNewsJobWorkflowPort 
    * publish is a separate, checkpointed step.
    */
   private async research(
+    channelId: string,
     settings: NormalizedSettings,
     snapshot: JsonObject,
     signal?: AbortSignal,
@@ -257,7 +263,7 @@ export class TypedNewsJobWorkflowAdapter implements TelegramNewsJobWorkflowPort 
             allowUnverified: !selected.source.is_primary,
             lease: { name: this.leaseName, ownerId: this.options.ownerId },
             languageCode: settings.languageCode,
-            channelId: settings.channelId ?? null,
+            channelId,
             settingsSnapshot: generationSettings,
           } as never,
           signal,
@@ -293,6 +299,7 @@ export class TypedNewsJobWorkflowAdapter implements TelegramNewsJobWorkflowPort 
    * exists. Reproduces `publishCheckpointedDraft` in src/news-search.js.
    */
   private async publishCheckpointedDraft(
+    job: TelegramNewsJobClaimRow,
     checkpoint: TelegramNewsCheckpointRow,
     settings: NormalizedSettings,
     signal?: AbortSignal,
@@ -302,7 +309,12 @@ export class TypedNewsJobWorkflowAdapter implements TelegramNewsJobWorkflowPort 
     if (!draftId) {
       throw new Error("Automatic approval requires a checkpointed draft");
     }
-    const channelId = settings.channelId ?? null;
+    // The job row's channel, not the settings snapshot's. The snapshot is a
+    // point-in-time copy taken at enqueue; the row is what the atomic function
+    // recorded the request against, and it is what the suppression rule and
+    // the policy-block lookup are keyed on. They agree today, and when they
+    // stop agreeing the row is the one that is right.
+    const channelId = job.telegram_channel_id;
     if (!channelId) {
       throw new Error("Automatic approval requires Telegram configuration");
     }
