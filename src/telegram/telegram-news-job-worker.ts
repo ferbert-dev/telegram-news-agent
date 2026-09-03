@@ -1,12 +1,20 @@
 import type { RuntimeWorker } from "../runtime/runtime-coordinator.js";
 import type {
+  RecordTelegramNewsJobOutcomeInput,
   TelegramNewsJobClaimRow,
   TelegramNewsJobsPersistence,
 } from "./telegram-persistence.contracts.js";
 
-/** What a job's research phase produced. Mirrors the durable outcome columns. */
+/**
+ * What a job's research phase produced.
+ *
+ * `status` is taken from the persistence contract rather than restated, so the
+ * compiler checks this boundary instead of a cast hiding it. The contract
+ * excludes "failed" and "already_running" from a recorded outcome -- those are
+ * states the SQL functions set themselves, not results a run can report.
+ */
 export type TelegramNewsJobOutcome = {
-  status: "review_ready" | "published" | "no_candidates" | "blocked_by_policy";
+  status: RecordTelegramNewsJobOutcomeInput["outcomeStatus"];
   draftId?: string | null;
   publicationMessageId?: number | null;
 };
@@ -213,7 +221,7 @@ export class TelegramNewsJobWorker implements RuntimeWorker {
         outcomeStatus: outcome.status,
         draftId: outcome.draftId ?? null,
         publicationMessageId: outcome.publicationMessageId ?? null,
-      } as never);
+      });
       if (!saved) throw new Error("Telegram news job claim was lost before outcome");
       outcomePersisted = true;
       // Inside the try on purpose, matching legacy: stopping the heartbeat can
@@ -234,7 +242,7 @@ export class TelegramNewsJobWorker implements RuntimeWorker {
         errorCode: failure.errorCode,
         maxAttempts: this.options.maxExecutionAttempts,
         terminal: failure.terminal,
-      } as never);
+      });
       if (!saved) throw new Error("Telegram news job claim was lost before retry");
       return "advanced";
     }
@@ -268,7 +276,7 @@ export class TelegramNewsJobWorker implements RuntimeWorker {
         claimToken: job.claim_token,
         errorCode: "admin_delivery_failed",
         maxAttempts: this.options.maxDeliveryAttempts,
-      } as never);
+      });
       if (!saved) {
         throw new Error("Telegram news job claim was lost before delivery retry");
       }
