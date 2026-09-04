@@ -76,15 +76,20 @@ echo "Credentials in $file"
 probe openai "$(value_of OPENAI_API_KEY)" "https://api.openai.com/v1/models" "Authorization: Bearer "
 probe gemini "$(value_of GEMINI_API_KEY)" "https://generativelanguage.googleapis.com/v1beta/models?key=" ""
 
-# Exa is reported but deliberately NOT probed.
+# Exa is reported but deliberately NOT probed. Checked against Exa's API
+# reference (exa.ai/docs) rather than assumed:
 #
-# It has no free credential endpoint: the only way to learn whether a key is
-# accepted is to run a search, and searches are metered -- EXA_DAILY_SEARCH_CAP
-# exists precisely because they cost. Spending one on every credential check
-# would make this script a recurring charge, and a GET against the search
-# endpoint answers 404 for method-not-allowed regardless of the key, which is
-# no verdict at all. (That 404 was reported here as a rejection once; it was
-# this probe being wrong, not the key.)
+#   - There is no free credential endpoint. No /usage, /account or /me. The
+#     only way to learn whether a key is accepted is to run a search, and
+#     searches are metered -- EXA_DAILY_SEARCH_CAP exists because they cost.
+#     A credential check that spends quota every time it runs is a bad trade.
+#   - Auth is `Authorization: Bearer <key>`, and /search is POST-only.
+#
+# An earlier version of this probe sent `x-api-key` in a GET and reported the
+# resulting 404 as a rejected key. Both the header and the method were wrong;
+# the key was fine. Our own provider does not hand-roll this at all -- it uses
+# the official exa-js SDK (src/exa-provider.js) -- so there is no request shape
+# here worth duplicating.
 exa_key="$(value_of EXA_API_KEY)"
 if [[ "$(value_of EXA_ENABLED)" != "true" ]]; then
   printf '  %-8s not enabled (EXA_ENABLED is not true)\n' "exa"
