@@ -93,7 +93,20 @@ function auditProvider(providers, provider, model) {
   }
 }
 
-const DEFAULT_CLASSIFICATION_CONCURRENCY = 6;
+// One by default: exactly today's production behaviour.
+//
+// The pool is a large win -- it took an integration /news from eleven minutes
+// of filtering to two -- but the default must not change production silently.
+// Six concurrent calls each retrying three times puts up to eighteen requests
+// in flight against a provider, and the legacy runtime that production still
+// executes has NO circuit breaker (src/ai-provider.js): a rate-limited
+// provider there is unbounded across calls. That is the exact shape of the
+// storm measured on integration: 8,030 wasted 429s.
+//
+// Integration opts in through EXCLUDED_TOPIC_CLASSIFICATION_CONCURRENCY, where
+// the typed runtime's breaker does bound it. Production can adopt it as a
+// deliberate change, after the breaker reaches the path it runs.
+const DEFAULT_CLASSIFICATION_CONCURRENCY = 1;
 
 /**
  * How many excluded-topic classifications may be in flight at once.
@@ -147,6 +160,9 @@ export async function applyExcludedTopicPolicy({
   excludedTopicCodes,
   aiProvider,
   stage,
+  // Injectable so a test can drive the pool without reaching into the
+  // environment, and so a caller can bound it per stage later.
+  concurrency = classificationConcurrency(),
 }) {
   const topicCodes = normalizeExcludedTopicCodes(excludedTopicCodes);
   const inputCandidates = Array.isArray(candidates) ? candidates : [];
@@ -216,7 +232,7 @@ export async function applyExcludedTopicPolicy({
 
   const classified = await mapSettledWithConcurrency(
     needsClassification,
-    classificationConcurrency(),
+    concurrency,
     async (index) => {
       // Per-candidate collections, merged in index order below, so a faster
       // classification cannot reorder another candidate's usage events.

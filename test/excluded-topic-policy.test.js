@@ -397,6 +397,10 @@ test("classification runs concurrently but results keep their input order", asyn
     excludedTopicCodes: ["war_conflict"],
     aiProvider,
     stage: "discovery",
+    // Passed explicitly: the default is 1, so that production is unchanged by
+    // the pool existing. A test that relied on the default would be asserting
+    // the deployment's configuration rather than the pool's behaviour.
+    concurrency: 6,
   });
 
   assert.deepEqual(
@@ -484,4 +488,46 @@ test("an empty excluded-topic list still costs no AI call at all", async () => {
   assert.equal(calls, 0);
   assert.equal(result.audit.enabled, false);
   assert.equal(result.eligible.length, 1);
+});
+
+test("the default is one call at a time, so production is unchanged by the pool existing", async () => {
+  // The pool is a large win and a production risk, and those are separable.
+  // Six concurrent calls each retrying three times puts eighteen requests in
+  // flight against a provider; the legacy runtime production executes has no
+  // circuit breaker (src/ai-provider.js) to bound that across calls. The same
+  // shape measured on integration produced 8,030 wasted 429s.
+  //
+  // So the default is production's existing behaviour, and a deployment opts
+  // in. This asserts the default rather than the opt-in, because a default
+  // that silently changed would change production on the next merge.
+  let inFlight = 0;
+  let peak = 0;
+  const candidates = Array.from({ length: 6 }, (_, index) => ({
+    title: `Candidate ${index}`,
+    summary: `Summary ${index}`,
+    canonicalUrl: `https://example.test/${index}`,
+    discoveryKind: "rss_feed",
+  }));
+
+  await applyExcludedTopicPolicy({
+    candidates,
+    excludedTopicCodes: ["war_conflict"],
+    stage: "discovery",
+    aiProvider: {
+      async generateStructured() {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return {
+          value: { assessments: [{ topicCode: "war_conflict", relation: "unrelated" }] },
+          usageEvents: [],
+          provider: "openai",
+          model: "test-model",
+        };
+      },
+    },
+  });
+
+  assert.equal(peak, 1, "the default must classify one candidate at a time");
 });

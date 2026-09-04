@@ -132,3 +132,12 @@ services:
       # Delivery attempts keep their budget: retrying a Telegram send is cheap
       # and is what gets the failure message to the operator at all.
       TELEGRAM_NEWS_JOB_MAX_EXECUTION_ATTEMPTS: "1"
+
+      # Six concurrent excluded-topic classifications instead of one.
+      #
+      # The default is 1 -- production's behaviour -- because six calls each
+      # retrying three times puts eighteen requests in flight, and the legacy
+      # runtime production executes has no circuit breaker to bound that. Here
+      # the typed runtime does, so the speed-up is safe to take: it turned an
+      # eleven-minute filtering pass into roughly two.
+      EXCLUDED_TOPIC_CLASSIFICATION_CONCURRENCY: "6"
