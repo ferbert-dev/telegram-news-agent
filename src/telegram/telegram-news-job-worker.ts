@@ -323,6 +323,18 @@ export class TelegramNewsJobWorker implements RuntimeWorker {
     const handle = this.options.setIntervalImpl(() => {
       void renew();
     }, this.options.claimHeartbeatIntervalMs);
+    // Unref, as legacy does (src/telegram-news-jobs.js:223).
+    //
+    // A referenced interval keeps the Node event loop alive on its own. The
+    // clear in runOnce's `finally` normally handles it, but that only runs when
+    // the iteration finishes -- and research does not honour the abort signal,
+    // so a shutdown during a research pass reaches the coordinator's drain
+    // deadline with this timer still pending. A referenced timer then holds the
+    // process open until SIGKILL, which is what both live runs needed.
+    //
+    // Optional-called because setIntervalImpl is injectable and a test's fake
+    // returns a plain number.
+    (handle as { unref?: () => void } | undefined)?.unref?.();
     let cleared = false;
     return {
       renew,
