@@ -14,7 +14,24 @@ cd "$repo"
 
 readonly PROJECT="telegram-news-agent-e2e"
 readonly PORT=55499
-readonly URL="postgresql://telegram_news_app:e2e-local-only-app@127.0.0.1:${PORT}/telegram_news"
+readonly ENV_FILE=".env.e2e"
+
+# Credentials are generated per run, never committed. The database is bound to
+# loopback and destroyed on `down`, so their only job is to exist.
+if [[ ! -f "$ENV_FILE" ]]; then
+  umask 077
+  {
+    printf 'E2E_POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)"
+    printf 'E2E_POSTGRES_APP_PASSWORD=%s\n' "$(openssl rand -hex 16)"
+  } > "$ENV_FILE"
+fi
+# shellcheck disable=SC1090
+set -a; . "./$ENV_FILE"; set +a
+
+url() {
+  printf 'postgresql://%s:%s@127.0.0.1:%s/%s' \
+    telegram_news_app "$E2E_POSTGRES_APP_PASSWORD" "$PORT" telegram_news
+}
 
 compose=(docker compose -p "$PROJECT" -f compose.e2e.yaml)
 
@@ -40,16 +57,17 @@ case "${1:-run}" in
     #
     # CI and production both migrate as telegram_news_app. A rig that did
     # otherwise would not be testing the same database.
-    DATABASE_URL="$URL" node scripts/migrate.mjs
+    DATABASE_URL="$(url)" node scripts/migrate.mjs
     echo "Rig ready on 127.0.0.1:${PORT}"
     ;;
   down)
     # -v because a rig that accumulates state stops being a clean check.
     "${compose[@]}" down -v --remove-orphans
-    echo "Rig removed, volume included."
+    rm -f "$ENV_FILE"
+    echo "Rig removed, volume and generated credentials included."
     ;;
   run)
-    RUN_DATABASE_INTEGRATION=1 DATABASE_TEST_URL="$URL" \
+    RUN_DATABASE_INTEGRATION=1 DATABASE_TEST_URL="$(url)" \
       npx tsx --test checks/e2e/*.ts
     ;;
   all)

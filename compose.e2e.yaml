@@ -23,11 +23,14 @@ services:
     environment:
       POSTGRES_DB: telegram_news
       POSTGRES_USER: postgres
-      # Fixed and non-secret. This database holds nothing but fixtures, is
-      # bound to loopback only, and is destroyed after every run -- a
-      # required-variable prompt would only make the rig harder to start.
-      POSTGRES_PASSWORD: e2e-local-only
-      POSTGRES_APP_PASSWORD: e2e-local-only-app
+      # Generated per run by ops/e2e.sh into .env.e2e, which is gitignored.
+      #
+      # Nothing credential-shaped is committed, which is not only hygiene: a
+      # connection string carrying an inline password, in a tracked file, is
+      # exactly what a secret scanner exists to catch — and suppressing that
+      # alert rather than removing the string trains everyone to ignore it.
+      POSTGRES_PASSWORD: ${E2E_POSTGRES_PASSWORD:?run ops/e2e.sh, which generates it}
+      POSTGRES_APP_PASSWORD: ${E2E_POSTGRES_APP_PASSWORD:?run ops/e2e.sh, which generates it}
     command:
       - postgres
       - -c
