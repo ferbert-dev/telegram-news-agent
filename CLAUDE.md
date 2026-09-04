@@ -32,6 +32,7 @@ npm run test:nest:build        # build:nest, then run every checks/emitted-*.mjs
 docker build -t telegram-news-agent:local .                     # also compiles dist/ in a build stage
 docker compose -f compose.yaml -f compose.nest.yaml up -d bot    # run the NestJS runtime instead of legacy
 ops/deploy-integration.sh --check-only                           # integration preflight: guards only, starts nothing
+ops/check-provider-credentials.sh                                # ask each AI provider whether it accepts the key in the sops file
 #   needs POSTGRES_PASSWORD, POSTGRES_APP_PASSWORD and a .env.production, like every other compose recipe here
 
 tsx --test checks/persistence/database-module.ts    # single TypeScript check
