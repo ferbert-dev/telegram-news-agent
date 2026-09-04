@@ -540,17 +540,17 @@ jobs:
           const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
           await client.connect();
           const jobs = await client.query(
-            `select id, status, claim_phase, outcome_status, error_code, draft_id,
+            `select id, status, outcome_status, error_code, draft_id, claimed_at,
                     publication_message_id, execution_attempt_count, delivery_attempt_count,
-                    created_at, updated_at
+                    available_at, created_at, updated_at, completed_at
                from public.telegram_news_jobs order by created_at desc limit 5`);
           if (jobs.rows.length === 0) console.log("NewsJob (none)");
           for (const r of jobs.rows) {
-            console.log(`NewsJob status=${r.status} phase=${r.claim_phase ?? "none"} outcome=${r.outcome_status ?? "none"} error=${r.error_code ?? "none"} draft=${r.draft_id ?? "none"} msg=${r.publication_message_id ?? "none"} exec_attempts=${r.execution_attempt_count} deliver_attempts=${r.delivery_attempt_count} created=${r.created_at?.toISOString?.() ?? r.created_at} updated=${r.updated_at?.toISOString?.() ?? r.updated_at}`);
+            console.log(`NewsJob status=${r.status} outcome=${r.outcome_status ?? "none"} error=${r.error_code ?? "none"} draft=${r.draft_id ?? "none"} msg=${r.publication_message_id ?? "none"} exec_attempts=${r.execution_attempt_count} deliver_attempts=${r.delivery_attempt_count} claimed=${r.claimed_at?.toISOString?.() ?? "never"} created=${r.created_at?.toISOString?.() ?? r.created_at} updated=${r.updated_at?.toISOString?.() ?? r.updated_at} completed=${r.completed_at?.toISOString?.() ?? "none"}`);
           }
           const cp = await client.query(
             `select update_id, status, draft_id, window_hours, publication_message_id, updated_at
-               from public.telegram_news_checkpoints order by updated_at desc limit 3`);
+               from public.telegram_news_request_checkpoints order by updated_at desc limit 3`);
           for (const r of cp.rows) {
             console.log(`Checkpoint update=${r.update_id} status=${r.status} draft=${r.draft_id ?? "none"} window=${r.window_hours ?? "none"} msg=${r.publication_message_id ?? "none"} updated=${r.updated_at?.toISOString?.() ?? r.updated_at}`);
           }
