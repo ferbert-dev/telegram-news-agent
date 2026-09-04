@@ -216,3 +216,49 @@ test("Gemini client uses the injected SDK Symbol override", async () => {
     await module.close();
   }
 });
+
+test("a rejected credential takes a provider out of rotation instead of being retried forever", async () => {
+  // A 401 is not a throttle, so it never opened the breaker: an invalid key was
+  // retried three times on every single call, for the life of the process.
+  // Measured on the integration stage as 1,967 rejections that produced
+  // nothing and delayed every call by ~680ms before the fallback was tried.
+  const calls: string[] = [];
+  const rejecting = {
+    name: "openai",
+    async generateStructured() {
+      calls.push("openai");
+      const error = new Error("Incorrect API key provided") as Error & { code: string };
+      error.code = "authentication_failed";
+      throw error;
+    },
+  };
+  const working = {
+    name: "gemini",
+    async generateStructured() {
+      calls.push("gemini");
+      return { ok: true };
+    },
+  };
+
+  const provider = createFallbackAiProvider([rejecting, working] as never, {
+    log: { info() {}, warn() {}, error() {} },
+    attemptRepository: null,
+    retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 },
+  } as never);
+
+  for (let call = 0; call < 8; call += 1) {
+    await provider.generateStructured({ prompt: `call-${call}` } as never);
+  }
+
+  const openaiCalls = calls.filter((name) => name === "openai").length;
+  const geminiCalls = calls.filter((name) => name === "gemini").length;
+
+  assert.equal(geminiCalls, 8, "every call must still be served by the working provider");
+  // Two calls' worth of rejection is conclusive for a deterministic 401, so the
+  // provider is skipped from the third call on. Without the break this would be
+  // 8 calls x 3 attempts = 24.
+  assert.ok(
+    openaiCalls <= 6,
+    `a rejected credential must stop being asked; it was attempted ${openaiCalls} times across 8 calls`,
+  );
+});
