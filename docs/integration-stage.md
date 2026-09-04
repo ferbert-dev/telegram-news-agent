@@ -113,6 +113,11 @@ gh workflow run deploy.yml -f operation=deploy-integration --ref <branch>
 # next deploy resumes with its data rather than re-migrating from empty.
 gh workflow run deploy.yml -f operation=stop-integration
 
+# Free a /news job whose worker was killed mid-research — after a deploy, say.
+# Without this the claim stands for the full stale window and every /news on
+# that channel is suppressed as already-running until it expires.
+gh workflow run deploy.yml -f operation=release-integration-news
+
 # On the host, or locally: every guard, starting nothing.
 ops/deploy-integration.sh --check-only
 
@@ -165,6 +170,30 @@ What the script owes production is not rollback. It is that it cannot act on
 production's stack, and cannot starve it. The final workflow step re-checks
 production's container **even when the deploy failed**, because a failed deploy
 that disturbed production is the outcome that matters most.
+
+## Deploying during a run kills it
+
+`deploy-integration` replaces the bot container. A research pass in flight dies
+with it, and its claim is then honoured for the full stale window — fifteen
+minutes here — during which every `/news` on that channel answers
+"already running" and nothing happens.
+
+This is the single most confusing failure the stage produces, and it is
+self-inflicted: it happened three times while testing, each time reading as
+"the bot is broken" when the pipeline was fine. Before deploying, check whether
+a run is in flight:
+
+```bash
+gh workflow run deploy.yml -f operation=inspect-integration
+# a NewsJob with status=processing and a recent claimed_at is a live run
+```
+
+If one is, either wait for it or accept that it dies and free it afterwards
+with `release-integration-news`.
+
+The deeper cause is that research does not respond to the abort signal, so a
+graceful stop cannot drain it. Fixing that is a separate piece of work; until
+then the claim outliving the container is the behaviour to plan around.
 
 ## Not done yet
 

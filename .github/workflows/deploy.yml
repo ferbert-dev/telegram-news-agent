@@ -19,6 +19,7 @@ on:
           - deploy-integration
           - stop-integration
           - inspect-integration
+          - release-integration-news
 
 concurrency:
   group: production-${{ github.ref }}
@@ -676,6 +677,73 @@ jobs:
           echo
           echo "=== recent bot log ==="
           docker logs --tail=60 "$container_id" 2>&1 | tail -60
+          REMOTE
+
+  # Frees a /news job whose worker died mid-research.
+  #
+  # A claim is honoured for the full stale window -- fifteen minutes on this
+  # stage -- and while it stands, every /news on that channel is suppressed as
+  # already-running. That is correct when a worker is genuinely still working,
+  # and useless when the container holding the claim was replaced by a deploy,
+  # which on a stage that is redeployed while testing is the common case.
+  #
+  # This does not invent a new state transition: it ages the claim so the
+  # existing reclaim path picks the job up on the worker's next poll. The job
+  # keeps its attempt counts and its settings snapshot, so the retry budget
+  # still applies and a genuinely failing job cannot be reset forever.
+  release-integration-news:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'release-integration-news'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Release stuck integration news jobs
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          container_id="$(docker ps -q --filter 'name=^/telegram-news-agent-int-bot-1$')"
+          test -n "$container_id" || { echo "integration bot is not running" >&2; exit 1; }
+          docker exec -i "$container_id" node --input-type=module <<'NODE'
+          import pg from "pg";
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+          // Only jobs whose claim is held by a process that is no longer
+          // heartbeating. A claim renewed within the last two minutes belongs
+          // to a live worker and is left alone -- releasing that would put two
+          // research passes on the same job, which is exactly what the claim
+          // exists to prevent.
+          const { rows } = await client.query(
+            `update public.telegram_news_jobs
+                set claimed_at = now() - interval '1 hour',
+                    available_at = now()
+              where status in ('processing', 'delivering')
+                and claimed_at is not null
+                and claimed_at < now() - interval '2 minutes'
+              returning id, status, telegram_channel_id, execution_attempt_count, claimed_at`);
+          if (rows.length === 0) {
+            console.log("ReleaseNewsJob nothing to release (no claim older than 2 minutes)");
+          }
+          for (const r of rows) {
+            console.log(`ReleaseNewsJob released id=${r.id} status=${r.status} channel=${r.telegram_channel_id} exec_attempts=${r.execution_attempt_count}`);
+          }
+          await client.end();
+          NODE
+          echo "The worker reclaims on its next poll (2s). /news is usable again."
           REMOTE
 
   inspect-host-capacity:
