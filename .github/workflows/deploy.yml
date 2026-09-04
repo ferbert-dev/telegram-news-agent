@@ -515,13 +515,24 @@ jobs:
           echo
           echo "=== verdict ==="
           available="$(awk '/^MemAvailable:/ { print int($2 / 1024); exit }' /proc/meminfo)"
-          # 512MiB integration stack + 256MiB headroom, matching
-          # ops/deploy-integration.sh. Reported, never enforced here.
-          required=768
-          if (( available >= required )); then
-            echo "HostCapacity available=${available}MiB required=${required}MiB verdict=fits"
+          # 352MiB integration stack (db 128 + bot 224) + 96MiB headroom,
+          # matching ops/deploy-integration.sh. Reported, never enforced here --
+          # the deploy script is what refuses.
+          required=448
+          # When the stage is already up, its own footprint is counted as
+          # unavailable, so a bare comparison would report "too-small" for a
+          # host that is comfortably running it. Add back what it holds, exactly
+          # as the deploy script does.
+          held=0
+          for id in $(docker ps -q --filter 'name=^telegram-news-agent-int-'); do
+            bytes="$(docker inspect --format '{{.HostConfig.Memory}}' "$id" 2>/dev/null || echo 0)"
+            held=$(( held + bytes / 1024 / 1024 ))
+          done
+          budget=$(( available + held ))
+          if (( budget >= required )); then
+            echo "HostCapacity available=${available}MiB integration_held=${held}MiB budget=${budget}MiB required=${required}MiB verdict=fits"
           else
-            echo "HostCapacity available=${available}MiB required=${required}MiB verdict=too-small"
+            echo "HostCapacity available=${available}MiB integration_held=${held}MiB budget=${budget}MiB required=${required}MiB verdict=too-small"
           fi
           REMOTE
 
