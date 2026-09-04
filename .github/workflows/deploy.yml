@@ -56,8 +56,14 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
-      - name: Create test-only Compose environment file
-        run: install -m 600 /dev/null .env.production
+      - name: Create test-only Compose environment files
+        # Compose requires a declared env_file to EXIST before it will resolve a
+        # project, even with --no-env-resolution. Both stages need one, and both
+        # are empty: these checks assert which file each stage is wired to and
+        # never read its contents.
+        run: |
+          install -m 600 /dev/null .env.production
+          install -m 600 /dev/null .env.integration
 
       - name: Validate deployment configuration
         env:
@@ -88,12 +94,6 @@ jobs:
             -f compose.yaml \
             -f compose.integration.yaml \
             config --quiet --no-env-resolution
-          # Compose still requires a declared env_file to EXIST before it will
-          # resolve, even with --no-env-resolution, so the integration stack
-          # needs a placeholder here. Empty on purpose: this asserts which file
-          # is wired up, never what is in it.
-          : > .env.integration
-          trap 'rm -f .env.integration' EXIT
           # `--no-env-resolution` above skips env_file loading entirely, which
           # is why it never noticed that the integration overlay inherited
           # compose.yaml's `.env.production`. Compose MERGES env_file lists, so

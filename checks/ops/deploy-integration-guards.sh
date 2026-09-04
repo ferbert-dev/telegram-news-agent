@@ -26,11 +26,19 @@ meminfo() {
 
 # The script requires an environment file it can validate. Build a minimal one
 # that satisfies ops/validate-production-env.sh in integration mode.
+#
+# Any existing file is set aside and restored afterwards, rather than reused.
+# CI creates an empty `.env.integration` so `docker compose config` can resolve
+# the project, and adopting that as the fixture would fail validation here --
+# which is exactly what happened. Owning the fixture unconditionally means this
+# suite does not care what else has written to that path.
 env_file="$repo/.env.integration"
-created_env=false
-if [[ ! -f "$env_file" ]]; then
-  created_env=true
-  cat > "$env_file" <<'EOF'
+saved_env=""
+if [[ -f "$env_file" ]]; then
+  saved_env="$work/env.integration.saved"
+  cp "$env_file" "$saved_env"
+fi
+cat > "$env_file" <<'EOF'
 DEPLOY_STAGE=integration
 BOT_ENTRYPOINT=dist/composition/runtime-entry.js
 POSTGRES_PASSWORD=test-superuser-password
@@ -59,10 +67,16 @@ NOTION_AGENT_RUNS_DATA_SOURCE_ID=test-ds
 NOTION_PIPELINE_AGENT_PAGE_ID=test-page
 NOTION_PIPELINE_TICKET_PAGE_ID=test-ticket
 EOF
-  chmod 600 "$env_file"
-fi
-cleanup_env() { [[ "$created_env" == true ]] && rm -f "$env_file"; }
-trap 'rm -rf "$work"; cleanup_env' EXIT
+chmod 600 "$env_file"
+cleanup_env() {
+  if [[ -n "$saved_env" ]]; then
+    cp "$saved_env" "$env_file"
+  else
+    rm -f "$env_file"
+  fi
+}
+# cleanup_env restores from a copy inside $work, so $work is removed last.
+trap 'cleanup_env; rm -rf "$work"' EXIT
 
 echo "deploy-integration guards"
 
@@ -129,7 +143,7 @@ fi
 overlay="$repo/compose.integration.yaml"
 cp "$overlay" "$work/overlay.bak"
 restore_overlay() { cp "$work/overlay.bak" "$overlay"; }
-trap 'restore_overlay; rm -rf "$work"; cleanup_env' EXIT
+trap 'restore_overlay; cleanup_env; rm -rf "$work"' EXIT
 
 sed -i.tmp 's/^    mem_limit: 224m$/    mem_limit: 900m/' "$overlay" && rm -f "$overlay.tmp"
 out="$(run_check "$(meminfo 4096)")"
