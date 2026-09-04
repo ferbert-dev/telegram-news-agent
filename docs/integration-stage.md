@@ -13,15 +13,16 @@ query, a lock, a disk-full or a bad restart in integration takes production down
 with it. That defeats the purpose: the integration stage exists precisely to run
 changes nobody is sure about yet.
 
-Separate instances cost roughly 200–250 MB of RAM and give real independence.
-That is the trade, and it was taken deliberately.
+Separate instances cost memory and give real independence. That is the trade,
+and it was taken deliberately — see the sizing below, which is what makes it
+affordable on a 952 MiB box.
 
 | | separate instances (built) | shared instance, two schemas |
 |---|---|---|
 | Integration can corrupt production data | No — different volume | Yes, via a mistargeted migration |
 | Integration can stall production | No | Yes — shared locks, buffers, CPU |
 | Restarting integration's database | Independent | Restarts production too |
-| Extra memory | ~512 MiB ceiling | Near zero |
+| Extra memory | 352 MiB of ceilings | Near zero |
 
 ## What isolates the two stages
 
@@ -49,20 +50,54 @@ nothing had noticed. CI now asserts the resolved list for both stages, because
 `config --no-env-resolution` — what the earlier check used — does not load
 `env_file` at all and could never have caught it.
 
-## Memory
+## Memory — measured, not guessed
 
-Production's limits are unchanged and are **not** touched by any of this:
-`db 384m`, `migrate 256m`, `bot 384m` — 768 MiB of steady state.
+The host is a **952 MiB** Oracle instance:
 
-Integration adds 512 MiB (`db 192m` + `bot 320m`). `ops/deploy-integration.sh`
-measures `MemAvailable` before starting anything and refuses unless the host can
-give that plus 256 MiB of headroom — 768 MiB in total. A redeploy adds back what
-the integration stack already holds, so its own footprint does not lock it out.
+```
+MemTotal:      952 MiB
+MemAvailable:  461 MiB
+Swap:         2048 MiB (1955 free)
 
-Bounding only the new stack is the point. Production is unbounded in the sense
-that matters here: when a box runs out, the kernel OOM killer picks its victim
-by score, and the fat long-lived process it tends to pick is production's
-postgres. A cgroup on integration means integration dies instead.
+telegram-news-agent-bot-1   86.8 MiB / 384 MiB limit
+telegram-news-agent-db-1    53.6 MiB / 384 MiB limit
+```
+
+Production's ceilings total 768 MiB but its actual usage is ~141 MiB — limits
+are caps, not reservations, so the 461 MiB is genuinely free.
+
+The first sizing of this stage wanted 512 MiB plus 256 MiB of headroom and **did
+not fit**. The capacity guard refused it, which is exactly what that guard is
+for. The stage was resized against the measurement instead:
+
+| | ceiling | production's equivalent | production's actual use |
+|---|---|---|---|
+| `db` | 128m | 384m | 54 MiB |
+| `migrate` | 192m | 256m | — |
+| `bot` | 224m | 384m | 87 MiB |
+
+Peak is `db + bot` = **352 MiB**, because migrate finishes before the bot
+starts and is kept below the bot's ceiling so the steady state is the peak.
+With 96 MiB of headroom the requirement is **448 MiB** against 461 MiB
+available.
+
+That is thin, and it is why this stage is **brought up to test and torn down
+after** (`stop-integration`) rather than left running. Idle, the box gets the
+whole 461 MiB back.
+
+`ops/deploy-integration.sh` measures `MemAvailable` before starting anything and
+refuses below the threshold. A redeploy adds back what the integration stack
+already holds, so its own footprint does not lock it out.
+
+Production's limits are unchanged and are **not** touched by any of this.
+
+Both stages are bounded, and the ceilings are what make co-location survivable:
+without a cgroup on integration, a runaway there would push the box into the
+kernel's OOM killer, which picks its victim by score — and the fat, long-lived
+process it favours is production's postgres. With one, integration is what
+dies. Swap (2 GB, 95% free) is the softer valve before that: a container over
+its ceiling spills to swap and gets slow rather than being killed outright,
+which for a test stage is the right failure.
 
 ## Running it
 
@@ -74,8 +109,15 @@ gh workflow run deploy.yml -f operation=inspect-host-capacity
 # then confirms production is still healthy.
 gh workflow run deploy.yml -f operation=deploy-integration --ref <branch>
 
+# Tear it down and give the host its memory back. Keeps the volume, so the
+# next deploy resumes with its data rather than re-migrating from empty.
+gh workflow run deploy.yml -f operation=stop-integration
+
 # On the host, or locally: every guard, starting nothing.
 ops/deploy-integration.sh --check-only
+
+# The guard suite, which drives every refusal.
+npm run test:ops
 ```
 
 `deploy-integration` is **manual only** and deploys whatever ref it is
@@ -96,7 +138,8 @@ a guard that has never been observed refusing is indistinguishable from a no-op.
 | project | the script targets the project name `compose.yaml` declares |
 | volume | any volume is external, or not prefixed with the integration project |
 | limit drift | `compose.integration.yaml` and the script's budget disagree |
-| capacity | `MemAvailable` + what integration holds is under 768 MiB |
+| capacity | `MemAvailable` + what integration holds is under 448 MiB |
+| migrate peak | `migrate`'s ceiling exceeds the bot's, invalidating the sized peak |
 | unreadable meminfo | the capacity guard cannot be skipped or defaulted |
 
 Two of these were wrong when first written and the tests are what found it:
@@ -127,8 +170,9 @@ that disturbed production is the outcome that matters most.
 
 - The stage has never been deployed. Everything above is configuration and
   guards, verified locally and in CI, not observed on the host.
-- Host memory is still unmeasured. `inspect-host-capacity` reports it; until it
-  runs, whether the box can take the stage at all is unknown, and the capacity
-  guard is what will answer that.
+- The 224 MiB bot ceiling has not been tested against a real research run. The
+  live runs so far were on an unbounded container; a `/news` pass that overruns
+  will spill to swap rather than be killed outright, but it has not been
+  watched. This is the first thing to check after the first deploy.
 - Production still deploys on every merge to `main`. Moving it behind a release
   branch is a separate change.

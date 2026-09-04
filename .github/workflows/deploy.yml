@@ -17,6 +17,7 @@ on:
           - inspect-production
           - inspect-host-capacity
           - deploy-integration
+          - stop-integration
 
 concurrency:
   group: production-${{ github.ref }}
@@ -741,6 +742,72 @@ jobs:
             "$RUNNER_TEMP/sops" \
             deployment-int \
             deployment-int.tar.gz
+
+  # Tears the integration stage down and gives the host its memory back. The
+  # box is a 952MiB instance, so this stage is brought up to test and stopped
+  # after rather than left running. The volume is deliberately KEPT: `down`
+  # without `-v` leaves PGDATA in place, so the next deploy resumes with its
+  # data and its applied migrations instead of re-migrating from empty.
+  stop-integration:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'stop-integration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Stop the integration stage
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -Eeuo pipefail
+          dir=/opt/telegram-news-agent-int
+          if [[ ! -d "$dir" ]]; then
+            echo "Integration stage is not installed; nothing to stop."
+            exit 0
+          fi
+          cd "$dir"
+          # --project-name is passed explicitly and the compose files are the
+          # integration pair, so this cannot reach production's stack. No -v:
+          # the volume stays.
+          docker compose \
+            --project-name telegram-news-agent-int \
+            --env-file .env.integration \
+            -f compose.yaml \
+            -f compose.integration.yaml \
+            down --remove-orphans
+          echo "=== after teardown ==="
+          awk '/^MemAvailable:/ { printf "MemAvailable %.0f MiB\n", $2/1024 }' /proc/meminfo
+          docker ps --format 'table {{.Names}}\t{{.Status}}'
+          REMOTE
+
+      - name: Confirm production is still healthy
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -Eeuo pipefail
+          container="$(docker ps -a --filter 'name=^telegram-news-agent-bot' --format '{{.Names}}' | head -1)"
+          test -n "$container" || { echo "production bot container is missing" >&2; exit 1; }
+          docker inspect --format \
+            'ProductionBot running={{.State.Running}} restart_count={{.RestartCount}} oom_killed={{.State.OOMKilled}}' \
+            "$container"
+          test "$(docker inspect --format '{{.State.Running}}' "$container")" = "true" \
+            || { echo "production bot is not running" >&2; exit 1; }
+          REMOTE
 
   package:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

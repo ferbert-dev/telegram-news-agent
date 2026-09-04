@@ -28,11 +28,17 @@
 # stops it first. If integration is the thing that overreaches, integration is
 # the thing that dies.
 #
+# Sized against a real measurement, not a guess: the host is a 952MiB instance
+# with 461MiB available, and production is using ~141MiB of its 768MiB of
+# ceilings. The first sizing here wanted 512MiB and did not fit — the capacity
+# guard refused it, which is what that guard is for.
+#
 # Production's own limits stay exactly as they are: db 384m, migrate 256m,
-# bot 384m — 768m of steady state. Integration adds 512m on top (db 192m +
-# bot 320m), so both stages together need roughly 1.25G before the host's own
-# overhead. `ops/deploy-integration.sh` measures the box and refuses to start
-# if that does not fit, which is the check that keeps this from being a guess.
+# bot 384m. Integration adds 352MiB of ceilings (db 128m + bot 224m), with
+# migrate kept below bot so the migration step is never the peak.
+#
+# This stage is brought up to test and torn down after — `deploy.yml` has a
+# stop-integration operation. Idle, the box gets the whole 461MiB back.
 name: telegram-news-agent-int
 
 services:
@@ -53,11 +59,18 @@ services:
       - max_connections=12
       - -c
       - wal_buffers=4MB
-    # Production's db is 384m. Integration holds one channel's test data, so
-    # half of that is generous: 32MB shared_buffers plus 12 connections at
-    # ~2MB work_mem is near 120MB, leaving room for a vacuum or an index build.
+    # Production's db is 384m and uses 54MiB. Integration holds one channel's
+    # test data: 32MB shared_buffers plus 12 connections at ~2MB work_mem sits
+    # near 90MiB, so 128m leaves room without taking room production may need.
+    mem_limit: 128m
+    shm_size: 16mb
+
+  migrate:
+    # Below the bot's ceiling on purpose: peak usage is db+migrate during the
+    # migration and db+bot afterwards, so keeping migrate under bot means the
+    # steady state is the peak and the capacity guard only has to size one
+    # number. ops/deploy-integration.sh asserts this ordering.
     mem_limit: 192m
-    shm_size: 32mb
 
   bot:
     # compose.yaml names `.env.production` here, and compose MERGES env_file
@@ -69,10 +82,12 @@ services:
     # run it, so nothing had noticed.
     env_file: !override
       - .env.integration
-    # Production's bot is 384m. The typed runtime holds one pool, four workers
-    # and no request buffering, so this ceiling exists to bound a leak or a
-    # runaway research pass rather than to be reached in normal operation.
-    mem_limit: 320m
+    # Production's bot is 384m and uses 87MiB doing the same work. 224m is
+    # roughly 2.5x observed usage — enough that normal operation never reaches
+    # it, tight enough to fit beside production. A research pass that does
+    # overrun spills to swap (2GB, 95% free) rather than being killed outright,
+    # and if it is killed the cgroup means integration dies, not production.
+    mem_limit: 224m
     environment:
       # Distinguishable in logs and in /status, so nobody has to guess which
       # stage a message came from.

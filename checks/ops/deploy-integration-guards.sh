@@ -67,38 +67,39 @@ trap 'rm -rf "$work"; cleanup_env' EXIT
 echo "deploy-integration guards"
 
 # --- capacity ----------------------------------------------------------------
-# Stack is 512MiB, headroom 256MiB, so the threshold is 768MiB.
+# Stack is 352MiB (db 128 + bot 224), headroom 96MiB, so the threshold is
+# 448MiB. The host this is sized for reports 461MiB available.
 
 run_check() {
   DEPLOY_INTEGRATION_MEMINFO="$1" "$script" --check-only 2>&1 || true
 }
 
-out="$(run_check "$(meminfo 700)")"
+out="$(run_check "$(meminfo 400)")"
 if grep -q "refusing to deploy: the host cannot take" <<< "$out"; then
-  pass "700MiB available is refused (below the 768MiB threshold)"
+  pass "400MiB available is refused (below the 448MiB threshold)"
 else
-  fail "700MiB available should be refused, got: $(head -3 <<< "$out")"
+  fail "400MiB available should be refused, got: $(head -3 <<< "$out")"
 fi
 
-out="$(run_check "$(meminfo 767)")"
+out="$(run_check "$(meminfo 447)")"
 if grep -q "refusing to deploy: the host cannot take" <<< "$out"; then
-  pass "767MiB is refused — the boundary is not off by one in the permissive direction"
+  pass "447MiB is refused — the boundary is not off by one in the permissive direction"
 else
-  fail "767MiB should be refused, got: $(head -3 <<< "$out")"
+  fail "447MiB should be refused, got: $(head -3 <<< "$out")"
 fi
 
-out="$(run_check "$(meminfo 768)")"
+out="$(run_check "$(meminfo 448)")"
 if grep -q "Preflight passed" <<< "$out"; then
-  pass "768MiB is admitted — exactly the requirement is enough"
+  pass "448MiB is admitted — exactly the requirement is enough"
 else
-  fail "768MiB should be admitted, got: $(head -3 <<< "$out")"
+  fail "448MiB should be admitted, got: $(head -3 <<< "$out")"
 fi
 
-out="$(run_check "$(meminfo 4096)")"
+out="$(run_check "$(meminfo 461)")"
 if grep -q "Preflight passed" <<< "$out"; then
-  pass "4GiB is admitted"
+  pass "461MiB is admitted — the figure the real Oracle host reported"
 else
-  fail "4GiB should be admitted, got: $(head -3 <<< "$out")"
+  fail "461MiB (the real host) should be admitted, got: $(head -3 <<< "$out")"
 fi
 
 # The guard must never be skippable. A missing or unreadable meminfo has to be a
@@ -130,7 +131,7 @@ cp "$overlay" "$work/overlay.bak"
 restore_overlay() { cp "$work/overlay.bak" "$overlay"; }
 trap 'restore_overlay; rm -rf "$work"; cleanup_env' EXIT
 
-sed -i.tmp 's/^    mem_limit: 320m$/    mem_limit: 900m/' "$overlay" && rm -f "$overlay.tmp"
+sed -i.tmp 's/^    mem_limit: 224m$/    mem_limit: 900m/' "$overlay" && rm -f "$overlay.tmp"
 out="$(run_check "$(meminfo 4096)")"
 if grep -q "have drifted" <<< "$out"; then
   pass "raising the compose limit without the script's budget is refused"

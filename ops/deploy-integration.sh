@@ -14,8 +14,8 @@
 # What this script owes production is not rollback. It is two guarantees:
 #
 #   1. It can never act on production's stack. Every compose invocation is
-#      pinned to the integration project, and the name is asserted before
-#      anything is started.
+#      pinned to the integration project, and the deploy is refused if that
+#      project, or any of its volumes, resolves to production's.
 #   2. It cannot starve production. The host is measured first, and the deploy
 #      is refused if the integration stack's ceilings do not fit alongside
 #      production's with headroom left over.
@@ -44,14 +44,27 @@ readonly ENV_FILE=".env.integration"
 
 # The integration stack's ceilings, from compose.integration.yaml. Kept in step
 # by assert_limits_match below rather than by memory.
-readonly INT_DB_LIMIT_MIB=192
-readonly INT_BOT_LIMIT_MIB=320
+readonly INT_DB_LIMIT_MIB=128
+readonly INT_BOT_LIMIT_MIB=224
+readonly INT_MIGRATE_LIMIT_MIB=192
 
 # Left free for the host itself and for production to burst into. Production's
-# own ceilings are already spoken for in what the kernel reports as unavailable
-# when its containers are running; this is the margin on top.
-readonly HOST_HEADROOM_MIB=256
+# own usage is already spoken for in what the kernel reports as unavailable
+# while its containers are running; this is the margin on top.
+#
+# 96MiB on a 952MiB box is thin, and deliberately so: the alternative was not
+# running the stage at all. It is why this stage is brought up to test and torn
+# down after rather than left running.
+readonly HOST_HEADROOM_MIB=96
 
+# The peak, not the sum. migrate and bot never run together -- the migration
+# completes before the bot starts -- so the stack's high-water mark is the
+# database plus whichever of the two is larger. The check immediately below
+# keeps that assumption true.
+if (( INT_MIGRATE_LIMIT_MIB > INT_BOT_LIMIT_MIB )); then
+  echo "refusing to deploy: migrate's ceiling exceeds the bot's, so the peak this script sizes for is wrong" >&2
+  exit 1
+fi
 readonly NEEDED_MIB=$((INT_DB_LIMIT_MIB + INT_BOT_LIMIT_MIB))
 
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -104,9 +117,10 @@ fi
 # the declaration stays relative. An `external: true`, or an explicit `name:`,
 # pins the volume to one identity and both stages would land on it.
 #
-# So the check is on the declaration, not on the resolved name: `config` reports
-# the volume unprefixed for both stages, which makes comparing resolved names
-# useless here.
+# With env resolution on, `config` reports the fully prefixed name, so the check
+# is that every volume carries this project's prefix. (An earlier version looked
+# for a literal `telegram-news-agent_pgdata`, which is neither the volume's name
+# nor the form `config` reports -- it could never have fired.)
 bad_volumes="$("${compose[@]}" config --format json 2>/dev/null \
   | python3 -c "
 import json, sys
@@ -150,6 +164,7 @@ print(services['$service'].get('mem_limit', 0))
 # old, smaller figure.
 assert_limits_match db "$INT_DB_LIMIT_MIB"
 assert_limits_match bot "$INT_BOT_LIMIT_MIB"
+assert_limits_match migrate "$INT_MIGRATE_LIMIT_MIB"
 
 # --- guard 2: the host has room, with production left whole ------------------
 
