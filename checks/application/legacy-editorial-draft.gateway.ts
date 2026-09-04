@@ -427,7 +427,22 @@ test("LegacyEditorialDraftGateway does not reload feature flags when snapshot in
   ).generate(fixtureInput(ARTICLE, {}, { featureFlags: [] }));
 
   assert.equal(featureFlagReloadCount, 0);
-  assert.deepEqual(result.draft.topic_assignments, null);
+  // Absent, not null. This assertion previously pinned `null`, which was the
+  // migration bug rather than the intended behaviour: src/draft.js omits the
+  // key entirely when tagging is off, and the repository distinguishes an
+  // omitted key (use create_review_draft) from a present one (use
+  // create_review_draft_with_topics, and stringify the value). A present null
+  // was stringified to the JSON literal `null` and refused, so every review
+  // draft failed whenever tagging was off.
+  //
+  // Asserted with `in` rather than a value comparison, because absent and
+  // present-and-undefined are the same under deepEqual and are exactly what
+  // this needs to tell apart.
+  assert.equal(
+    "topic_assignments" in (result.draft as object),
+    false,
+    "tagging off must omit the key, matching src/draft.js",
+  );
 });
 
 test("LegacyEditorialDraftGateway preserves generator failure identity and keeps original repository methods unchanged", async () => {
