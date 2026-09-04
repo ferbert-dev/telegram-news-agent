@@ -568,3 +568,82 @@ test("publication is keyed on the job row's channel, not the snapshot's copy of 
 
   assert.equal(publishInputs[0]?.channelId, "@real-channel");
 });
+
+test("a second worker cannot start research while another run holds the lease", async () => {
+  // The requirement stated plainly: never run a new research pass while one is
+  // already running. Research is the expensive phase -- a duplicate does not
+  // corrupt anything, because the atomic functions refuse a lost claim at the
+  // end, but it is paid for in full before that refusal happens.
+  //
+  // The earlier test for this only proved the refusal path by forcing
+  // acquire() to return false. This models the lease as it actually behaves:
+  // one holder at a time, keyed on owner, released on completion.
+  let holder: string | null = null;
+  const makeLease = () => ({
+    async acquire({ ownerId }: { ownerId: string }) {
+      if (holder !== null && holder !== ownerId) return false;
+      holder = ownerId;
+      return true;
+    },
+    async renew({ ownerId }: { ownerId: string }) {
+      return holder === ownerId;
+    },
+    async release({ ownerId }: { ownerId: string }) {
+      if (holder === ownerId) holder = null;
+      return true;
+    },
+  });
+
+  let releaseFirst!: () => void;
+  let started!: () => void;
+  const firstResearchStarted = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+
+  const first = harness();
+  (first.adapter as unknown as { options: Record<string, unknown> }).options.pipelineLease =
+    makeLease();
+  const research = (first.adapter as unknown as {
+    options: { research: { execute: (...args: unknown[]) => Promise<unknown> } };
+  }).options.research;
+  const inner = research.execute.bind(research);
+  // Holds the first run inside its research phase, lease held, until released.
+  // Arguments are forwarded: dropping them made the stub throw after the test
+  // ended, which node reported as an unhandled rejection rather than a failure.
+  research.execute = async (...args: unknown[]) => {
+    started();
+    await gate;
+    return inner(...args);
+  };
+  const firstRun = first.adapter.run(job(), {});
+
+  await firstResearchStarted;
+
+  // A different worker -- a second container, or the same job reclaimed after
+  // its worker's claim went stale -- takes the job and tries to research it.
+  const second = harness();
+  (second.adapter as unknown as { options: Record<string, unknown> }).options.pipelineLease =
+    makeLease();
+  (second.adapter as unknown as { options: Record<string, unknown> }).options.ownerId =
+    "second-owner";
+
+  await assert.rejects(
+    second.adapter.run(job(), {}),
+    /already running/,
+    "a second run must be refused while the first holds the lease",
+  );
+  assert.ok(
+    !second.calls.some((call) => call.startsWith("research")),
+    `the second run must not reach a provider, got: ${second.calls.join(", ")}`,
+  );
+
+  // Let the first run finish rather than leaving it suspended: an abandoned
+  // promise surfaces as an unhandled rejection attributed to whichever test
+  // happens to be running when it settles.
+  releaseFirst();
+  await firstRun;
+  assert.equal(holder, null, "the first run must release the lease when it completes");
+});

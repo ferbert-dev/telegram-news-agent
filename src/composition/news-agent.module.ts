@@ -7,7 +7,10 @@ import { getNewsEditor } from "../editor.js";
 import { getOpenAiConfig } from "../openai-provider.js";
 import { getGeminiProviderConfig } from "../gemini-provider.js";
 import { NotionAuditLogger, getNotionAuditConfig } from "../notion-audit.js";
-import { createAiProvider } from "../ai-provider.js";
+import { AiProvidersModule } from "../ai/ai-providers.module.js";
+import { BUILTIN_PROVIDER_DESCRIPTORS } from "../ai/providers/index.js";
+import { AI_PROVIDER } from "../ai/ai-provider.tokens.js";
+import type { FallbackAiProvider } from "../ai/ai-provider-composition.js";
 
 import { DatabaseModule } from "../database/database.module.js";
 import { PersistenceFacadeModule } from "../persistence/persistence-facade.module.js";
@@ -225,17 +228,45 @@ export class NewsAgentModule {
     }>("research-execution");
 
 
-    // Eagerly constructible: these depend only on configuration, not on the
-    // container. Everything that needs a container singleton goes through a
-    // late-bound port instead (see below).
-    // The attempt repository matters: without it every provider fallback,
-    // retry and quota exhaustion goes unrecorded, so the usage dashboard and
-    // any fallback-rate alerting show nothing. Legacy passes it
-    // (src/telegram-bot.js: createAiProvider(env, { attemptRepository })), and
-    // the late-bound facade is filled long before the first AI call.
-    const aiProvider = createAiProvider(env, {
-      attemptRepository: legacyPersistence.port as never,
-    }) as Record<string, unknown> & { names: string[]; generateStructured?: unknown };
+    // The migrated provider, not `createAiProvider` from src/ai-provider.js.
+    //
+    // Both built the same three adapters, but legacy's own fallback loop has
+    // per-call retry and nothing across calls, while the typed composition adds
+    // the per-provider circuit breaker. Pointing this runtime at legacy meant
+    // the breaker was tested, shipped, and never executed -- measured on the
+    // integration stage as 2,131 rate-limited attempts against 708 useful
+    // calls, a ratio of exactly the 3-attempt retry budget firing on every
+    // call with nothing bounding it.
+    //
+    // Late-bound because AI_PROVIDER is a container singleton and these
+    // consumers take instances at register() time, the same reason the
+    // persistence facade is late-bound. The attempt repository still matters:
+    // without it every fallback, retry and throttle goes unrecorded.
+    // Refuse at registration rather than letting the container fail later.
+    //
+    // `createFallbackAiProvider` raises this same message when it is built, so
+    // the runtime would not start either way -- but that happens inside
+    // NestFactory.createApplicationContext, after Telegram has been contacted
+    // and the whole graph assembled. A misconfigured deployment should be told
+    // before any of that, and the message should name the cause rather than
+    // arrive wrapped in a DI failure.
+    //
+    // The same descriptors the module uses decide this, so there is one rule
+    // for "configured", not two that can disagree.
+    const configuredProviders = BUILTIN_PROVIDER_DESCRIPTORS.filter(
+      (descriptor) => descriptor.configure(env) !== null,
+    );
+    if (configuredProviders.length === 0) {
+      throw new Error(
+        "No AI provider is configured; enable Exa or set an OpenAI/Gemini API key",
+      );
+    }
+
+    const aiProviderPort = ports.create<FallbackAiProvider>("ai-provider");
+    const aiProvider = aiProviderPort.port as unknown as Record<string, unknown> & {
+      names: string[];
+      generateStructured?: unknown;
+    };
     // src/draft.js reads `model` only on the branch taken when no aiProvider
     // is supplied -- unreachable here, since createAiProvider throws when
     // nothing is configured. Legacy passes undefined all the way down, so
@@ -274,6 +305,11 @@ export class NewsAgentModule {
         DatabaseModule,
         PersistenceFacadeModule,
         TelegramPersistenceModule,
+
+        AiProvidersModule.register({
+          env,
+          attemptRepository: legacyPersistence.port as never,
+        }),
         // The news-job workflow needs the draft row itself, to approve a
         // review-status draft before publishing it on an automatic channel.
         // `claim_draft_for_publication_with_policy` accepts only `approved`,
@@ -310,7 +346,10 @@ export class NewsAgentModule {
           status: new TelegramLegacyStatusGateway(
             ...legacyFeatureArgs,
             aiProvider,
-            aiProvider.names ?? [],
+            // Read through the port at call time rather than here: `names` is a
+            // property of the bound singleton, and this runs before the
+            // container exists.
+            () => aiProviderPort.port.names ?? [],
             appVersion,
           ),
         }),
@@ -344,6 +383,7 @@ export class NewsAgentModule {
             PIPELINE_LEASE_APPLICATION,
             TELEGRAM_REVIEW_DELIVERY,
             RESEARCH_EXECUTION_GATEWAY,
+            AI_PROVIDER,
           ],
           useFactory: (
             persistence: LegacyPersistence,
@@ -351,9 +391,11 @@ export class NewsAgentModule {
             lease: PipelineLeaseApplicationPort,
             delivery: never,
             research: never,
+            ai: FallbackAiProvider,
           ) =>
             new RuntimeBinder(() => {
               legacyPersistence.bind(persistence);
+              aiProviderPort.bind(ai);
               editorialWorkflow.bind(editorial);
               pipelineLease.bind(lease);
               reviewDelivery.bind(delivery);
@@ -450,8 +492,12 @@ export class NewsAgentModule {
               // container that died mid-research is honoured before another
               // worker may take the job -- 30 minutes by default, during which
               // every `/news` on that channel is suppressed as already-running.
-              // On a stage that is redeployed often, that is the difference
-              // between a few minutes of confusion and half an hour of it.
+              //
+              // It must not be set below the pipeline lease's TTL (15 minutes).
+              // The lease is what actually prevents two research passes; a
+              // shorter stale window only makes the job reclaimable while its
+              // own lease is still held, so every reclaim is refused as
+              // "already running" and the queue churns rather than recovering.
               ...newsJobSettings,
             }),
         },

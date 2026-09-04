@@ -266,13 +266,23 @@ export class TelegramLegacyStatsGateway implements TelegramControlFeatureGateway
 
 /** Preserves the redacted status dashboard and explicit one-search Exa probe. */
 export class TelegramLegacyStatusGateway implements TelegramControlFeatureGateway {
+  private providerNames(): string[] {
+    return typeof this.providerNamesSource === "function"
+      ? this.providerNamesSource()
+      : this.providerNamesSource;
+  }
+
   constructor(
     private readonly token: string,
     private readonly channelId: string,
     private readonly repository: LegacyRepository,
     private readonly callTelegram: TelegramBotApiCall,
     private readonly aiProvider: Record<string, unknown>,
-    private readonly providerNames: string[],
+    // A thunk as well as an array: the composition root builds this gateway
+    // before the container exists, so the provider's `names` cannot be read
+    // there. An array is still accepted, which keeps every existing caller and
+    // test unchanged.
+    private readonly providerNamesSource: string[] | (() => string[]),
     private readonly appVersion: string,
     private readonly operations: StatusOperations = {
       show: showSystemStatus,
@@ -297,7 +307,7 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
         chatId: request.chatId,
         repository,
         callTelegram,
-        providerNames: this.providerNames,
+        providerNames: this.providerNames(),
         appVersion: this.appVersion,
         now: this.now,
         timeZone: this.timeZone,
@@ -315,7 +325,7 @@ export class TelegramLegacyStatusGateway implements TelegramControlFeatureGatewa
         repository,
         callTelegram,
         aiProvider: abortableDependency(this.aiProvider, signal),
-        providerNames: this.providerNames,
+        providerNames: this.providerNames(),
         appVersion: this.appVersion,
         now: this.now,
         timeZone: this.timeZone,

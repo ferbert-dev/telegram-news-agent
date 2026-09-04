@@ -105,11 +105,17 @@ services:
       # for that; it is just the correct order for this stage's credentials.
       AI_PROVIDER_ORDER: openai,gemini
 
-      # Five minutes instead of the default thirty. This is the window during
-      # which a claim held by a container that died mid-research is still
-      # honoured, and every `/news` on the channel is suppressed as
-      # already-running while it lasts. A stage that is redeployed while a run
-      # is in flight -- which is exactly what happened on the first live test --
-      # should recover in minutes, not half an hour. Production keeps thirty:
-      # there, a long recovery is safer than a premature second research pass.
-      TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: "300"
+      # Fifteen minutes: the same as the pipeline lease's TTL, and not less.
+      #
+      # This is the window during which a claim held by a container that died
+      # mid-research is still honoured. Shortening it to 300s -- which was tried
+      # -- made a job reclaimable while its own pipeline lease was still held,
+      # so every reclaim hit "already running" and the queue churned instead of
+      # recovering. A stale window below the lease TTL cannot help: the lease is
+      # what actually gates research, so reclaiming earlier only produces
+      # refusals.
+      #
+      # Matching the TTL is the shortest coherent value, and it still recovers a
+      # killed run in a quarter of production's thirty minutes. Production keeps
+      # thirty, where a slow recovery is safer than an early second attempt.
+      TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: "900"
