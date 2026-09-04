@@ -585,6 +585,44 @@ jobs:
           NODE
 
           echo
+          echo "=== provider credentials ==="
+          # Asks each provider whether it accepts the key, and reports only the
+          # HTTP status and error type. No key material is read, printed or
+          # copied -- the request is made from inside the container using the
+          # variable it already holds.
+          #
+          # This exists because "authentication_failed" in the attempts table
+          # says a key was rejected but not why: a malformed key, a revoked
+          # one, and an exhausted account are three different fixes and only
+          # the provider can tell them apart.
+          docker exec -i "$container_id" node --input-type=module <<'NODE'
+          const probes = [
+            ["openai", "https://api.openai.com/v1/models", { Authorization: `Bearer ${process.env.OPENAI_API_KEY ?? ""}` }],
+            ["gemini", `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(process.env.GEMINI_API_KEY ?? "")}`, {}],
+          ];
+          for (const [name, url, headers] of probes) {
+            const key = name === "openai" ? process.env.OPENAI_API_KEY : process.env.GEMINI_API_KEY;
+            if (!key) { console.log(`Credential provider=${name} configured=false`); continue; }
+            // Shape only: length and whether the value carries stray whitespace,
+            // which is the most common way a pasted key stops working.
+            const trimmed = key.trim();
+            const shape = `len=${key.length} trimmed_len=${trimmed.length} has_whitespace=${key !== trimmed}`;
+            try {
+              const res = await fetch(url, { headers });
+              let detail = "";
+              if (!res.ok) {
+                const body = await res.text();
+                const parsed = (() => { try { return JSON.parse(body); } catch { return null; } })();
+                detail = ` error_type=${parsed?.error?.type ?? parsed?.error?.status ?? "unknown"} error_code=${parsed?.error?.code ?? "none"}`;
+              }
+              console.log(`Credential provider=${name} configured=true ${shape} http=${res.status} ok=${res.ok}${detail}`);
+            } catch (error) {
+              console.log(`Credential provider=${name} configured=true ${shape} network_error=${error?.name ?? "Error"}`);
+            }
+          }
+          NODE
+
+          echo
           echo "=== recent bot log ==="
           docker logs --tail=60 "$container_id" 2>&1 | tail -60
           REMOTE
