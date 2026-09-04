@@ -294,3 +294,65 @@ test("no_candidates needs no draft, so a dry run is not mistaken for a broken on
   assert.equal(await worker.runOnce(), "advanced");
   assert.deepEqual(calls, ["claim", "workflow", "renew", "recordOutcome"]);
 });
+
+test("with a single attempt budget, a failed /news is finished with rather than retried", async () => {
+  // /news is a manual diagnostic: it is typed to find out whether the system
+  // works right now. A retry minutes later answers a question nobody is still
+  // asking, and answers it by re-running the entire research pass -- the most
+  // expensive thing this system does.
+  //
+  // The budget is passed to retryTelegramNewsJob as maxAttempts, and the SQL
+  // function is what turns an exhausted budget into a terminal failure. What
+  // this asserts is that the configured value actually reaches it: a worker
+  // that quietly kept its own default would retry regardless of the setting.
+  const seen: Record<string, unknown>[] = [];
+  const { worker } = build({
+    worker: { maxExecutionAttempts: 1 },
+    workflow: {
+      async run() {
+        throw new Error("research failed");
+      },
+    },
+    jobs: {
+      async retryTelegramNewsJob(input: Record<string, unknown>) {
+        seen.push(input);
+        return { status: "failed" };
+      },
+    },
+  });
+
+  assert.equal(await worker.runOnce(), "advanced");
+  assert.equal(seen.length, 1);
+  assert.equal(
+    seen[0].maxAttempts,
+    1,
+    "the configured execution budget must reach the atomic function, not the worker's default",
+  );
+});
+
+test("the delivery budget is separate, so a failure still reaches the operator", async () => {
+  // Retrying a Telegram send is cheap, and it is what gets the failure message
+  // to the person who typed /news. Collapsing both budgets to one would mean a
+  // transient Telegram error silently swallowed the only report of a failure.
+  const seen: Record<string, unknown>[] = [];
+  const { worker } = build({
+    worker: { maxExecutionAttempts: 1, maxDeliveryAttempts: 10 },
+    jobs: {
+      async claimNextTelegramNewsJob() {
+        return { ...(EXECUTE_JOB as object), claim_phase: "deliver" } as never;
+      },
+      async retryTelegramNewsJobDelivery(input: Record<string, unknown>) {
+        seen.push(input);
+        return { status: "outcome_ready" };
+      },
+    },
+    delivery: {
+      async deliver() {
+        throw new Error("telegram unavailable");
+      },
+    },
+  });
+
+  assert.equal(await worker.runOnce(), "advanced");
+  assert.equal(seen[0]?.maxAttempts, 10);
+});
