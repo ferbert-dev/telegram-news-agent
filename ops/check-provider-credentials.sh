@@ -76,6 +76,34 @@ echo "Credentials in $file"
 probe openai "$(value_of OPENAI_API_KEY)" "https://api.openai.com/v1/models" "Authorization: Bearer "
 probe gemini "$(value_of GEMINI_API_KEY)" "https://generativelanguage.googleapis.com/v1beta/models?key=" ""
 
+# Exa is reported but deliberately NOT probed.
+#
+# It has no free credential endpoint: the only way to learn whether a key is
+# accepted is to run a search, and searches are metered -- EXA_DAILY_SEARCH_CAP
+# exists precisely because they cost. Spending one on every credential check
+# would make this script a recurring charge, and a GET against the search
+# endpoint answers 404 for method-not-allowed regardless of the key, which is
+# no verdict at all. (That 404 was reported here as a rejection once; it was
+# this probe being wrong, not the key.)
+exa_key="$(value_of EXA_API_KEY)"
+if [[ "$(value_of EXA_ENABLED)" != "true" ]]; then
+  printf '  %-8s not enabled (EXA_ENABLED is not true)\n' "exa"
+elif [[ -z "$exa_key" ]]; then
+  printf '  %-8s ENABLED BUT NOT SET\n' "exa"
+  status=1
+else
+  exa_trimmed="${exa_key#"${exa_key%%[![:space:]]*}"}"
+  exa_trimmed="${exa_trimmed%"${exa_trimmed##*[![:space:]]}"}"
+  if [[ "$exa_key" != "$exa_trimmed" ]]; then
+    printf '  %-8s len=%-4s whitespace=YES — this alone will cause a 401\n' "exa" "${#exa_key}"
+    status=1
+  else
+    printf '  %-8s len=%-4s whitespace=no   set, not probed (a probe costs a metered search)\n' \
+      "exa" "${#exa_key}"
+  fi
+fi
+unset exa_key exa_trimmed
+
 echo
 if (( status == 0 )); then
   echo "All configured providers accepted their key."
