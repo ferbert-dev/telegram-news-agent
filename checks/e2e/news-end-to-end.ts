@@ -22,6 +22,8 @@ import { OperationsApplicationModule } from "../../src/operations/operations-app
 import { PIPELINE_LEASE_APPLICATION } from "../../src/operations/operations-application.tokens.js";
 import { PersistenceFacadeModule } from "../../src/persistence/persistence-facade.module.js";
 import { SettingsApplicationModule } from "../../src/settings/settings-application.module.js";
+import { LateBoundPortRegistry } from "../../src/composition/late-bound-port.js";
+import { getNewsEditor } from "../../src/editor.js";
 import { LEGACY_PERSISTENCE } from "../../src/persistence/legacy-persistence.tokens.js";
 import { TelegramPersistenceModule } from "../../src/telegram/telegram-persistence.module.js";
 import {
@@ -60,6 +62,9 @@ import type { TelegramControlRequest } from "../../src/telegram/telegram-applica
 const enabled = process.env.RUN_DATABASE_INTEGRATION === "1";
 const connectionString = process.env.DATABASE_TEST_URL ?? process.env.DATABASE_URL;
 
+/** The article the whole run is steered towards, so evidence and citations agree. */
+const ARTICLE_URL = "https://feed.example.test/hubble-measurement";
+
 /** A minimal, valid RSS feed. Two items, both recent, both plausible news. */
 function feedXml(now: Date): string {
   const pubDate = new Date(now.getTime() - 60 * 60 * 1000).toUTCString();
@@ -69,7 +74,7 @@ function feedXml(now: Date): string {
   <link>https://feed.example.test/</link>
   <item>
     <title>Observatory confirms a new measurement of the Hubble constant</title>
-    <link>https://feed.example.test/hubble-measurement</link>
+    <link>${ARTICLE_URL}</link>
     <pubDate>${pubDate}</pubDate>
     <description>Researchers published a peer-reviewed measurement narrowing the uncertainty on the expansion rate.</description>
   </item>
@@ -107,11 +112,37 @@ function fakeAiProvider(counters: Record<string, number>) {
       };
     }
     if (schema.includes("draft") || schema.includes("Draft")) {
+      // Shaped to satisfy the real grounding validator, not just the JSON
+      // schema: every claim must cite a URL that was actually supplied as
+      // evidence, the headline must itself be a source-linked claim, and the
+      // Telegram text has a required section order. A fake that ignored any of
+      // that would fail validation and prove nothing about the stages after it.
+      const url = ARTICLE_URL;
+      const headline = "Observatory narrows the Hubble constant uncertainty";
       return {
-        headline: "Observatory narrows the Hubble constant uncertainty",
-        body: "Researchers published a peer-reviewed measurement narrowing the uncertainty on the cosmic expansion rate. The result was reproduced by an independent group under review conditions.",
-        citations: ["https://feed.example.test/hubble-measurement"],
-        topicAssignments: [{ code: "science_space", confidence: 0.9 }],
+        headline,
+        telegramText: [
+          headline,
+          "",
+          "Researchers published a peer-reviewed measurement of the cosmic expansion rate.",
+          "",
+          "Why it matters: a tighter bound narrows which cosmological models remain viable.",
+          "",
+          "Caveat: the result awaits independent replication.",
+          "",
+          "Source:",
+          url,
+        ].join("\n"),
+        claims: [
+          { text: headline, sourceUrl: url },
+          {
+            text: "Researchers published a peer-reviewed measurement of the cosmic expansion rate.",
+            sourceUrl: url,
+          },
+        ],
+        sourceUrls: [url],
+        caveat: "The result awaits independent replication.",
+        topicTags: [],
       };
     }
     return {};
@@ -168,7 +199,13 @@ test(
     };
     const dns = {
       async lookup() {
-        return [{ address: "203.0.113.10", family: 4 as const }];
+        // A routable public address, and deliberately not a documentation
+        // range. The gateway's SSRF guard blocks 203.0.113.0/24, 192.0.2.0/24
+        // and 198.51.100.0/24 along with every private range -- so the obvious
+        // choice for a fake makes every fetch throw before it reaches the
+        // transport, which reads as "research found nothing" rather than as a
+        // rejected address. Nothing is dialled: the transport is faked too.
+        return [{ address: "93.184.216.34", family: 4 as const }];
       },
     };
 
@@ -181,6 +218,13 @@ test(
       sentToTelegram.push({ method, payload });
       return { ok: true, result: { message_id: 4242, chat: { id: 987_654 } } };
     };
+
+    // The draft gateway needs the persistence facade, which only exists once
+    // the container is built -- the same circularity the composition root
+    // solves, solved the same way, so this test wires the product the way the
+    // product is wired rather than inventing a shortcut.
+    const ports = new LateBoundPortRegistry();
+    const legacyPersistence = ports.create<object>("legacy-persistence");
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -195,8 +239,8 @@ test(
           draft: new LegacyEditorialDraftGateway({
             aiProvider: aiProvider as never,
             model: "fake-model",
-            repository: null as never,
-            editor: null as never,
+            repository: legacyPersistence.port as never,
+            editor: getNewsEditor({}) as never,
           }) as never,
           publication: new LegacyEditorialPublicationGateway({ token: "fake-token" }) as never,
           excludedTopics: new LegacyEditorialPublicationPolicyGateway({
@@ -216,6 +260,8 @@ test(
       .useValue(dns)
       .compile();
     await moduleRef.init();
+    legacyPersistence.bind(moduleRef.get(LEGACY_PERSISTENCE, { strict: false }) as object);
+    ports.assertAllBound();
 
     try {
       const updates = new TelegramUpdatesRepository(pool, drizzle);
@@ -256,11 +302,29 @@ test(
       const queued = await useCase.execute(request, claim.claim_token);
       assert.equal(queued.status, "research_queued", "the command must accept and return");
 
+      // Research reports "no candidates" for a dozen different reasons and the
+      // workflow adapter deliberately swallows that distinction. For a test
+      // whose whole job is to find out WHY, the reason has to be captured.
+      const researchErrors: string[] = [];
+      const wrappedResearch = {
+        async execute(input: unknown, signal?: AbortSignal) {
+          try {
+            return await (research as { execute: (i: unknown, s?: AbortSignal) => Promise<unknown> })
+              .execute(input, signal);
+          } catch (error) {
+            researchErrors.push(
+              `${(error as Error)?.name ?? "Error"}: ${(error as Error)?.message ?? String(error)}`,
+            );
+            throw error;
+          }
+        },
+      };
+
       const deliveries: Array<Record<string, unknown>> = [];
       const worker = new TelegramNewsJobWorker({
         jobs: jobs as never,
         workflow: new TypedNewsJobWorkflowAdapter({
-          research: research as never,
+          research: wrappedResearch as never,
           editorial: editorial as never,
           editorialPersistence: editorialPersistence as never,
           checkpoints: checkpoints as never,
@@ -288,6 +352,22 @@ test(
 
       // Execute phase, then delivery phase. Two claims, exactly as the running
       // worker does it.
+      // The worker classifies any error into an error_code and moves on, which
+      // is right for production and useless here. Capture the real one.
+      const workflowErrors: string[] = [];
+      const inner = (worker as unknown as { options: { workflow: { run: Function } } }).options.workflow;
+      const originalRun = inner.run.bind(inner);
+      inner.run = async (...args: unknown[]) => {
+        try {
+          return await originalRun(...args);
+        } catch (error) {
+          workflowErrors.push(
+            `${(error as Error)?.name ?? "Error"}: ${(error as Error)?.message ?? String(error)}`,
+          );
+          throw error;
+        }
+      };
+
       const executed = await worker.runOnce();
       assert.equal(executed, "advanced", "the research phase must advance the job");
 
@@ -298,12 +378,22 @@ test(
       assert.equal(
         afterExecute[0]?.error_code,
         null,
-        `the run failed with ${afterExecute[0]?.error_code}; AI schemas asked for: ${JSON.stringify(schemaCounters)}`,
+        [
+          `the run failed with ${afterExecute[0]?.error_code}`,
+          `workflow errors: ${workflowErrors.length ? workflowErrors.join(" | ") : "none"}`,
+          `research errors: ${researchErrors.length ? researchErrors.join(" | ") : "none"}`,
+          `AI schemas: ${JSON.stringify(schemaCounters)}`,
+        ].join("\n  "),
       );
       assert.equal(
         afterExecute[0]?.outcome_status,
         "review_ready",
-        `outcome was ${afterExecute[0]?.outcome_status}; AI schemas asked for: ${JSON.stringify(schemaCounters)}; feed requests: ${feedRequests}`,
+        [
+          `outcome was ${afterExecute[0]?.outcome_status}`,
+          `research errors: ${researchErrors.length ? researchErrors.join(" | ") : "none"}`,
+          `AI schemas: ${JSON.stringify(schemaCounters)}`,
+          `feed requests: ${feedRequests}`,
+        ].join("\n  "),
       );
       assert.ok(afterExecute[0]?.draft_id, "a draft must exist after the research phase");
 
