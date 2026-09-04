@@ -18,6 +18,7 @@ on:
           - inspect-host-capacity
           - deploy-integration
           - stop-integration
+          - inspect-integration
 
 concurrency:
   group: production-${{ github.ref }}
@@ -487,6 +488,107 @@ jobs:
   # Read-only. Reports what the host has, so the integration stage's footprint
   # is a measurement rather than a guess, and so a refused deploy can be
   # explained without an ad-hoc SSH session.
+  # Read-only view into the integration stage: what /news did, what the
+  # providers were asked, and what the bot's memory is doing under it. Reaches
+  # the database the same way inspect-production does -- `docker exec` inside
+  # the stage's own bot container, using that container's DATABASE_URL, so no
+  # credential is copied anywhere.
+  inspect-integration:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect-integration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Inspect the integration stage
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          container_id="$(docker ps -q --filter 'name=^/telegram-news-agent-int-bot-1$')"
+          if [[ -z "$container_id" ]]; then
+            echo "Integration bot container is not running." >&2
+            docker ps -a --filter 'name=telegram-news-agent-int' --format 'table {{.Names}}\t{{.Status}}' >&2
+            exit 1
+          fi
+
+          echo "=== container ==="
+          docker inspect --format \
+            'IntegrationBot status={{.State.Status}} running={{.State.Running}} restart_count={{.RestartCount}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} mem_limit={{.HostConfig.Memory}} started_at={{.State.StartedAt}}' \
+            "$container_id"
+          docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.CPUPerc}}' \
+            $(docker ps -q --filter 'name=telegram-news-agent') || true
+          awk '/^(MemAvailable|SwapFree):/ { printf "  %-14s %8.0f MiB\n", $1, $2/1024 }' /proc/meminfo
+
+          echo
+          echo "=== /news jobs ==="
+          docker exec -i "$container_id" node --input-type=module <<'NODE'
+          import pg from "pg";
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+          const jobs = await client.query(
+            `select id, status, claim_phase, outcome_status, error_code, draft_id,
+                    publication_message_id, execution_attempt_count, delivery_attempt_count,
+                    created_at, updated_at
+               from public.telegram_news_jobs order by created_at desc limit 5`);
+          if (jobs.rows.length === 0) console.log("NewsJob (none)");
+          for (const r of jobs.rows) {
+            console.log(`NewsJob status=${r.status} phase=${r.claim_phase ?? "none"} outcome=${r.outcome_status ?? "none"} error=${r.error_code ?? "none"} draft=${r.draft_id ?? "none"} msg=${r.publication_message_id ?? "none"} exec_attempts=${r.execution_attempt_count} deliver_attempts=${r.delivery_attempt_count} created=${r.created_at?.toISOString?.() ?? r.created_at} updated=${r.updated_at?.toISOString?.() ?? r.updated_at}`);
+          }
+          const cp = await client.query(
+            `select update_id, status, draft_id, window_hours, publication_message_id, updated_at
+               from public.telegram_news_checkpoints order by updated_at desc limit 3`);
+          for (const r of cp.rows) {
+            console.log(`Checkpoint update=${r.update_id} status=${r.status} draft=${r.draft_id ?? "none"} window=${r.window_hours ?? "none"} msg=${r.publication_message_id ?? "none"} updated=${r.updated_at?.toISOString?.() ?? r.updated_at}`);
+          }
+          const drafts = await client.query(
+            `select id, status, created_at from public.drafts order by created_at desc limit 3`);
+          for (const r of drafts.rows) {
+            console.log(`Draft id=${r.id} status=${r.status} created=${r.created_at?.toISOString?.() ?? r.created_at}`);
+          }
+          await client.end();
+          NODE
+
+          echo
+          echo "=== AI provider activity ==="
+          docker exec -i "$container_id" node --input-type=module <<'NODE'
+          import pg from "pg";
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+          const agg = await client.query(
+            `select provider, status, error_code, count(*)::int as n,
+                    round(avg(latency_ms))::int as avg_ms, max(started_at) as last_at
+               from public.ai_provider_attempts
+              group by provider, status, error_code
+              order by n desc limit 15`);
+          if (agg.rows.length === 0) console.log("AiAttempts (none)");
+          for (const r of agg.rows) {
+            console.log(`AiAttempts provider=${r.provider} status=${r.status} error=${r.error_code ?? "none"} count=${r.n} avg_latency_ms=${r.avg_ms ?? "n/a"} last=${r.last_at?.toISOString?.() ?? r.last_at}`);
+          }
+          const total = await client.query(`select count(*)::int as n from public.ai_provider_attempts`);
+          const usage = await client.query(`select count(*)::int as n from public.ai_usage_events`);
+          console.log(`AiTotals attempts=${total.rows[0].n} usage_events=${usage.rows[0].n}`);
+          await client.end();
+          NODE
+
+          echo
+          echo "=== recent bot log ==="
+          docker logs --tail=60 "$container_id" 2>&1 | tail -60
+          REMOTE
+
   inspect-host-capacity:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect-host-capacity'
     runs-on: ubuntu-latest
