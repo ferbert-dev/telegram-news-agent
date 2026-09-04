@@ -87,6 +87,36 @@ const THROTTLE_BREAKER_COOLDOWN_MS = 60_000;
 
 /** Error codes that mean "you are asking too often", as opposed to "this call failed". */
 const THROTTLE_ERROR_CODES = new Set(["rate_limited", "quota_exhausted"]);
+
+/**
+ * Codes that mean the credential itself is rejected.
+ *
+ * Kept separate from throttling because they behave differently: a rate limit
+ * clears on its own, a rejected key does not. The provider configuration is
+ * read once at boot, so nothing can repair this without a restart -- retrying
+ * is guaranteed waste, and it is paid on every call.
+ *
+ * Measured on the integration stage: an invalid OpenAI key produced 1,967
+ * rejections, three per call, delaying every one by roughly 680ms before the
+ * fallback could even be tried. It never opened the breaker, because 401 is
+ * not a throttle.
+ */
+const CREDENTIAL_ERROR_CODES = new Set(["authentication_failed"]);
+
+/**
+ * Two, not five. A 401 is deterministic -- unlike a rate limit, which depends
+ * on what else is in flight -- so a second identical rejection is already
+ * conclusive. One is left as tolerance for a transient auth blip at a
+ * provider's edge.
+ */
+const CREDENTIAL_BREAKER_THRESHOLD = 2;
+
+/**
+ * Long, because there is nothing to wait for: only a restart can change the
+ * key. Not permanent, so a provider whose auth was briefly broken at its own
+ * end recovers without one.
+ */
+const CREDENTIAL_BREAKER_COOLDOWN_MS = 15 * 60_000;
 const FALLBACK_RETRY_BASE_DELAY_MS = 250;
 const FALLBACK_RETRY_MAX_DELAY_MS = 2_000;
 const FALLBACK_RETRY_JITTER_RATIO = 0.3;
@@ -159,12 +189,15 @@ export function createFallbackAiProvider(
   if (!available.length) throw new Error("No AI provider is configured; enable Exa or set an OpenAI/Gemini API key");
 
   /** Consecutive throttled calls, and when the provider may be tried again. */
-  const throttleState = new Map<string, { consecutive: number; openUntilMs: number }>();
+  const throttleState = new Map<
+    string,
+    { consecutive: number; consecutiveCredential: number; openUntilMs: number }
+  >();
 
   const throttleFor = (name: string) => {
     let state = throttleState.get(name);
     if (!state) {
-      state = { consecutive: 0, openUntilMs: 0 };
+      state = { consecutive: 0, consecutiveCredential: 0, openUntilMs: 0 };
       throttleState.set(name, state);
     }
     return state;
@@ -177,9 +210,22 @@ export function createFallbackAiProvider(
     if (errorCode === null) {
       // A success clears the streak. A provider that answers is not throttling.
       state.consecutive = 0;
+      state.consecutiveCredential = 0;
       state.openUntilMs = 0;
       return;
     }
+    if (CREDENTIAL_ERROR_CODES.has(errorCode)) {
+      // Counted on its own streak: mixing it with throttling would let a rate
+      // limit and a rejected key each reset the other's evidence, so neither
+      // would reach its threshold on a provider producing both.
+      state.consecutiveCredential += 1;
+      state.consecutive = 0;
+      if (state.consecutiveCredential >= CREDENTIAL_BREAKER_THRESHOLD) {
+        state.openUntilMs = now().getTime() + CREDENTIAL_BREAKER_COOLDOWN_MS;
+      }
+      return;
+    }
+    state.consecutiveCredential = 0;
     if (!THROTTLE_ERROR_CODES.has(errorCode)) {
       // A different failure is not evidence of throttling, so it must not
       // accumulate toward opening the breaker.

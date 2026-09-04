@@ -337,9 +337,22 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
         reviewer_notes: generated.saved.reviewer_notes,
         lease_name: generated.saved.lease_name ?? input.lease?.name ?? null,
         lease_owner_id: generated.saved.lease_owner_id ?? input.lease?.ownerId ?? null,
-        topic_assignments:
-          generated.saved.topic_assignments ??
-          (articleTagging.state === "off" ? null : []),
+        // Omitted, not null, when tagging is off -- exactly what src/draft.js
+        // does (`...(state !== "off" ? { topic_assignments } : {})`).
+        //
+        // This gateway translated that omission into an explicit null, and null
+        // is not undefined: the repository's `withTopics` test admitted it,
+        // stringified it to the JSON literal `null`, and
+        // create_review_draft_with_topics refused it. Every review draft failed
+        // whenever tagging was off, which is the default, while legacy running
+        // the same repository was fine.
+        //
+        // The repositories never differed. This call site did.
+        ...(generated.saved.topic_assignments != null
+          ? { topic_assignments: generated.saved.topic_assignments }
+          : articleTagging.state === "off"
+            ? {}
+            : { topic_assignments: [] }),
         topic_assignment_source:
           generated.saved.topic_assignment_source ?? null,
         topic_assigned_model:

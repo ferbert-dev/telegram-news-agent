@@ -461,3 +461,40 @@ test("EditorialPersistenceModule exports one Symbol alias with exactly sixteen m
     await moduleRef.close();
   }
 });
+
+test("a null topic assignment uses the plain function, not the with-topics one", async () => {
+  // The contract permits null, and the draft gateway passes exactly that when
+  // article tagging is off -- which is the default. Routing null to
+  // create_review_draft_with_topics sent JSON `null` into a function that
+  // requires an array, and it refused every draft with "Article topic
+  // assignments must be a JSON array".
+  //
+  // Found by the end-to-end run, after it had already reached drafting: the
+  // whole pipeline worked and the last write failed.
+  const routed = async (input: Record<string, unknown>) => {
+    const pool = new EditorialPool();
+    const repository = new EditorialRepository(
+      pool as unknown as Pool,
+      createDrizzleDatabase(pool as unknown as Pool),
+    );
+    await repository
+      .createReviewDraft({ article_id: articleRow.id, body: "Body", ...input } as never)
+      .catch(() => undefined);
+    return pool.calls.map((call) => call.text).join(" ");
+  };
+
+  assert.match(
+    await routed({ topic_assignments: null }),
+    /create_review_draft/,
+    "null must still create a draft",
+  );
+  assert.doesNotMatch(
+    await routed({ topic_assignments: null }),
+    /create_review_draft_with_topics/,
+    "null means tagging did not run, so the with-topics function must not be used",
+  );
+  assert.doesNotMatch(await routed({}), /create_review_draft_with_topics/);
+  // An empty array is a caller saying tagging ran and produced nothing, which
+  // is a different statement and still goes to the topics function.
+  assert.match(await routed({ topic_assignments: [] }), /create_review_draft_with_topics/);
+});

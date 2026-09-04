@@ -354,3 +354,180 @@ test("an empty excluded-topic list is exact no-op parity", async () => {
   assert.equal(result.audit.enabled, false);
   assert.equal(provider.requests.length, 0);
 });
+
+test("classification runs concurrently but results keep their input order", async () => {
+  // The loop was sequential: one AI call per candidate, awaited one at a time,
+  // ~1.7s each. A research tier carries up to 80 candidates across four policy
+  // stages, so a single /news spent over ten minutes here before drafting.
+  // Measured on the integration stage: 450 classification calls, and every AI
+  // call the run made was this one operation.
+  //
+  // Concurrency is safe because candidates are independent. Order is NOT safe
+  // by default, and it matters: `eligible` feeds candidate ranking downstream.
+  // This makes the later candidates answer FIRST, so an implementation that
+  // appended results as they arrived would visibly reorder them.
+  const candidates = Array.from({ length: 8 }, (_, index) => ({
+    title: `Candidate ${index}`,
+    summary: `Summary ${index}`,
+    canonicalUrl: `https://example.test/${index}`,
+    discoveryKind: "rss_feed",
+  }));
+
+  let inFlight = 0;
+  let peakInFlight = 0;
+  const aiProvider = {
+    async generateStructured({ input }) {
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      const index = Number(String(input.article.title).split(" ")[1]);
+      // Later candidates resolve sooner: index 7 first, index 0 last.
+      await new Promise((resolve) => setTimeout(resolve, (8 - index) * 5));
+      inFlight -= 1;
+      return {
+        value: { assessments: [{ topicCode: "war_conflict", relation: "unrelated" }] },
+        usageEvents: [{ operation: "excluded_topic_classification", candidate: index }],
+        provider: "openai",
+        model: "test-model",
+      };
+    },
+  };
+
+  const result = await applyExcludedTopicPolicy({
+    candidates,
+    excludedTopicCodes: ["war_conflict"],
+    aiProvider,
+    stage: "discovery",
+    // Passed explicitly: the default is 1, so that production is unchanged by
+    // the pool existing. A test that relied on the default would be asserting
+    // the deployment's configuration rather than the pool's behaviour.
+    concurrency: 6,
+  });
+
+  assert.deepEqual(
+    result.eligible.map(({ title }) => title),
+    candidates.map(({ title }) => title),
+    "eligible must stay in input order even though later candidates resolved first",
+  );
+  // Usage events are merged per candidate in index order too, so accounting
+  // cannot be attributed to the wrong article.
+  assert.deepEqual(
+    result.usageEvents.map(({ candidate }) => candidate),
+    [0, 1, 2, 3, 4, 5, 6, 7],
+  );
+  assert.equal(result.audit.semanticClassifiedCount, 8);
+  assert.equal(result.audit.eligibleCount, 8);
+  assert.ok(
+    peakInFlight > 1,
+    `classification must actually overlap; peak in flight was ${peakInFlight}`,
+  );
+});
+
+test("a classifier failure blocks that candidate and leaves the rest eligible", async () => {
+  // Fail-closed, and it is `evaluateExcludedTopics` that makes it so: it
+  // catches a classifier error and returns `uncertain` for every topic code,
+  // and `uncertain` blocks. An article that could not be checked against the
+  // excluded-topic policy must never be publishable.
+  //
+  // This is unchanged by running the classifications concurrently, which is the
+  // point of asserting it: the one candidate that failed is blocked, the others
+  // are unaffected, and nothing falls through as eligible.
+  const candidates = Array.from({ length: 5 }, (_, index) => ({
+    title: `Candidate ${index}`,
+    summary: `Summary ${index}`,
+    canonicalUrl: `https://example.test/${index}`,
+    discoveryKind: "rss_feed",
+  }));
+  const aiProvider = {
+    async generateStructured({ input }) {
+      if (String(input.article.title).endsWith("3")) {
+        throw new Error("classifier unavailable");
+      }
+      return {
+        value: { assessments: [{ topicCode: "war_conflict", relation: "unrelated" }] },
+        usageEvents: [],
+        provider: "openai",
+        model: "test-model",
+      };
+    },
+  };
+
+  const result = await applyExcludedTopicPolicy({
+    candidates,
+    excludedTopicCodes: ["war_conflict"],
+    aiProvider,
+    stage: "discovery",
+  });
+
+  assert.deepEqual(
+    result.eligible.map(({ title }) => title),
+    ["Candidate 0", "Candidate 1", "Candidate 2", "Candidate 4"],
+    "only the candidate whose classification failed may be withheld",
+  );
+  assert.equal(result.blocked.length, 1);
+  assert.equal(result.blocked[0].candidate.title, "Candidate 3");
+  assert.equal(result.blocked[0].reason, "semantic_uncertain");
+});
+
+test("an empty excluded-topic list still costs no AI call at all", async () => {
+  // The cheapest path, and the one that makes the cost of a non-empty list
+  // visible: a channel with no exclusions classifies nothing.
+  let calls = 0;
+  const result = await applyExcludedTopicPolicy({
+    candidates: [
+      { title: "Anything", summary: "s", canonicalUrl: "https://example.test/a", discoveryKind: "rss_feed" },
+    ],
+    excludedTopicCodes: [],
+    aiProvider: {
+      async generateStructured() {
+        calls += 1;
+        return { value: [], usageEvents: [] };
+      },
+    },
+    stage: "discovery",
+  });
+  assert.equal(calls, 0);
+  assert.equal(result.audit.enabled, false);
+  assert.equal(result.eligible.length, 1);
+});
+
+test("the default is one call at a time, so production is unchanged by the pool existing", async () => {
+  // The pool is a large win and a production risk, and those are separable.
+  // Six concurrent calls each retrying three times puts eighteen requests in
+  // flight against a provider; the legacy runtime production executes has no
+  // circuit breaker (src/ai-provider.js) to bound that across calls. The same
+  // shape measured on integration produced 8,030 wasted 429s.
+  //
+  // So the default is production's existing behaviour, and a deployment opts
+  // in. This asserts the default rather than the opt-in, because a default
+  // that silently changed would change production on the next merge.
+  let inFlight = 0;
+  let peak = 0;
+  const candidates = Array.from({ length: 6 }, (_, index) => ({
+    title: `Candidate ${index}`,
+    summary: `Summary ${index}`,
+    canonicalUrl: `https://example.test/${index}`,
+    discoveryKind: "rss_feed",
+  }));
+
+  await applyExcludedTopicPolicy({
+    candidates,
+    excludedTopicCodes: ["war_conflict"],
+    stage: "discovery",
+    aiProvider: {
+      async generateStructured() {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return {
+          value: { assessments: [{ topicCode: "war_conflict", relation: "unrelated" }] },
+          usageEvents: [],
+          provider: "openai",
+          model: "test-model",
+        };
+      },
+    },
+  });
+
+  assert.equal(peak, 1, "the default must classify one candidate at a time");
+});

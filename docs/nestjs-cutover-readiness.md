@@ -18,6 +18,10 @@ would run it instead.
 | It also constructs against a real PostgreSQL, and reaches it | `checks/integration/news-agent-composition.ts` — drives the lease application through to the atomic function |
 | The composition root refuses to boot with a late-bound port unbound | `checks/application/news-agent-composition.ts` — verified by deleting each of the five `bind()` calls in turn |
 | `/news` enqueues durably and a concurrent request is suppressed, not duplicated | `checks/integration/telegram-news-command.ts` — the real use case against the real atomic function |
+| A queued `/news` job is actually consumed | `checks/emitted-news-agent-composition.mjs` — the runtime's token list, the module's name map and the probe's required set are three separate declarations, and the check requires them to agree and each name to resolve to a real worker |
+| The research phase does not re-run work that was already paid for | `checks/application/telegram-news-job-workflow.ts` — an existing checkpoint is reported without touching a provider |
+| An automatic channel approves before publishing, and never publishes a rejected draft | Same file — the publish fake enforces what `claim_draft_for_publication_with_policy` enforces |
+| An outcome the delivery phase could not render is retried, not made durable | `checks/application/telegram-news-job-worker.ts` |
 | Readiness is decided by the lease row, not by the runtime | `checks/integration/runtime-readiness.ts` — real acquire/lose/expire/release cycle |
 | Lease expiry is judged on PostgreSQL's clock, not the probe's | Same file — the process clock is shifted ten minutes and `serverNowAt` does not follow it |
 | The composition root cannot forget a late-bound port | `checks/application/news-agent-composition.ts` — creation lives only on the registry, so there is no unregistered constructor to omit |
@@ -40,12 +44,35 @@ if they broke. They are evidence, not coverage.
 
 ## Not verified
 
-**No runtime has ever polled a real bot.** Every rehearsal used a placeholder
-token, so what is proven is that it starts, wires, reaches PostgreSQL, reaches
-Telegram, and fails cleanly when Telegram rejects it. Whether it correctly
-serves `/news`, a Publish tap, or a scheduled run against a live bot is
-untested. This is the gap cutover has to close, and it needs a **separate test
-bot and channel** — not the production ones.
+**The typed runtime has now polled a real bot, once, against a separate test
+bot and channel.** That single session found two failures that roughly eight
+hundred automated checks had not:
+
+- **`/news` was permanently dead.** The command enqueued a durable job and no
+  worker existed to consume it, so it answered "Research queued" forever — and
+  because the enqueue function allows one active job per channel, the one dead
+  job suppressed every later `/news` on that channel. Fixed by wiring
+  `TelegramNewsJobWorker` into the composition root with a typed workflow and
+  delivery adapter, and by the three-way worker-set check above.
+- **A rate-limited provider caused a request storm**: 1,005 requests, 986 of
+  them 429s, in 358 seconds. Per-call retry was bounded; nothing was bounded
+  across calls. Fixed by a per-provider circuit breaker.
+
+What is still untested against a live bot: a Publish tap, a Reject, a scheduled
+run, a quiet-hours deferral, and the automatic-approval publish path. The
+`/news` path itself has only been exercised end to end since the worker landed
+in fakes and in PostgreSQL, not yet against the live bot.
+
+**Research does not respond to the abort signal.** Both live runs needed
+SIGKILL. The coordinator bounds shutdown with its own deadline, so the process
+still exits — but a job interrupted mid-research keeps its claim until the
+30-minute stale window expires, and `/news` stays suppressed on that channel
+for that long. This is parity with legacy, not a regression, and it is now on
+the typed runtime's path too.
+
+**Usage accounting is blind.** The same live run wrote 1,005 rows to
+`ai_provider_attempts` and 0 to `ai_usage_events`, so the usage dashboard and
+any spend alerting saw nothing while the storm was happening.
 
 **The poll loop is not covered by the health check.** A permanently failing
 `getUpdates` — revoked token, lasting partition — backs off and retries forever

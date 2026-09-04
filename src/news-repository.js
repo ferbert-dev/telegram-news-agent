@@ -534,7 +534,12 @@ export class NewsRepository {
   }
 
   async createReviewDraft(draft) {
-    const withTopics = draft.topic_assignments !== undefined;
+    // `!= null`, matching src/database/repositories/editorial-repository.ts.
+    // No current caller passes null -- src/draft.js omits the key when tagging
+    // is off -- so this changes no behaviour here. It keeps the two
+    // repositories textually identical on the one condition where a difference
+    // would be invisible until it produced a failed draft.
+    const withTopics = draft.topic_assignments != null;
     const rows = await this.functionRows(
       withTopics ? "create_review_draft_with_topics" : "create_review_draft",
       [

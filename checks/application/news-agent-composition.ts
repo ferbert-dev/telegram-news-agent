@@ -4,8 +4,10 @@ import { Test } from "@nestjs/testing";
 
 import {
   NEWS_SCHEDULER_WORKER,
+  TELEGRAM_NEWS_JOB_WORKER,
   NewsAgentModule,
   startedWorkerNames,
+  readNewsJobSettings,
   RUNTIME_HEALTH_WORKER,
   TELEGRAM_POLLING_WORKER,
 } from "../../src/composition/news-agent.module.js";
@@ -23,6 +25,8 @@ import {
 import { RuntimeHealthWorker } from "../../src/runtime/runtime-health.js";
 import { checkRuntimeHealth } from "../../src/runtime/runtime-health-check.js";
 import { LateBoundPortRegistry } from "../../src/composition/late-bound-port.js";
+import { AI_PROVIDER } from "../../src/ai/ai-provider.tokens.js";
+import type { FallbackAiProvider } from "../../src/ai/ai-provider-composition.js";
 import { DRIZZLE_DB, PG_POOL } from "../../src/database/database.tokens.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../../src/editorial/editorial-application.tokens.js";
 import { PIPELINE_LEASE_APPLICATION } from "../../src/operations/operations-application.tokens.js";
@@ -165,6 +169,7 @@ test("the worker names in the readiness file come from the tokens actually start
   assert.deepEqual(startedWorkerNames([...RUNTIME_WORKER_TOKENS]), [
     "telegram-polling",
     "news-scheduler",
+    "telegram-news-jobs",
   ]);
   // Drop the scheduler token and the name disappears with it.
   assert.deepEqual(
@@ -308,7 +313,12 @@ test("the health worker starts last, which is what makes the readiness file mean
   // that order broken, so it is asserted directly.
   assert.deepEqual(
     [...RUNTIME_WORKER_TOKENS],
-    [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER, RUNTIME_HEALTH_WORKER],
+    [
+      TELEGRAM_POLLING_WORKER,
+      NEWS_SCHEDULER_WORKER,
+      TELEGRAM_NEWS_JOB_WORKER,
+      RUNTIME_HEALTH_WORKER,
+    ],
   );
   assert.equal(RUNTIME_WORKER_TOKENS.at(-1), RUNTIME_HEALTH_WORKER);
 });
@@ -372,4 +382,105 @@ test("whatever token list the runtime starts, the readiness file describes that 
       await moduleRef.close();
     }
   }
+});
+
+test("the durable /news worker's tunables come from the environment, as legacy's do", () => {
+  // Legacy reads these in getTelegramNewsJobsConfig; this runtime was taking
+  // the worker's defaults and ignoring the environment entirely, so a stage
+  // could not shorten the stale window -- the 30 minutes during which a claim
+  // held by a container that died mid-research keeps every later /news on that
+  // channel suppressed as already-running.
+  assert.deepEqual(readNewsJobSettings({}), {}, "an unset environment yields no overrides");
+
+  assert.deepEqual(
+    readNewsJobSettings({
+      TELEGRAM_NEWS_JOB_POLL_INTERVAL_MS: "1000",
+      TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: "300",
+      TELEGRAM_NEWS_JOB_MAX_EXECUTION_ATTEMPTS: "2",
+      TELEGRAM_NEWS_JOB_MAX_DELIVERY_ATTEMPTS: "4",
+    }),
+    {
+      pollIntervalMs: 1000,
+      staleAfterSeconds: 300,
+      maxExecutionAttempts: 2,
+      maxDeliveryAttempts: 4,
+    },
+  );
+
+  // Out of range, unparseable and empty are all ignored rather than thrown on.
+  // This runs during module registration: refusing to boot over a mistyped
+  // poll interval would take the bot down for a value the default covers.
+  for (const bad of ["0", "29", "3601", "not-a-number", "", "  ", "12.5", "-1"]) {
+    assert.deepEqual(
+      readNewsJobSettings({ TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: bad }),
+      {},
+      `${JSON.stringify(bad)} must be ignored, not accepted`,
+    );
+  }
+
+  // The bounds are legacy's, and both edges are inclusive there.
+  assert.equal(
+    readNewsJobSettings({ TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: "30" }).staleAfterSeconds,
+    30,
+  );
+  assert.equal(
+    readNewsJobSettings({ TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: "3600" }).staleAfterSeconds,
+    3600,
+  );
+
+  // TELEGRAM_NEWS_JOB_MODE is deliberately not honoured: this runtime has no
+  // inline /news path, so an "off" mode would reproduce the dead queue rather
+  // than disable a feature.
+  assert.deepEqual(readNewsJobSettings({ TELEGRAM_NEWS_JOB_MODE: "off" }), {});
+});
+
+test("the runtime's AI provider is the migrated one, so the circuit breaker actually runs", async () => {
+  // The gap this closes: both runtimes built their provider from
+  // src/ai-provider.js, whose fallback loop has per-call retry and nothing
+  // across calls. The breaker lives in the typed composition and was never
+  // imported here -- shipped, tested, and unreachable.
+  //
+  // Measured on the integration stage before the fix: 2,131 rate-limited
+  // attempts against 708 useful calls. A ratio of exactly the 3-attempt retry
+  // budget, firing on every call.
+  const moduleRef = await compileRuntime();
+  try {
+    const provider = moduleRef.get(AI_PROVIDER, { strict: false }) as FallbackAiProvider;
+    assert.ok(provider, "AI_PROVIDER must resolve from the composed runtime");
+    assert.equal(typeof provider.generateStructured, "function");
+    // testConnection exists only on the typed composition; the legacy provider
+    // has testExaConnection alone. It is the cheapest thing that tells the two
+    // implementations apart from the outside.
+    assert.equal(
+      typeof provider.testConnection,
+      "function",
+      "the runtime resolved a provider without testConnection, which means it is the legacy composition",
+    );
+    assert.ok(Array.isArray(provider.names) && provider.names.length > 0);
+  } finally {
+    await moduleRef.close();
+  }
+});
+
+test("a runtime with no provider configured refuses to register at all", () => {
+  // Kept as a registration-time refusal rather than letting the container
+  // raise it: createFallbackAiProvider throws the same message, but only
+  // inside NestFactory.createApplicationContext -- after Telegram has been
+  // contacted and the graph assembled. A misconfigured deployment should hear
+  // about it before any of that, and not wrapped in a DI failure.
+  assert.throws(
+    () =>
+      NewsAgentModule.register({
+        token: "t",
+        identity,
+        env: {
+          ...env,
+          OPENAI_API_KEY: undefined,
+          GEMINI_API_KEY: undefined,
+          EXA_API_KEY: undefined,
+          EXA_ENABLED: undefined,
+        } as NodeJS.ProcessEnv,
+      }),
+    /No AI provider is configured/,
+  );
 });

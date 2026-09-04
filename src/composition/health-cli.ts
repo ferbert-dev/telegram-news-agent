@@ -11,7 +11,17 @@ import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
 import type { PipelineLeaseReadPort } from "../operations/operations.interfaces.js";
 
 /** What a healthy deployment must be running, independent of what it started. */
-export const REQUIRED_WORKERS = ["telegram-polling", "news-scheduler"] as const;
+export const REQUIRED_WORKERS = [
+  "telegram-polling",
+  "news-scheduler",
+  // Required, not optional. A runtime without it answers `/news` with
+  // "Research queued" and then never researches anything, and because the
+  // enqueue function allows one active job per channel, that one dead job
+  // suppresses every later `/news` on the channel. A deployment in that state
+  // looks healthy on every other signal, which is precisely why it belongs in
+  // the probe's required set.
+  "telegram-news-jobs",
+] as const;
 
 /**
  * The identity this probe expects the runtime to have.

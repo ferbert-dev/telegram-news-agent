@@ -15,10 +15,30 @@
 #   host dir   /opt/telegram-news-agent-int, so the two stacks never share a
 #              compose file or an environment file
 #
-# Deliberately NOT set here: memory limits. They inherit from compose.yaml until
-# the free memory on the box is known. Two full stacks at compose.yaml's budget
-# is roughly 768m of steady state, and an OOM kill would take production's bot
-# with it — so size these once, from a real measurement, rather than guessing.
+# Memory limits are set here and NOT in compose.yaml, on purpose.
+#
+# Production runs unbounded today. That is a deliberate non-change: adding a
+# limit to production is a production change, and it would be made blind. But
+# unbounded production plus unbounded integration means that when the box runs
+# out, the kernel OOM killer picks the victim by its own score — and the fat,
+# long-lived process it tends to pick is production's postgres.
+#
+# Bounding only the new stack fixes that asymmetry without touching production:
+# integration cannot grow into the memory production needs, because the cgroup
+# stops it first. If integration is the thing that overreaches, integration is
+# the thing that dies.
+#
+# Sized against a real measurement, not a guess: the host is a 952MiB instance
+# with 461MiB available, and production is using ~141MiB of its 768MiB of
+# ceilings. The first sizing here wanted 512MiB and did not fit — the capacity
+# guard refused it, which is what that guard is for.
+#
+# Production's own limits stay exactly as they are: db 384m, migrate 256m,
+# bot 384m. Integration adds 352MiB of ceilings (db 128m + bot 224m), with
+# migrate kept below bot so the migration step is never the peak.
+#
+# This stage is brought up to test and torn down after — `deploy.yml` has a
+# stop-integration operation. Idle, the box gets the whole 461MiB back.
 name: telegram-news-agent-int
 
 services:
@@ -39,9 +59,85 @@ services:
       - max_connections=12
       - -c
       - wal_buffers=4MB
+    # Production's db is 384m and uses 54MiB. Integration holds one channel's
+    # test data: 32MB shared_buffers plus 12 connections at ~2MB work_mem sits
+    # near 90MiB, so 128m leaves room without taking room production may need.
+    mem_limit: 128m
+    shm_size: 16mb
+
+  migrate:
+    # Below the bot's ceiling on purpose: peak usage is db+migrate during the
+    # migration and db+bot afterwards, so keeping migrate under bot means the
+    # steady state is the peak and the capacity guard only has to size one
+    # number. ops/deploy-integration.sh asserts this ordering.
+    mem_limit: 192m
 
   bot:
+    # compose.yaml names `.env.production` here, and compose MERGES env_file
+    # lists rather than replacing them — so without `!override` the integration
+    # stack would demand production's environment file inside its own
+    # directory, and fail to start. `!override` replaces the list outright.
+    #
+    # This was a real defect in the overlay as first written: nothing had ever
+    # run it, so nothing had noticed.
+    env_file: !override
+      - .env.integration
+    # Production's bot is 384m and uses 87MiB doing the same work. 224m is
+    # roughly 2.5x observed usage — enough that normal operation never reaches
+    # it, tight enough to fit beside production. A research pass that does
+    # overrun spills to swap (2GB, 95% free) rather than being killed outright,
+    # and if it is killed the cgroup means integration dies, not production.
+    mem_limit: 224m
     environment:
       # Distinguishable in logs and in /status, so nobody has to guess which
       # stage a message came from.
       APP_VERSION: ${APP_VERSION:-local}-int
+
+      # `environment` overrides `env_file`, so these are set here rather than in
+      # the encrypted file: they are operational settings for this stage, not
+      # secrets, and belong somewhere reviewable in git.
+
+      # Integration has its own OpenAI key; its Gemini key is still production's
+      # and that quota is exhausted. Leaving gemini first meant every call was
+      # tried against it, failed rate-limited three times, and only then fell
+      # through -- 2,131 wasted attempts against 708 useful ones in a single
+      # measured run. Ordering the working provider first is not a workaround
+      # for that; it is just the correct order for this stage's credentials.
+      AI_PROVIDER_ORDER: openai,gemini
+
+      # Fifteen minutes: the same as the pipeline lease's TTL, and not less.
+      #
+      # This is the window during which a claim held by a container that died
+      # mid-research is still honoured. Shortening it to 300s -- which was tried
+      # -- made a job reclaimable while its own pipeline lease was still held,
+      # so every reclaim hit "already running" and the queue churned instead of
+      # recovering. A stale window below the lease TTL cannot help: the lease is
+      # what actually gates research, so reclaiming earlier only produces
+      # refusals.
+      #
+      # Matching the TTL is the shortest coherent value, and it still recovers a
+      # killed run in a quarter of production's thirty minutes. Production keeps
+      # thirty, where a slow recovery is safer than an early second attempt.
+      TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: "900"
+
+      # One attempt. No automatic retry after a failed /news.
+      #
+      # /news is a manual diagnostic: it is typed to find out whether the
+      # application is working right now. A retry hours or minutes later
+      # answers a question nobody is still asking -- and answers it by
+      # re-running the entire research pass, which is the most expensive thing
+      # this system does. A failure should be reported and finished with, so
+      # the next /news is a fresh question rather than a queue of stale ones.
+      #
+      # Delivery attempts keep their budget: retrying a Telegram send is cheap
+      # and is what gets the failure message to the operator at all.
+      TELEGRAM_NEWS_JOB_MAX_EXECUTION_ATTEMPTS: "1"
+
+      # Six concurrent excluded-topic classifications instead of one.
+      #
+      # The default is 1 -- production's behaviour -- because six calls each
+      # retrying three times puts eighteen requests in flight, and the legacy
+      # runtime production executes has no circuit breaker to bound that. Here
+      # the typed runtime does, so the speed-up is safe to take: it turned an
+      # eleven-minute filtering pass into roughly two.
+      EXCLUDED_TOPIC_CLASSIFICATION_CONCURRENCY: "6"

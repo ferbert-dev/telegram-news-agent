@@ -7,7 +7,10 @@ import { getNewsEditor } from "../editor.js";
 import { getOpenAiConfig } from "../openai-provider.js";
 import { getGeminiProviderConfig } from "../gemini-provider.js";
 import { NotionAuditLogger, getNotionAuditConfig } from "../notion-audit.js";
-import { createAiProvider } from "../ai-provider.js";
+import { AiProvidersModule } from "../ai/ai-providers.module.js";
+import { BUILTIN_PROVIDER_DESCRIPTORS } from "../ai/providers/index.js";
+import { AI_PROVIDER } from "../ai/ai-provider.tokens.js";
+import type { FallbackAiProvider } from "../ai/ai-provider-composition.js";
 
 import { DatabaseModule } from "../database/database.module.js";
 import { PersistenceFacadeModule } from "../persistence/persistence-facade.module.js";
@@ -27,8 +30,16 @@ import type { PipelineLeaseApplicationPort } from "../operations/operations-appl
 import { LegacyNotionAuditGateway } from "../operations/legacy-notion-audit.gateway.js";
 
 import { TelegramPersistenceModule } from "../telegram/telegram-persistence.module.js";
-import { TELEGRAM_UPDATES_PERSISTENCE } from "../telegram/telegram-persistence.tokens.js";
-import type { TelegramUpdatesPersistence } from "../telegram/telegram-persistence.contracts.js";
+import {
+  TELEGRAM_CHECKPOINTS_PERSISTENCE,
+  TELEGRAM_NEWS_JOBS_PERSISTENCE,
+  TELEGRAM_UPDATES_PERSISTENCE,
+} from "../telegram/telegram-persistence.tokens.js";
+import type {
+  TelegramCheckpointsPersistence,
+  TelegramNewsJobsPersistence,
+  TelegramUpdatesPersistence,
+} from "../telegram/telegram-persistence.contracts.js";
 import { TelegramControlApplicationModule } from "../telegram/telegram-control-application.module.js";
 import {
   TELEGRAM_CONTROL_APPLICATION,
@@ -47,6 +58,9 @@ import {
   TelegramLegacyStatusGateway,
 } from "../telegram/transport/telegram-legacy-feature.gateways.js";
 import { TelegramControlTransportHandler } from "../telegram/transport/telegram-control-transport.handler.js";
+import { TelegramNewsJobWorker } from "../telegram/telegram-news-job-worker.js";
+import { TypedNewsJobWorkflowAdapter } from "../telegram/typed-news-job-workflow.adapter.js";
+import { TypedNewsJobDeliveryAdapter } from "../telegram/typed-news-job-delivery.adapter.js";
 import {
   TELEGRAM_CONTROL_POLLER_LEASE_NAME,
   TelegramPollingWorker,
@@ -64,6 +78,10 @@ import { TypedSchedulerNewsWorkflowAdapter } from "../scheduler/typed-scheduler-
 import { TypedResearchExecutionGatewayModule } from "../research/typed-research-execution.module.js";
 import { RESEARCH_EXECUTION_GATEWAY } from "../research/research-gateway.tokens.js";
 
+import { EditorialPersistenceModule } from "../editorial/editorial-persistence.module.js";
+import { EDITORIAL_PERSISTENCE } from "../editorial/editorial-persistence.tokens.js";
+import type { EditorialPersistence } from "../editorial/editorial-persistence.contracts.js";
+
 import { RuntimeHealthWorker } from "../runtime/runtime-health.js";
 import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
 import { randomUUID } from "node:crypto";
@@ -73,7 +91,45 @@ import { LateBoundPortRegistry } from "./late-bound-port.js";
 /** Worker tokens, in the coordinator's required start order. */
 export const TELEGRAM_POLLING_WORKER = Symbol("TELEGRAM_POLLING_WORKER");
 export const NEWS_SCHEDULER_WORKER = Symbol("NEWS_SCHEDULER_WORKER");
+export const TELEGRAM_NEWS_JOB_WORKER = Symbol("TELEGRAM_NEWS_JOB_WORKER");
 export const RUNTIME_HEALTH_WORKER = Symbol("RUNTIME_HEALTH_WORKER");
+
+/**
+ * The durable-`/news` worker's tunables, read the way legacy reads them.
+ *
+ * Bounds are legacy's, from `getTelegramNewsJobsConfig`, and an out-of-range or
+ * unparseable value is ignored rather than thrown on: this runs inside module
+ * registration, and refusing to boot over a mistyped poll interval would take
+ * the bot down for a setting the default already covers. An unset variable and
+ * a nonsense one therefore behave the same way -- the worker's default.
+ *
+ * `TELEGRAM_NEWS_JOB_MODE` is deliberately NOT read. On this runtime there is
+ * no inline `/news` path to fall back to, so honouring an "off" mode would
+ * reproduce the dead queue rather than disable a feature.
+ */
+export function readNewsJobSettings(env: NodeJS.ProcessEnv): {
+  pollIntervalMs?: number;
+  staleAfterSeconds?: number;
+  maxExecutionAttempts?: number;
+  maxDeliveryAttempts?: number;
+} {
+  const bounded = (raw: string | undefined, min: number, max: number): number | undefined => {
+    if (raw == null || raw.trim() === "") return undefined;
+    const parsed = Number(raw);
+    if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) return undefined;
+    return parsed;
+  };
+  const settings: Record<string, number> = {};
+  const pollIntervalMs = bounded(env.TELEGRAM_NEWS_JOB_POLL_INTERVAL_MS, 100, 60_000);
+  if (pollIntervalMs !== undefined) settings.pollIntervalMs = pollIntervalMs;
+  const staleAfterSeconds = bounded(env.TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS, 30, 3_600);
+  if (staleAfterSeconds !== undefined) settings.staleAfterSeconds = staleAfterSeconds;
+  const maxExecutionAttempts = bounded(env.TELEGRAM_NEWS_JOB_MAX_EXECUTION_ATTEMPTS, 1, 20);
+  if (maxExecutionAttempts !== undefined) settings.maxExecutionAttempts = maxExecutionAttempts;
+  const maxDeliveryAttempts = bounded(env.TELEGRAM_NEWS_JOB_MAX_DELIVERY_ATTEMPTS, 1, 50);
+  if (maxDeliveryAttempts !== undefined) settings.maxDeliveryAttempts = maxDeliveryAttempts;
+  return settings;
+}
 
 export type NewsAgentRuntimeIdentity = {
   botUsername: string;
@@ -103,6 +159,7 @@ export type NewsAgentModuleOptions = {
 export const RUNTIME_WORKER_NAMES: ReadonlyMap<symbol, string> = new Map([
   [TELEGRAM_POLLING_WORKER, "telegram-polling"],
   [NEWS_SCHEDULER_WORKER, "news-scheduler"],
+  [TELEGRAM_NEWS_JOB_WORKER, "telegram-news-jobs"],
   [RUNTIME_HEALTH_WORKER, "runtime-health"],
 ]);
 
@@ -137,6 +194,7 @@ export function startedWorkerNames(tokens: readonly symbol[]): string[] {
 export class NewsAgentModule {
   static register(options: NewsAgentModuleOptions): DynamicModule {
     const env = options.env ?? process.env;
+    const newsJobSettings = readNewsJobSettings(env);
     const { token, identity } = options;
     const appVersion = options.appVersion ?? env.APP_VERSION ?? "local";
     const runtimeId = options.runtimeId ?? randomUUID();
@@ -145,6 +203,7 @@ export class NewsAgentModule {
     // that equality is what makes the health check verifiable rather than
     // self-asserted.
     const pollerOwnerId = randomUUID();
+    const newsJobOwnerId = randomUUID();
 
     // --- Late-bound ports -------------------------------------------------
     // Each of these is required by a `register()` call that runs before the
@@ -169,17 +228,45 @@ export class NewsAgentModule {
     }>("research-execution");
 
 
-    // Eagerly constructible: these depend only on configuration, not on the
-    // container. Everything that needs a container singleton goes through a
-    // late-bound port instead (see below).
-    // The attempt repository matters: without it every provider fallback,
-    // retry and quota exhaustion goes unrecorded, so the usage dashboard and
-    // any fallback-rate alerting show nothing. Legacy passes it
-    // (src/telegram-bot.js: createAiProvider(env, { attemptRepository })), and
-    // the late-bound facade is filled long before the first AI call.
-    const aiProvider = createAiProvider(env, {
-      attemptRepository: legacyPersistence.port as never,
-    }) as Record<string, unknown> & { names: string[]; generateStructured?: unknown };
+    // The migrated provider, not `createAiProvider` from src/ai-provider.js.
+    //
+    // Both built the same three adapters, but legacy's own fallback loop has
+    // per-call retry and nothing across calls, while the typed composition adds
+    // the per-provider circuit breaker. Pointing this runtime at legacy meant
+    // the breaker was tested, shipped, and never executed -- measured on the
+    // integration stage as 2,131 rate-limited attempts against 708 useful
+    // calls, a ratio of exactly the 3-attempt retry budget firing on every
+    // call with nothing bounding it.
+    //
+    // Late-bound because AI_PROVIDER is a container singleton and these
+    // consumers take instances at register() time, the same reason the
+    // persistence facade is late-bound. The attempt repository still matters:
+    // without it every fallback, retry and throttle goes unrecorded.
+    // Refuse at registration rather than letting the container fail later.
+    //
+    // `createFallbackAiProvider` raises this same message when it is built, so
+    // the runtime would not start either way -- but that happens inside
+    // NestFactory.createApplicationContext, after Telegram has been contacted
+    // and the whole graph assembled. A misconfigured deployment should be told
+    // before any of that, and the message should name the cause rather than
+    // arrive wrapped in a DI failure.
+    //
+    // The same descriptors the module uses decide this, so there is one rule
+    // for "configured", not two that can disagree.
+    const configuredProviders = BUILTIN_PROVIDER_DESCRIPTORS.filter(
+      (descriptor) => descriptor.configure(env) !== null,
+    );
+    if (configuredProviders.length === 0) {
+      throw new Error(
+        "No AI provider is configured; enable Exa or set an OpenAI/Gemini API key",
+      );
+    }
+
+    const aiProviderPort = ports.create<FallbackAiProvider>("ai-provider");
+    const aiProvider = aiProviderPort.port as unknown as Record<string, unknown> & {
+      names: string[];
+      generateStructured?: unknown;
+    };
     // src/draft.js reads `model` only on the branch taken when no aiProvider
     // is supplied -- unreachable here, since createAiProvider throws when
     // nothing is configured. Legacy passes undefined all the way down, so
@@ -219,6 +306,16 @@ export class NewsAgentModule {
         PersistenceFacadeModule,
         TelegramPersistenceModule,
 
+        AiProvidersModule.register({
+          env,
+          attemptRepository: legacyPersistence.port as never,
+        }),
+        // The news-job workflow needs the draft row itself, to approve a
+        // review-status draft before publishing it on an automatic channel.
+        // `claim_draft_for_publication_with_policy` accepts only `approved`,
+        // so without this the automatic path could not publish at all.
+        EditorialPersistenceModule,
+
         TypedResearchExecutionGatewayModule.register({
           aiProvider: aiProvider as never,
         }),
@@ -249,7 +346,10 @@ export class NewsAgentModule {
           status: new TelegramLegacyStatusGateway(
             ...legacyFeatureArgs,
             aiProvider,
-            aiProvider.names ?? [],
+            // Read through the port at call time rather than here: `names` is a
+            // property of the bound singleton, and this runs before the
+            // container exists.
+            () => aiProviderPort.port.names ?? [],
             appVersion,
           ),
         }),
@@ -283,6 +383,7 @@ export class NewsAgentModule {
             PIPELINE_LEASE_APPLICATION,
             TELEGRAM_REVIEW_DELIVERY,
             RESEARCH_EXECUTION_GATEWAY,
+            AI_PROVIDER,
           ],
           useFactory: (
             persistence: LegacyPersistence,
@@ -290,9 +391,11 @@ export class NewsAgentModule {
             lease: PipelineLeaseApplicationPort,
             delivery: never,
             research: never,
+            ai: FallbackAiProvider,
           ) =>
             new RuntimeBinder(() => {
               legacyPersistence.bind(persistence);
+              aiProviderPort.bind(ai);
               editorialWorkflow.bind(editorial);
               pipelineLease.bind(lease);
               reviewDelivery.bind(delivery);
@@ -333,6 +436,72 @@ export class NewsAgentModule {
             new NewsSchedulerWorker({ scheduler }),
         },
         {
+          provide: TELEGRAM_NEWS_JOB_WORKER,
+          inject: [
+            TELEGRAM_NEWS_JOBS_PERSISTENCE,
+            TELEGRAM_CHECKPOINTS_PERSISTENCE,
+            EDITORIAL_PERSISTENCE,
+            EDITORIAL_WORKFLOW_APPLICATION,
+            PIPELINE_LEASE_APPLICATION,
+            RESEARCH_EXECUTION_GATEWAY,
+            TELEGRAM_REVIEW_DELIVERY,
+          ],
+          useFactory: (
+            jobs: TelegramNewsJobsPersistence,
+            checkpoints: TelegramCheckpointsPersistence,
+            editorialPersistence: EditorialPersistence,
+            editorial: EditorialWorkflowApplicationPort,
+            leases: PipelineLeaseApplicationPort,
+            research: never,
+            delivery: never,
+          ) =>
+            // Registered unconditionally, with no equivalent of legacy's
+            // TELEGRAM_NEWS_JOB_MODE gate. On this runtime the gate would be a
+            // trap rather than a switch: RunTelegramNewsUseCase has no inline
+            // branch, so every `/news` enqueues a durable job. With no consumer
+            // the command answers "Research queued", nothing ever runs it, and
+            // the channel's next `/news` is suppressed as already-running --
+            // which is exactly the state the live test found the runtime in.
+            new TelegramNewsJobWorker({
+              jobs,
+              workflow: new TypedNewsJobWorkflowAdapter({
+                research: research as never,
+                editorial,
+                editorialPersistence,
+                checkpoints,
+                pipelineLease: leases,
+                // The same id the poller uses would let one worker renew the
+                // other's lease; a per-worker id keeps the holder identifiable.
+                ownerId: newsJobOwnerId,
+              }),
+              delivery: new TypedNewsJobDeliveryAdapter({
+                checkpoints,
+                reviewDelivery: delivery as never,
+                adminMessages: new TelegramSchedulerNotificationAdapter(
+                  token,
+                  callTelegram as unknown as never,
+                ),
+              }),
+              newClaimToken: () => randomUUID(),
+              // Legacy reads these from the environment
+              // (getTelegramNewsJobsConfig in src/telegram-news-jobs.js); this
+              // runtime was taking the worker's own defaults and ignoring them,
+              // so a deployment could not tune them at all.
+              //
+              // The stale window matters most. It is how long a claim held by a
+              // container that died mid-research is honoured before another
+              // worker may take the job -- 30 minutes by default, during which
+              // every `/news` on that channel is suppressed as already-running.
+              //
+              // It must not be set below the pipeline lease's TTL (15 minutes).
+              // The lease is what actually prevents two research passes; a
+              // shorter stale window only makes the job reclaimable while its
+              // own lease is still held, so every reclaim is refused as
+              // "already running" and the queue churns rather than recovering.
+              ...newsJobSettings,
+            }),
+        },
+        {
           // Started last and therefore stopped first: it only reports ready
           // once the poller owns its lease and the scheduler is running, and
           // it marks itself stopping before either begins draining.
@@ -356,7 +525,12 @@ export class NewsAgentModule {
             }),
         },
       ],
-      exports: [TELEGRAM_POLLING_WORKER, NEWS_SCHEDULER_WORKER, RUNTIME_HEALTH_WORKER],
+      exports: [
+        TELEGRAM_POLLING_WORKER,
+        NEWS_SCHEDULER_WORKER,
+        TELEGRAM_NEWS_JOB_WORKER,
+        RUNTIME_HEALTH_WORKER,
+      ],
     };
   }
 }

@@ -52,6 +52,30 @@ export type TelegramNewsJobWorkerOptions = {
   log?: { info?: (message: string) => void; error?: (message: string) => void };
 };
 
+/**
+ * Rejects an outcome the delivery phase could not render, before it becomes
+ * durable.
+ *
+ * The compiler covers `status`, but not the fields that must accompany it, and
+ * those are the ones that cause damage. `review_ready` with no draft id is a
+ * job that will fail every one of its ten delivery attempts on the checkpoint
+ * check and then die; `published` with no message id is a published article the
+ * operator is never told about. Legacy validates in exactly this position
+ * (`outcomeFromResult` in src/telegram-news-jobs.js), so the check applies to
+ * any workflow implementation rather than being each adapter's business.
+ */
+function assertRenderableOutcome(outcome: TelegramNewsJobOutcome): void {
+  const needsDraft = new Set(["review_ready", "published", "blocked_by_policy"]);
+  if (needsDraft.has(outcome.status) && !outcome.draftId) {
+    throw new Error(`Telegram news job outcome ${outcome.status} has no draft ID`);
+  }
+  if (outcome.status !== "published") return;
+  const messageId = Number(outcome.publicationMessageId);
+  if (!Number.isSafeInteger(messageId) || messageId <= 0) {
+    throw new Error("Telegram news job publication message ID is invalid");
+  }
+}
+
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
 const DEFAULT_STALE_AFTER_SECONDS = 1_800;
 const DEFAULT_MAX_EXECUTION_ATTEMPTS = 3;
@@ -214,6 +238,7 @@ export class TelegramNewsJobWorker implements RuntimeWorker {
     let outcomePersisted = false;
     try {
       const outcome = await this.options.workflow.run(job, { ...(signal ? { signal } : {}) });
+      assertRenderableOutcome(outcome);
       await heartbeat.renew();
       const saved = await this.options.jobs.recordTelegramNewsJobOutcome({
         jobId: job.id,

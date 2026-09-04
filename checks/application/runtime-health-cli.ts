@@ -34,5 +34,11 @@ test("the probe requires polling mode and the full worker set, not just an ident
   const expected = expectedIdentity({ TELEGRAM_CHANNEL_ID: "@news" });
   assert.ok(expected);
   assert.equal(expected.updateMode, "polling");
-  assert.deepEqual([...expected.startedWorkers], ["telegram-polling", "news-scheduler"]);
+  assert.deepEqual(
+    [...expected.startedWorkers],
+    // telegram-news-jobs is required, not optional: without it `/news` answers
+    // "Research queued" and nothing ever runs the job, while the one dead job
+    // suppresses every later `/news` on that channel.
+    ["telegram-polling", "news-scheduler", "telegram-news-jobs"],
+  );
 });

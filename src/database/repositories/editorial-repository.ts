@@ -230,7 +230,18 @@ export class EditorialRepository
   async createReviewDraft(
     input: CreateReviewDraftInput,
   ): Promise<DraftRow | undefined> {
-    const withTopics = input.topic_assignments !== undefined;
+    // `!= null`, not `!== undefined`: the contract permits null, and the
+    // gateway passes exactly that when article tagging is off. Treating null as
+    // "with topics" sent `JSON.stringify(null)` -- the string "null" -- into
+    // create_review_draft_with_topics, which refuses it with "Article topic
+    // assignments must be a JSON array". Every review draft failed whenever
+    // tagging was off, which is the default.
+    //
+    // Both absent forms now take the plain function, which is what "no topic
+    // assignment" has always meant. An empty array still takes the topics
+    // function: that is a caller saying "tagging ran and produced nothing",
+    // which is a different statement from "tagging did not run".
+    const withTopics = input.topic_assignments != null;
     const rows = await this.functionRows(
       "Create review draft",
       withTopics
