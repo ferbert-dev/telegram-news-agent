@@ -88,6 +88,12 @@ jobs:
             -f compose.yaml \
             -f compose.integration.yaml \
             config --quiet --no-env-resolution
+          # Compose still requires a declared env_file to EXIST before it will
+          # resolve, even with --no-env-resolution, so the integration stack
+          # needs a placeholder here. Empty on purpose: this asserts which file
+          # is wired up, never what is in it.
+          : > .env.integration
+          trap 'rm -f .env.integration' EXIT
           # `--no-env-resolution` above skips env_file loading entirely, which
           # is why it never noticed that the integration overlay inherited
           # compose.yaml's `.env.production`. Compose MERGES env_file lists, so
@@ -668,8 +674,24 @@ jobs:
           chmod 600 "$archive"
           # A separate directory from production's, so the two stacks can never
           # share a compose file or an environment file.
-          install -d -m 750 /opt/telegram-news-agent-int
-          tar -xzf "$archive" -C /opt/telegram-news-agent-int
+          #
+          # /opt is root-owned, so the first deploy has to create this once with
+          # sudo and hand it to the deploy user. Production's directory was made
+          # the same way during its initial setup; every later deploy just
+          # writes into a directory it already owns. `sudo -n` so a host without
+          # passwordless sudo fails with this message instead of hanging on a
+          # password prompt no one is there to type.
+          dir=/opt/telegram-news-agent-int
+          if [[ ! -d "$dir" ]]; then
+            if ! sudo -n install -d -m 750 -o "$(id -un)" -g "$(id -gn)" "$dir"; then
+              echo "cannot create $dir: it does not exist and passwordless sudo is unavailable" >&2
+              echo "create it once by hand: sudo install -d -m 750 -o $(id -un) -g $(id -gn) $dir" >&2
+              exit 1
+            fi
+            echo "Created $dir (first deploy)."
+          fi
+          test -w "$dir" || { echo "$dir is not writable by $(id -un)" >&2; exit 1; }
+          tar -xzf "$archive" -C "$dir"
           REMOTE
 
       - name: Preflight the host
