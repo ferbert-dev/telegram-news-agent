@@ -92,3 +92,24 @@ services:
       # Distinguishable in logs and in /status, so nobody has to guess which
       # stage a message came from.
       APP_VERSION: ${APP_VERSION:-local}-int
+
+      # `environment` overrides `env_file`, so these are set here rather than in
+      # the encrypted file: they are operational settings for this stage, not
+      # secrets, and belong somewhere reviewable in git.
+
+      # Integration has its own OpenAI key; its Gemini key is still production's
+      # and that quota is exhausted. Leaving gemini first meant every call was
+      # tried against it, failed rate-limited three times, and only then fell
+      # through -- 2,131 wasted attempts against 708 useful ones in a single
+      # measured run. Ordering the working provider first is not a workaround
+      # for that; it is just the correct order for this stage's credentials.
+      AI_PROVIDER_ORDER: openai,gemini
+
+      # Five minutes instead of the default thirty. This is the window during
+      # which a claim held by a container that died mid-research is still
+      # honoured, and every `/news` on the channel is suppressed as
+      # already-running while it lasts. A stage that is redeployed while a run
+      # is in flight -- which is exactly what happened on the first live test --
+      # should recover in minutes, not half an hour. Production keeps thirty:
+      # there, a long recovery is safer than a premature second research pass.
+      TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: "300"

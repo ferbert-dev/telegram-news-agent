@@ -7,6 +7,7 @@ import {
   TELEGRAM_NEWS_JOB_WORKER,
   NewsAgentModule,
   startedWorkerNames,
+  readNewsJobSettings,
   RUNTIME_HEALTH_WORKER,
   TELEGRAM_POLLING_WORKER,
 } from "../../src/composition/news-agent.module.js";
@@ -379,4 +380,54 @@ test("whatever token list the runtime starts, the readiness file describes that 
       await moduleRef.close();
     }
   }
+});
+
+test("the durable /news worker's tunables come from the environment, as legacy's do", () => {
+  // Legacy reads these in getTelegramNewsJobsConfig; this runtime was taking
+  // the worker's defaults and ignoring the environment entirely, so a stage
+  // could not shorten the stale window -- the 30 minutes during which a claim
+  // held by a container that died mid-research keeps every later /news on that
+  // channel suppressed as already-running.
+  assert.deepEqual(readNewsJobSettings({}), {}, "an unset environment yields no overrides");
+
+  assert.deepEqual(
+    readNewsJobSettings({
+      TELEGRAM_NEWS_JOB_POLL_INTERVAL_MS: "1000",
+      TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: "300",
+      TELEGRAM_NEWS_JOB_MAX_EXECUTION_ATTEMPTS: "2",
+      TELEGRAM_NEWS_JOB_MAX_DELIVERY_ATTEMPTS: "4",
+    }),
+    {
+      pollIntervalMs: 1000,
+      staleAfterSeconds: 300,
+      maxExecutionAttempts: 2,
+      maxDeliveryAttempts: 4,
+    },
+  );
+
+  // Out of range, unparseable and empty are all ignored rather than thrown on.
+  // This runs during module registration: refusing to boot over a mistyped
+  // poll interval would take the bot down for a value the default covers.
+  for (const bad of ["0", "29", "3601", "not-a-number", "", "  ", "12.5", "-1"]) {
+    assert.deepEqual(
+      readNewsJobSettings({ TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: bad }),
+      {},
+      `${JSON.stringify(bad)} must be ignored, not accepted`,
+    );
+  }
+
+  // The bounds are legacy's, and both edges are inclusive there.
+  assert.equal(
+    readNewsJobSettings({ TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: "30" }).staleAfterSeconds,
+    30,
+  );
+  assert.equal(
+    readNewsJobSettings({ TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS: "3600" }).staleAfterSeconds,
+    3600,
+  );
+
+  // TELEGRAM_NEWS_JOB_MODE is deliberately not honoured: this runtime has no
+  // inline /news path, so an "off" mode would reproduce the dead queue rather
+  // than disable a feature.
+  assert.deepEqual(readNewsJobSettings({ TELEGRAM_NEWS_JOB_MODE: "off" }), {});
 });

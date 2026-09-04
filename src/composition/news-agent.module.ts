@@ -91,6 +91,43 @@ export const NEWS_SCHEDULER_WORKER = Symbol("NEWS_SCHEDULER_WORKER");
 export const TELEGRAM_NEWS_JOB_WORKER = Symbol("TELEGRAM_NEWS_JOB_WORKER");
 export const RUNTIME_HEALTH_WORKER = Symbol("RUNTIME_HEALTH_WORKER");
 
+/**
+ * The durable-`/news` worker's tunables, read the way legacy reads them.
+ *
+ * Bounds are legacy's, from `getTelegramNewsJobsConfig`, and an out-of-range or
+ * unparseable value is ignored rather than thrown on: this runs inside module
+ * registration, and refusing to boot over a mistyped poll interval would take
+ * the bot down for a setting the default already covers. An unset variable and
+ * a nonsense one therefore behave the same way -- the worker's default.
+ *
+ * `TELEGRAM_NEWS_JOB_MODE` is deliberately NOT read. On this runtime there is
+ * no inline `/news` path to fall back to, so honouring an "off" mode would
+ * reproduce the dead queue rather than disable a feature.
+ */
+export function readNewsJobSettings(env: NodeJS.ProcessEnv): {
+  pollIntervalMs?: number;
+  staleAfterSeconds?: number;
+  maxExecutionAttempts?: number;
+  maxDeliveryAttempts?: number;
+} {
+  const bounded = (raw: string | undefined, min: number, max: number): number | undefined => {
+    if (raw == null || raw.trim() === "") return undefined;
+    const parsed = Number(raw);
+    if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) return undefined;
+    return parsed;
+  };
+  const settings: Record<string, number> = {};
+  const pollIntervalMs = bounded(env.TELEGRAM_NEWS_JOB_POLL_INTERVAL_MS, 100, 60_000);
+  if (pollIntervalMs !== undefined) settings.pollIntervalMs = pollIntervalMs;
+  const staleAfterSeconds = bounded(env.TELEGRAM_NEWS_JOB_STALE_AFTER_SECONDS, 30, 3_600);
+  if (staleAfterSeconds !== undefined) settings.staleAfterSeconds = staleAfterSeconds;
+  const maxExecutionAttempts = bounded(env.TELEGRAM_NEWS_JOB_MAX_EXECUTION_ATTEMPTS, 1, 20);
+  if (maxExecutionAttempts !== undefined) settings.maxExecutionAttempts = maxExecutionAttempts;
+  const maxDeliveryAttempts = bounded(env.TELEGRAM_NEWS_JOB_MAX_DELIVERY_ATTEMPTS, 1, 50);
+  if (maxDeliveryAttempts !== undefined) settings.maxDeliveryAttempts = maxDeliveryAttempts;
+  return settings;
+}
+
 export type NewsAgentRuntimeIdentity = {
   botUsername: string;
   botId: number;
@@ -154,6 +191,7 @@ export function startedWorkerNames(tokens: readonly symbol[]): string[] {
 export class NewsAgentModule {
   static register(options: NewsAgentModuleOptions): DynamicModule {
     const env = options.env ?? process.env;
+    const newsJobSettings = readNewsJobSettings(env);
     const { token, identity } = options;
     const appVersion = options.appVersion ?? env.APP_VERSION ?? "local";
     const runtimeId = options.runtimeId ?? randomUUID();
@@ -403,6 +441,18 @@ export class NewsAgentModule {
                 ),
               }),
               newClaimToken: () => randomUUID(),
+              // Legacy reads these from the environment
+              // (getTelegramNewsJobsConfig in src/telegram-news-jobs.js); this
+              // runtime was taking the worker's own defaults and ignoring them,
+              // so a deployment could not tune them at all.
+              //
+              // The stale window matters most. It is how long a claim held by a
+              // container that died mid-research is honoured before another
+              // worker may take the job -- 30 minutes by default, during which
+              // every `/news` on that channel is suppressed as already-running.
+              // On a stage that is redeployed often, that is the difference
+              // between a few minutes of confusion and half an hour of it.
+              ...newsJobSettings,
             }),
         },
         {
