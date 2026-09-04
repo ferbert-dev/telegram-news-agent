@@ -568,6 +568,17 @@ jobs:
           import pg from "pg";
           const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
           await client.connect();
+          const byOp = await client.query(
+            `select operation, provider, status, count(*)::int as n,
+                    round(avg(latency_ms))::int as avg_ms, max(started_at) as last_at
+               from public.ai_provider_attempts
+              where started_at > now() - interval '30 minutes'
+              group by operation, provider, status
+              order by n desc limit 12`);
+          for (const r of byOp.rows) {
+            console.log(`AiByOperation operation=${r.operation} provider=${r.provider} status=${r.status} count=${r.n} avg_latency_ms=${r.avg_ms ?? "n/a"} last=${r.last_at?.toISOString?.() ?? r.last_at}`);
+          }
+          if (!byOp.rows.length) console.log("AiByOperation (nothing in the last 30 minutes)");
           const agg = await client.query(
             `select provider, status, error_code, count(*)::int as n,
                     round(avg(latency_ms))::int as avg_ms, max(started_at) as last_at
