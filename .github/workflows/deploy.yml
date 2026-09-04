@@ -640,7 +640,7 @@ jobs:
           EXPECTED_DEPLOY_STAGE=integration \
             ops/validate-production-env.sh --complete "$RUNNER_TEMP/integration.env"
 
-      - name: Refuse a shared bot or channel
+      - name: Report shared AI provider keys
         env:
           SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: |
@@ -664,8 +664,31 @@ jobs:
               exit 1
             fi
           done
-          rm -f "$RUNNER_TEMP/production.env"
           echo "Integration uses a distinct bot and channel."
+
+          # AI provider keys are a warning, not a refusal. A shared key is a
+          # cost and quota hazard rather than a safety one -- integration
+          # testing spends production's allowance, which has already happened
+          # once here: a single /news made 261 classification calls and
+          # exhausted the OpenAI quota. It is not grounds to block a deploy,
+          # and making it one would strand the stage until every key is
+          # rotated.
+          shared=0
+          for key in OPENAI_API_KEY GEMINI_API_KEY EXA_API_KEY; do
+            prod="$(sed -nE "s/^${key}=//p" "$RUNNER_TEMP/production.env" | head -1)"
+            intg="$(sed -nE "s/^${key}=//p" "$RUNNER_TEMP/integration.env" | head -1)"
+            [[ -z "$prod" || -z "$intg" ]] && continue
+            if [[ "$prod" == "$intg" ]]; then
+              echo "::warning::${key} is shared with production; integration testing will spend production's quota"
+              shared=$((shared + 1))
+            else
+              echo "${key} is distinct from production's."
+            fi
+          done
+          if (( shared > 0 )); then
+            echo "::notice::${shared} AI provider key(s) shared with production. Set separate values in secrets/integration.env.sops to isolate spend."
+          fi
+          rm -f "$RUNNER_TEMP/production.env"
 
       - name: Upload integration bundle
         env:
