@@ -99,7 +99,14 @@ function fakeAiProvider(counters: Record<string, number>) {
     const schema = String(request.schemaName ?? "");
     counters[schema] = (counters[schema] ?? 0) + 1;
 
-    if (schema === "excluded_topic_classification") {
+    // Substring, not equality: the policy runs twice under two schema names --
+    // "excluded_topic_classification" during research and
+    // "final_publication_excluded_topic_classification" immediately before the
+    // send. An exact match answered only the first, and the second fell through
+    // to an unrecognised response, which the policy correctly treats as
+    // uncertain and blocks. That fail-closed behaviour is right; the fake was
+    // what was wrong.
+    if (schema.includes("excluded_topic_classification")) {
       const topics = (request.input as { excludedTopics?: Array<{ code: string }> })
         ?.excludedTopics ?? [];
       // Nothing is excluded, so the pipeline proceeds to drafting. The blocking
@@ -112,21 +119,30 @@ function fakeAiProvider(counters: Record<string, number>) {
       };
     }
     if (schema.includes("draft") || schema.includes("Draft")) {
-      // Shaped to satisfy the real grounding validator, not just the JSON
-      // schema: every claim must cite a URL that was actually supplied as
-      // evidence, the headline must itself be a source-linked claim, and the
-      // Telegram text has a required section order. A fake that ignored any of
-      // that would fail validation and prove nothing about the stages after it.
-      const url = ARTICLE_URL;
-      const headline = "Observatory narrows the Hubble constant uncertainty";
+      // Built FROM the request, not from a constant.
+      //
+      // The grounding validator requires every claim to cite a URL that was
+      // actually supplied as evidence for THIS article. A fixed fixture only
+      // validates when the pipeline happens to select the article it was
+      // written for -- and which of the feed's items wins depends on ranking
+      // and on what deduplication has seen before, so a constant made this test
+      // fail as soon as the rig had state from a previous run. Echoing the
+      // request makes it hold for whichever article is chosen.
+      const requestInput = request.input as {
+        article?: { title?: string; url?: string };
+        evidence?: Array<{ url?: string }>;
+      };
+      const url = requestInput.evidence?.[0]?.url ?? requestInput.article?.url ?? "";
+      const headline = String(requestInput.article?.title ?? "Untitled");
+      const claim = "An independent group reported the result under review conditions.";
       return {
         headline,
         telegramText: [
           headline,
           "",
-          "Researchers published a peer-reviewed measurement of the cosmic expansion rate.",
+          claim,
           "",
-          "Why it matters: a tighter bound narrows which cosmological models remain viable.",
+          "Why it matters: it narrows which explanations remain viable.",
           "",
           "Caveat: the result awaits independent replication.",
           "",
@@ -135,10 +151,7 @@ function fakeAiProvider(counters: Record<string, number>) {
         ].join("\n"),
         claims: [
           { text: headline, sourceUrl: url },
-          {
-            text: "Researchers published a peer-reviewed measurement of the cosmic expansion rate.",
-            sourceUrl: url,
-          },
+          { text: claim, sourceUrl: url },
         ],
         sourceUrls: [url],
         caveat: "The result awaits independent replication.",
@@ -209,6 +222,17 @@ test(
       },
     };
 
+    // The publication gateway, faked. This is the ONLY thing standing between
+    // this test and a real post in a real channel, so it records rather than
+    // sends -- and the recording is what the publish assertions read.
+    const published: Array<Record<string, unknown>> = [];
+    const publicationGateway = {
+      async publish(request: Record<string, unknown>) {
+        published.push({ channelId: request.channelId, text: request.text });
+        return { messageId: 9001, messageDate: 1_757_000_000 };
+      },
+    };
+
     const sentToTelegram: Array<{ method: string; payload: Record<string, unknown> }> = [];
     const callTelegram = async (
       _token: string,
@@ -242,7 +266,7 @@ test(
             repository: legacyPersistence.port as never,
             editor: getNewsEditor({}) as never,
           }) as never,
-          publication: new LegacyEditorialPublicationGateway({ token: "fake-token" }) as never,
+          publication: publicationGateway as never,
           excludedTopics: new LegacyEditorialPublicationPolicyGateway({
             aiProvider: aiProvider as never,
           }) as never,
@@ -412,6 +436,58 @@ test(
       assert.equal(deliveries.length, 1, "exactly one review card");
       assert.equal(deliveries[0]?.draftId, afterExecute[0]?.draft_id);
 
+      // --- the publish half -------------------------------------------------
+      //
+      // Everything above proved a draft reaches a reviewer. This proves the
+      // half that cannot be undone: approve, publish, and exactly one post.
+      const draftId = String(afterExecute[0]?.draft_id);
+
+      // A draft must be `approved` before the publication claim will take it --
+      // `claim_draft_for_publication_with_policy` accepts nothing else. This is
+      // the human tapping Approve.
+      await editorialPersistence.approveDraft(draftId);
+
+      const firstPublish = await editorial.publishApprovedDraft({
+        draftId,
+        channelId,
+        publicationPath: "manual_review",
+      });
+      assert.equal(
+        firstPublish.status,
+        "published",
+        `the draft must publish; got ${JSON.stringify(firstPublish)}`,
+      );
+      assert.equal(published.length, 1, "exactly one post reaches the channel");
+      assert.equal(published[0]?.channelId, channelId);
+
+      const { rows: publications } = await pool.query(
+        "select telegram_message_id, telegram_channel_id from public.published_posts where draft_id = $1",
+        [draftId],
+      );
+      assert.equal(publications.length, 1, "exactly one publication row");
+      assert.equal(Number(publications[0]?.telegram_message_id), 9001);
+
+      // Idempotency, against the real SQL functions rather than a fake: a second
+      // publish of the same draft must return the existing publication and send
+      // nothing. A divergence here is a duplicate post in a real channel, which
+      // is the single worst outcome this system can produce.
+      const secondPublish = await editorial.publishApprovedDraft({
+        draftId,
+        channelId,
+        publicationPath: "manual_review",
+      });
+      assert.equal(secondPublish.status, "already_published");
+      assert.equal(
+        published.length,
+        1,
+        "a second publish must not reach the channel again",
+      );
+      const { rows: afterSecond } = await pool.query(
+        "select count(*)::int as n from public.published_posts where draft_id = $1",
+        [draftId],
+      );
+      assert.equal(afterSecond[0]?.n, 1, "still exactly one publication row");
+
       // The point of the whole exercise: this cost nothing.
       assert.ok(feedRequests > 0, "the feed transport must actually have been used");
       assert.ok(
@@ -419,18 +495,48 @@ test(
         "the AI provider must actually have been asked for something",
       );
     } finally {
-      await pool
-        .query("delete from public.telegram_news_jobs where telegram_channel_id = $1", [channelId])
-        .catch(() => {});
-      await pool
-        .query("delete from public.telegram_news_request_checkpoints where update_id = $1", [updateId])
-        .catch(() => {});
-      await pool
-        .query("delete from public.news_bot_settings where telegram_channel_id = $1", [channelId])
-        .catch(() => {});
-      await pool
-        .query("delete from public.telegram_updates where update_id = $1", [updateId])
-        .catch(() => {});
+      // Hermetic teardown, and it must actually succeed.
+      //
+      // Twelve tables reference articles or drafts. An earlier version deleted
+      // articles directly and swallowed the failure, so a foreign key from
+      // publication_policy_blocks kept them alive -- and the NEXT run found no
+      // new articles, failing for a reason that had nothing to do with the
+      // code. Deleting dependants first, in one transaction, and letting a
+      // failure surface is what makes the rig reusable.
+      const fixtureArticles =
+        "select id from public.articles where canonical_url like 'https://feed.example.test/%'";
+      const fixtureDrafts = `select id from public.drafts where article_id in (${fixtureArticles})`;
+      try {
+        await pool.query("begin");
+        for (const statement of [
+          `delete from public.published_posts where article_id in (${fixtureArticles})`,
+          `delete from public.publication_policy_blocks where article_id in (${fixtureArticles})`,
+          `delete from public.story_publication_claims where article_id in (${fixtureArticles})`,
+          `delete from public.telegram_news_request_checkpoints where draft_id in (${fixtureDrafts})`,
+          `delete from public.telegram_review_sessions where draft_id in (${fixtureDrafts})`,
+          `delete from public.telegram_news_jobs where telegram_channel_id = '${channelId}'`,
+          `delete from public.article_story_decisions where article_id in (${fixtureArticles})`,
+          `delete from public.article_topics where article_id in (${fixtureArticles})`,
+          `delete from public.ai_usage_events where article_id in (${fixtureArticles})`,
+          `delete from public.raw_contents where article_id in (${fixtureArticles})`,
+          `delete from public.drafts where article_id in (${fixtureArticles})`,
+          `delete from public.articles where canonical_url like 'https://feed.example.test/%'`,
+          `delete from public.news_bot_settings where telegram_channel_id = '${channelId}'`,
+          `delete from public.telegram_updates where update_id = ${updateId}`,
+        ]) {
+          await pool.query(statement);
+        }
+        await pool.query("commit");
+      } catch (error) {
+        await pool.query("rollback").catch(() => {});
+        throw new Error(
+          `teardown failed, so the next run would start from dirty state: ${
+            (error as Error).message
+          }`,
+          { cause: error },
+        );
+      }
+
       await moduleRef.close();
       await pool.end().catch(() => undefined);
     }
