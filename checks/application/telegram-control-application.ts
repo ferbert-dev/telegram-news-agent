@@ -985,3 +985,119 @@ test("review delivery never replaces or cleans up controls after cancellation", 
   assert.equal(cleaned.status, "review_unavailable");
   assert.deepEqual(cleanupMethods, ["editMessageReplyMarkup"]);
 });
+
+/**
+ * Every route kind, each with a payload that passes validateRequest.
+ *
+ * validateRequest runs before requireAdmin, so a malformed payload is refused
+ * as malformed_callback and proves nothing about authorization. Shared by both
+ * authorization tests so neither can drift into testing validation instead.
+ */
+const EVERY_ROUTE: Array<Record<string, unknown>> = [
+  { kind: "news" },
+  {
+    kind: "review",
+    action: "publish",
+    sessionId: "a".repeat(48),
+    messageId: 55,
+    callbackId: "cb-authz",
+  },
+  { kind: "settings" },
+  { kind: "labs" },
+  { kind: "stats" },
+  { kind: "status" },
+];
+
+test("every route requires an administrator, not just the one route a test happened to pick", async () => {
+  // The existing coverage denied a non-admin on `stats` alone. Moving
+  // requireAdmin behind a condition, or adding a route that skips it, passed
+  // all 358 application tests -- verified by mutation. `review` publishes to
+  // the channel and `settings` changes what the bot is allowed to publish, so
+  // those were the two the gap actually mattered for.
+  //
+  // Driven from the route list rather than a hand-written set, so a route added
+  // later is covered the day it is added rather than the day someone remembers
+  // to extend this.
+  for (const route of EVERY_ROUTE) {
+    const completions: Array<Record<string, unknown>> = [];
+    let featureReached = false;
+    const reject = {
+      async execute() {
+        featureReached = true;
+        throw new Error("a denied actor must never reach a feature");
+      },
+    };
+    const denied = new HandleTelegramControlUpdateUseCase(
+      asUpdates({
+        async claimTelegramUpdate() {
+          return { claimed: true, claim_token: "token-x", claim_status: "claimed" };
+        },
+        async finishTelegramUpdate(input: unknown) {
+          completions.push(input as Record<string, unknown>);
+          return true;
+        },
+      }),
+      { async isChannelAdmin() { return false; } },
+      passAudit,
+      reject as never,
+      reject as never,
+      reject as never,
+      reject as never,
+      reject as never,
+      reject as never,
+    );
+
+    await assert.rejects(
+      denied.execute({ ...BASE_REQUEST, route } as never, async () => {}),
+      (error) =>
+        error instanceof TelegramControlError && error.code === "forbidden",
+      `route "${route.kind}" must refuse a non-administrator`,
+    );
+    assert.equal(
+      featureReached,
+      false,
+      `route "${route.kind}" reached its feature despite the actor being denied`,
+    );
+    assert.equal(completions[0]?.errorCode, "forbidden");
+  }
+});
+
+test("an authorization failure denies every route rather than falling open", async () => {
+  // Fail-closed. If isChannelAdmin throws -- Telegram unreachable, a revoked
+  // token -- no route may proceed. The distinction from `forbidden` matters
+  // because this one is retryable and that one is not.
+  for (const route of EVERY_ROUTE) {
+    const kind = String(route.kind);
+    let featureReached = false;
+    const reject = {
+      async execute() {
+        featureReached = true;
+        throw new Error("an unauthorized actor must never reach a feature");
+      },
+    };
+    const unavailable = new HandleTelegramControlUpdateUseCase(
+      asUpdates({
+        async claimTelegramUpdate() {
+          return { claimed: true, claim_token: "token-y", claim_status: "claimed" };
+        },
+        async finishTelegramUpdate() { return true; },
+      }),
+      { async isChannelAdmin() { throw new Error("telegram unreachable"); } },
+      passAudit,
+      reject as never,
+      reject as never,
+      reject as never,
+      reject as never,
+      reject as never,
+      reject as never,
+    );
+
+    await assert.rejects(
+      unavailable.execute({ ...BASE_REQUEST, route } as never, async () => {}),
+      (error) =>
+        error instanceof TelegramControlError && error.code === "authorization_unavailable",
+      `route "${kind}" must fail closed when authorization cannot be checked`,
+    );
+    assert.equal(featureReached, false, `route "${kind}" ran despite authorization failing`);
+  }
+});

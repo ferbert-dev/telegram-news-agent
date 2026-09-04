@@ -647,3 +647,30 @@ test("a second worker cannot start research while another run holds the lease", 
   await firstRun;
   assert.equal(holder, null, "the first run must release the lease when it completes");
 });
+
+test("an unrecognised review-delivery status fails rather than completing silently", async () => {
+  // The delivery port is structural and typed `{ status: string }`, so a status
+  // the adapter does not know about cannot be caught by the compiler. Without a
+  // runtime guard it fell through: the job completed, and the operator who
+  // typed /news was told nothing.
+  //
+  // Retrying is the right outcome. The delivery phase has its own attempt
+  // budget, and an unrenderable status is a bug to surface, not a result to
+  // swallow.
+  const { adapter, sent } = deliveryHarness({ reviewStatus: "queued_for_later" });
+
+  await assert.rejects(
+    adapter.deliver(job({ outcome_status: "review_ready", draft_id: "draft-1" }), {}),
+    /unrecognized status: queued_for_later/,
+  );
+  assert.deepEqual(sent, [], "no operator message may be invented for a status we cannot render");
+});
+
+test("review_ready still completes without an operator message", async () => {
+  // The control: the guard must not turn the ordinary success path into a
+  // failure. A delivered review card IS the message; nothing further is sent.
+  const { adapter, sent, reviews } = deliveryHarness({ reviewStatus: "review_ready" });
+  await adapter.deliver(job({ outcome_status: "review_ready", draft_id: "draft-1" }), {});
+  assert.equal(reviews.length, 1);
+  assert.deepEqual(sent, []);
+});

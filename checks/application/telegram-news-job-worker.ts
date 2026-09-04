@@ -356,3 +356,37 @@ test("the delivery budget is separate, so a failure still reaches the operator",
   assert.equal(await worker.runOnce(), "advanced");
   assert.equal(seen[0]?.maxAttempts, 10);
 });
+
+test("the claim heartbeat does not hold the process open", async () => {
+  // Legacy unrefs this timer (src/telegram-news-jobs.js:223) and the typed
+  // worker did not. A referenced interval keeps the event loop alive by
+  // itself: the clear in runOnce's finally normally covers it, but research
+  // does not honour the abort signal, so a shutdown mid-research reaches the
+  // coordinator's drain deadline with the timer still pending -- and the
+  // process then hangs until SIGKILL, which is what both live runs needed.
+  let unrefCalled = 0;
+  const { worker } = build({
+    worker: {
+      setIntervalImpl: () => ({
+        unref: () => {
+          unrefCalled += 1;
+        },
+      }),
+      clearIntervalImpl: () => undefined,
+    },
+  });
+
+  await worker.runOnce();
+  assert.equal(unrefCalled, 1, "the heartbeat interval must be unref'd when it is created");
+});
+
+test("a heartbeat handle without unref is tolerated", async () => {
+  // setIntervalImpl is injectable and several tests hand back a plain number.
+  // Calling unref unconditionally would turn those into crashes, so the call
+  // has to be optional -- asserted because a non-optional call would still pass
+  // every test that happens to return an object.
+  const { worker } = build({
+    worker: { setIntervalImpl: () => 0, clearIntervalImpl: () => undefined },
+  });
+  assert.equal(await worker.runOnce(), "advanced");
+});
