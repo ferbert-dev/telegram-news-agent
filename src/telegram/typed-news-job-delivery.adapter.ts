@@ -99,6 +99,18 @@ export class TypedNewsJobDeliveryAdapter implements TelegramNewsJobDeliveryPort 
           text: REVIEW_UNAVAILABLE_TEXT,
           ...(signal ? { signal } : {}),
         });
+        return;
+      }
+      if (delivered.status !== "review_ready") {
+        // The port is structural and typed `{ status: string }`, so it cannot
+        // be made exhaustive at compile time without importing the scheduler's
+        // contract into this domain. Without this check an unrecognised status
+        // falls through, the job completes, and the operator who typed /news is
+        // told nothing at all -- a silent success being the worst way to
+        // handle a status nobody has taught this adapter to render.
+        throw new Error(
+          `Durable Telegram news review delivery returned an unrecognized status: ${delivered.status}`,
+        );
       }
       return;
     }
