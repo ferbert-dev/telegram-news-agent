@@ -25,6 +25,11 @@ npm run test:application       # tsx --test checks/application/*.ts   (applicati
 npm run test:architecture      # tsx --test checks/architecture/*.ts  (layering rules — see below)
 npm run test:runtime           # tsx --test checks/runtime/*.ts       (coordinator, worker tokens, readiness)
 npm run test:ops               # checks/ops/*.sh — integration-stage deploy guards (needs docker compose)
+
+npm run test:e2e               # local end-to-end: disposable PostgreSQL + the whole /news flow, faked AI/feeds/Telegram
+npm run test:e2e:up            # start the rig only (own compose project, own volume, 127.0.0.1:55499)
+npm run test:e2e:run           # run checks/e2e/*.ts against a rig that is already up
+npm run test:e2e:down          # remove the rig AND its volume
 npm run test:drizzle           # Drizzle schema snapshot
 npm run test:drizzle:sources   # Drizzle sources repository
 npm run test:nest:build        # build:nest, then run every checks/emitted-*.mjs against dist/
@@ -52,6 +57,8 @@ npm run database:migrate                                 # apply db/migrations/*
 ```
 
 They read `DATABASE_TEST_URL ?? DATABASE_URL` and self-skip when `RUN_DATABASE_INTEGRATION` is unset, so a green `npm test` does **not** mean persistence was exercised.
+
+`checks/e2e/` is a separate suite with its own rig (`compose.e2e.yaml`, `ops/e2e.sh`) and is deliberately **outside** the `checks/integration/*.ts` glob that CI runs. It exercises the whole `/news` flow — enqueue, worker, research, editorial, checkpoint, delivery — against real PostgreSQL with the HTTP transport, the AI provider and the Telegram send faked, so a full run costs nothing. Migrations there run as `telegram_news_app`, matching CI and production: several tables have RLS enabled with no permissive policy, so access depends on table ownership, and migrating as `postgres` locks the app role out of its own schema.
 
 To get a local PostgreSQL for them, `compose.test.yaml` overlays a loopback port onto the compose `db` service (`compose.yaml` requires `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` to be set or it refuses to start):
 

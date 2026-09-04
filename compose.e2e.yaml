@@ -1,0 +1,57 @@
+# A self-contained PostgreSQL for local end-to-end tests.
+#
+# Standalone rather than an overlay on compose.yaml, on purpose:
+#
+#   - compose.yaml declares `env_file: .env.production` on its bot service, so
+#     even `docker compose ... port db` fails without a production environment
+#     file present. A test rig should not need one.
+#   - Its own project name gives its own volume and its own container names, so
+#     this can never collide with a running production, integration, or
+#     previously-started test stack on the same machine. That collision is not
+#     hypothetical: a leftover `tna-live-db-1` from an earlier session held the
+#     usual test port and blocked a run.
+#   - Its own port for the same reason. 55499 is deliberately far from the
+#     55432 that compose.test.yaml uses and the 5432 a local PostgreSQL takes.
+#
+# The database is disposable. `npm run test:e2e:down` removes the volume with
+# it, because a test rig that accumulates state stops being a clean check.
+name: telegram-news-agent-e2e
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: telegram_news
+      POSTGRES_USER: postgres
+      # Fixed and non-secret. This database holds nothing but fixtures, is
+      # bound to loopback only, and is destroyed after every run -- a
+      # required-variable prompt would only make the rig harder to start.
+      POSTGRES_PASSWORD: e2e-local-only
+      POSTGRES_APP_PASSWORD: e2e-local-only-app
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - max_connections=30
+    # Durability is off above because nothing here survives the run. It is the
+    # single biggest speed-up available for a fixture database, and it would be
+    # indefensible anywhere that kept data.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d telegram_news"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+    ports:
+      - "127.0.0.1:55499:5432"
+    volumes:
+      - e2e_postgres_data:/var/lib/postgresql/data
+      - ./ops/postgres/init/00-create-app-role.sh:/docker-entrypoint-initdb.d/00-create-app-role.sh:ro
+
+volumes:
+  e2e_postgres_data:
