@@ -585,6 +585,46 @@ jobs:
           NODE
 
           echo
+          echo "=== isolation ==="
+          # The volume is the boundary. Shown rather than asserted, because
+          # "integration cannot touch production's data" is the claim the whole
+          # stage rests on.
+          docker volume ls --format '{{.Name}}' | grep -E 'telegram-news-agent' | sed 's/^/  volume: /'
+          for p in telegram-news-agent telegram-news-agent-int; do
+            printf '  project %-26s containers: %s\n' "$p" \
+              "$(docker ps --filter "label=com.docker.compose.project=$p" --format '{{.Names}}' | tr '\n' ' ')"
+          done
+
+          echo
+          echo "=== research inputs (why a run can find nothing) ==="
+          docker exec -i "$container_id" node --input-type=module <<'NODE'
+          import pg from "pg";
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+          const q = async (label, sql) => {
+            try {
+              const { rows } = await client.query(sql);
+              for (const r of rows) console.log(`${label} ${Object.entries(r).map(([k, v]) => `${k}=${v}`).join(" ")}`);
+              if (!rows.length) console.log(`${label} (none)`);
+            } catch (error) {
+              console.log(`${label} unavailable: ${error.message}`);
+            }
+          };
+          await q("Sources", `select count(*)::int as total,
+              count(*) filter (where enabled)::int as enabled,
+              count(*) filter (where feed_url is not null)::int as with_feed,
+              count(*) filter (where enabled and coalesce(consecutive_failures,0) = 0)::int as healthy
+            from public.sources`);
+          await q("SourceSample", `select name, enabled, coalesce(consecutive_failures,0) as failures
+            from public.sources where enabled order by reliability_score desc nulls last limit 5`);
+          await q("Articles", `select count(*)::int as total,
+              count(*) filter (where created_at > now() - interval '48 hours')::int as last_48h
+            from public.articles`);
+          await q("Drafts", `select count(*)::int as total from public.drafts`);
+          await client.end();
+          NODE
+
+          echo
           echo "=== provider credentials ==="
           # Asks each provider whether it accepts the key, and reports only the
           # HTTP status and error type. No key material is read, printed or
