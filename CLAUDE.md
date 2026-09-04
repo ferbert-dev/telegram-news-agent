@@ -24,12 +24,14 @@ npm run test:persistence       # tsx --test checks/persistence/*.ts   (Nest pers
 npm run test:application       # tsx --test checks/application/*.ts   (application services, fake ports)
 npm run test:architecture      # tsx --test checks/architecture/*.ts  (layering rules — see below)
 npm run test:runtime           # tsx --test checks/runtime/*.ts       (coordinator, worker tokens, readiness)
+npm run test:ops               # checks/ops/*.sh — integration-stage deploy guards (needs docker compose)
 npm run test:drizzle           # Drizzle schema snapshot
 npm run test:drizzle:sources   # Drizzle sources repository
 npm run test:nest:build        # build:nest, then run every checks/emitted-*.mjs against dist/
 
 docker build -t telegram-news-agent:local .                     # also compiles dist/ in a build stage
 docker compose -f compose.yaml -f compose.nest.yaml up -d bot    # run the NestJS runtime instead of legacy
+ops/deploy-integration.sh --check-only                           # integration preflight: guards only, starts nothing
 #   needs POSTGRES_PASSWORD, POSTGRES_APP_PASSWORD and a .env.production, like every other compose recipe here
 
 tsx --test checks/persistence/database-module.ts    # single TypeScript check

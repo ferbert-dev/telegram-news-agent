@@ -15,10 +15,24 @@
 #   host dir   /opt/telegram-news-agent-int, so the two stacks never share a
 #              compose file or an environment file
 #
-# Deliberately NOT set here: memory limits. They inherit from compose.yaml until
-# the free memory on the box is known. Two full stacks at compose.yaml's budget
-# is roughly 768m of steady state, and an OOM kill would take production's bot
-# with it — so size these once, from a real measurement, rather than guessing.
+# Memory limits are set here and NOT in compose.yaml, on purpose.
+#
+# Production runs unbounded today. That is a deliberate non-change: adding a
+# limit to production is a production change, and it would be made blind. But
+# unbounded production plus unbounded integration means that when the box runs
+# out, the kernel OOM killer picks the victim by its own score — and the fat,
+# long-lived process it tends to pick is production's postgres.
+#
+# Bounding only the new stack fixes that asymmetry without touching production:
+# integration cannot grow into the memory production needs, because the cgroup
+# stops it first. If integration is the thing that overreaches, integration is
+# the thing that dies.
+#
+# Production's own limits stay exactly as they are: db 384m, migrate 256m,
+# bot 384m — 768m of steady state. Integration adds 512m on top (db 192m +
+# bot 320m), so both stages together need roughly 1.25G before the host's own
+# overhead. `ops/deploy-integration.sh` measures the box and refuses to start
+# if that does not fit, which is the check that keeps this from being a guess.
 name: telegram-news-agent-int
 
 services:
@@ -39,8 +53,26 @@ services:
       - max_connections=12
       - -c
       - wal_buffers=4MB
+    # Production's db is 384m. Integration holds one channel's test data, so
+    # half of that is generous: 32MB shared_buffers plus 12 connections at
+    # ~2MB work_mem is near 120MB, leaving room for a vacuum or an index build.
+    mem_limit: 192m
+    shm_size: 32mb
 
   bot:
+    # compose.yaml names `.env.production` here, and compose MERGES env_file
+    # lists rather than replacing them — so without `!override` the integration
+    # stack would demand production's environment file inside its own
+    # directory, and fail to start. `!override` replaces the list outright.
+    #
+    # This was a real defect in the overlay as first written: nothing had ever
+    # run it, so nothing had noticed.
+    env_file: !override
+      - .env.integration
+    # Production's bot is 384m. The typed runtime holds one pool, four workers
+    # and no request buffering, so this ceiling exists to bound a leak or a
+    # runaway research pass rather than to be reached in normal operation.
+    mem_limit: 320m
     environment:
       # Distinguishable in logs and in /status, so nobody has to guess which
       # stage a message came from.

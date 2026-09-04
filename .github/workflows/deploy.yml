@@ -15,6 +15,8 @@ on:
         options:
           - verify-production-db
           - inspect-production
+          - inspect-host-capacity
+          - deploy-integration
 
 concurrency:
   group: production-${{ github.ref }}
@@ -62,7 +64,12 @@ jobs:
           POSTGRES_APP_PASSWORD: ci-application-password
           POSTGRES_SSH_TUNNEL_PORT: "55433"
         run: |
-          bash -n ops/deploy.sh ops/configure-db-observer.sh ops/notify-deployment.sh
+          bash -n ops/deploy.sh ops/configure-db-observer.sh ops/notify-deployment.sh \
+            ops/deploy-integration.sh
+          # The guards that keep the integration stage from starving or
+          # overwriting production. Every one is a refusal, and the suite drives
+          # each into refusing rather than trusting that it would.
+          ./checks/ops/deploy-integration-guards.sh
           docker compose \
             -f compose.yaml \
             -f compose.ssh-access.yaml \
@@ -80,6 +87,24 @@ jobs:
             -f compose.yaml \
             -f compose.integration.yaml \
             config --quiet --no-env-resolution
+          # `--no-env-resolution` above skips env_file loading entirely, which
+          # is why it never noticed that the integration overlay inherited
+          # compose.yaml's `.env.production`. Compose MERGES env_file lists, so
+          # the overlay needs `!override` — assert the result, not the intent.
+          int_env_file="$(docker compose -f compose.yaml -f compose.integration.yaml \
+            config --format json --no-env-resolution \
+            | jq -r '[.services.bot.env_file[].path] | map(sub(".*/"; "")) | join(",")')"
+          test "$int_env_file" = ".env.integration" || {
+            echo "integration bot resolves env_file to '$int_env_file', expected exactly .env.integration" >&2
+            exit 1
+          }
+          prod_env_file="$(docker compose -f compose.yaml -f compose.ssh-access.yaml \
+            config --format json --no-env-resolution \
+            | jq -r '[.services.bot.env_file[].path] | map(sub(".*/"; "")) | join(",")')"
+          test "$prod_env_file" = ".env.production" || {
+            echo "production bot resolves env_file to '$prod_env_file', expected exactly .env.production" >&2
+            exit 1
+          }
           # The two stages must never resolve to the same compose project, or
           # they would share containers and the postgres volume.
           prod_project="$(docker compose -f compose.yaml -f compose.ssh-access.yaml config --format json | jq -r .name)"
@@ -438,6 +463,284 @@ jobs:
             exit 1
           fi
           REMOTE
+
+  # Read-only. Reports what the host has, so the integration stage's footprint
+  # is a measurement rather than a guess, and so a refused deploy can be
+  # explained without an ad-hoc SSH session.
+  inspect-host-capacity:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect-host-capacity'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Report host capacity
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -Eeuo pipefail
+          echo "=== memory ==="
+          awk '/^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):/ { printf "%-14s %8.0f MiB\n", $1, $2/1024 }' /proc/meminfo
+          echo
+          echo "=== per-container ==="
+          docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}' || true
+          echo
+          echo "=== configured ceilings ==="
+          docker ps -q | while read -r id; do
+            docker inspect --format '{{.Name}} limit={{.HostConfig.Memory}}B' "$id"
+          done
+          echo
+          echo "=== disk ==="
+          df -h / /var/lib/docker 2>/dev/null | sort -u
+          echo
+          echo "=== verdict ==="
+          available="$(awk '/^MemAvailable:/ { print int($2 / 1024); exit }' /proc/meminfo)"
+          # 512MiB integration stack + 256MiB headroom, matching
+          # ops/deploy-integration.sh. Reported, never enforced here.
+          required=768
+          if (( available >= required )); then
+            echo "HostCapacity available=${available}MiB required=${required}MiB verdict=fits"
+          else
+            echo "HostCapacity available=${available}MiB required=${required}MiB verdict=too-small"
+          fi
+          REMOTE
+
+  # The integration stage. Manual only: it deploys whatever ref it was
+  # dispatched on, which is the point -- it is where a change is tried before
+  # main. It never touches production's directory, project, volume or
+  # environment file, and ops/deploy-integration.sh refuses if the host cannot
+  # take it.
+  deploy-integration:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy-integration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Select immutable image name
+        id: image
+        run: echo "value=${IMAGE_NAME}:int-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: |
+            linux/amd64
+            linux/arm64
+          push: true
+          # Deliberately not tagged `latest`: an integration build must never
+          # become the image a production deploy would pick up.
+          tags: ${{ steps.image.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Install pinned SOPS
+        env:
+          SOPS_VERSION: 3.13.3
+          SOPS_SHA256: e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/bin"
+          curl --fail --silent --show-error --location \
+            "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" \
+            --output "$RUNNER_TEMP/bin/sops"
+          printf '%s  %s\n' "$SOPS_SHA256" "$RUNNER_TEMP/bin/sops" | sha256sum --check
+          chmod 755 "$RUNNER_TEMP/bin/sops"
+          printf '%s\n' "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Decrypt integration environment
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          test -n "$SOPS_AGE_KEY"
+          install -d -m 700 "$RUNNER_TEMP/sops"
+          printf '%s\n' "$SOPS_AGE_KEY" > "$RUNNER_TEMP/sops/age-key.txt"
+          chmod 600 "$RUNNER_TEMP/sops/age-key.txt"
+          install -m 600 /dev/null "$RUNNER_TEMP/integration.env"
+          SOPS_AGE_KEY_FILE="$RUNNER_TEMP/sops/age-key.txt" \
+            sops decrypt \
+              --input-type dotenv \
+              --output-type dotenv \
+              secrets/integration.env.sops > "$RUNNER_TEMP/integration.env"
+          # Refuses a file that is missing DEPLOY_STAGE or carries production's.
+          # This is what stops production's secrets being deployed here by a
+          # mistaken edit to the encrypted file.
+          EXPECTED_DEPLOY_STAGE=integration \
+            ops/validate-production-env.sh --complete "$RUNNER_TEMP/integration.env"
+
+      - name: Refuse a shared bot or channel
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          # Two stages polling one bot token is a Telegram 409 and a lease
+          # fight; two stages publishing to one channel puts test articles in
+          # front of real readers. Neither is recoverable by a rollback, so
+          # both are checked before anything is shipped.
+          install -m 600 /dev/null "$RUNNER_TEMP/production.env"
+          SOPS_AGE_KEY_FILE="$RUNNER_TEMP/sops/age-key.txt" \
+            sops decrypt --input-type dotenv --output-type dotenv \
+              secrets/production.env.sops > "$RUNNER_TEMP/production.env"
+          for key in TELEGRAM_BOT_TOKEN TELEGRAM_CHANNEL_ID; do
+            prod="$(sed -nE "s/^${key}=//p" "$RUNNER_TEMP/production.env" | head -1)"
+            intg="$(sed -nE "s/^${key}=//p" "$RUNNER_TEMP/integration.env" | head -1)"
+            if [[ -z "$intg" ]]; then
+              echo "${key} is empty in the integration environment" >&2
+              exit 1
+            fi
+            if [[ "$prod" == "$intg" ]]; then
+              echo "${key} is identical in production and integration; refusing to deploy" >&2
+              exit 1
+            fi
+          done
+          rm -f "$RUNNER_TEMP/production.env"
+          echo "Integration uses a distinct bot and channel."
+
+      - name: Upload integration bundle
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          test -n "$ORACLE_HOST"
+          test -n "$ORACLE_USER"
+          umask 077
+          install -d -m 700 deployment-int/ops/postgres/init
+          install -d -m 700 deployment-int/checks/ops
+          install -m 644 compose.yaml deployment-int/compose.yaml
+          install -m 644 compose.integration.yaml deployment-int/compose.integration.yaml
+          install -m 755 ops/deploy-integration.sh deployment-int/ops/deploy-integration.sh
+          install -m 755 ops/validate-production-env.sh deployment-int/ops/validate-production-env.sh
+          install -m 755 ops/postgres/init/00-create-app-role.sh deployment-int/ops/postgres/init/00-create-app-role.sh
+          install -m 644 package.json deployment-int/package.json
+          install -m 600 "$RUNNER_TEMP/integration.env" deployment-int/.env.integration
+          # compose.ssh-access.yaml is deliberately NOT shipped: production's
+          # tunnel port is in it, and integration binds its own via the
+          # overlay. Shipping it here would put two services on one port.
+          tar -C deployment-int -czf deployment-int.tar.gz .
+          chmod 600 deployment-int.tar.gz
+          remote_archive="/tmp/telegram-news-agent-int-${GITHUB_SHA}.tar.gz"
+          scp deployment-int.tar.gz "${ORACLE_USER}@${ORACLE_HOST}:${remote_archive}"
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s -- "$remote_archive" <<'REMOTE'
+          set -Eeuo pipefail
+          archive="$1"
+          trap 'rm -f "$archive"' EXIT
+          chmod 600 "$archive"
+          # A separate directory from production's, so the two stacks can never
+          # share a compose file or an environment file.
+          install -d -m 750 /opt/telegram-news-agent-int
+          tar -xzf "$archive" -C /opt/telegram-news-agent-int
+          REMOTE
+
+      - name: Preflight the host
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          # Runs every guard and starts nothing, so a host that cannot take the
+          # stage is reported before an image is pulled onto it.
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" \
+            /opt/telegram-news-agent-int/ops/deploy-integration.sh --check-only
+
+      - name: Log Oracle host in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh "${ORACLE_USER}@${ORACLE_HOST}" \
+            docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Deploy integration stage
+        env:
+          DEPLOY_IMAGE: ${{ steps.image.outputs.value }}
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          # shellcheck disable=SC2029
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" \
+            /opt/telegram-news-agent-int/ops/deploy-integration.sh "$DEPLOY_IMAGE"
+
+      - name: Confirm production was untouched
+        if: always()
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          # The claim this whole job rests on, checked rather than asserted --
+          # and checked even when the deploy failed, because a failed deploy
+          # that disturbed production is the outcome that matters most.
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
+          set -Eeuo pipefail
+          container="$(docker ps -a --filter 'name=^telegram-news-agent-bot' --format '{{.Names}}' | head -1)"
+          if [[ -z "$container" ]]; then
+            echo "production bot container is missing" >&2
+            exit 1
+          fi
+          docker inspect --format \
+            'ProductionBot name={{.Name}} running={{.State.Running}} restart_count={{.RestartCount}} oom_killed={{.State.OOMKilled}} started_at={{.State.StartedAt}}' \
+            "$container"
+          running="$(docker inspect --format '{{.State.Running}}' "$container")"
+          oom="$(docker inspect --format '{{.State.OOMKilled}}' "$container")"
+          test "$running" = "true" || { echo "production bot is not running" >&2; exit 1; }
+          test "$oom" = "false" || { echo "production bot was OOM killed" >&2; exit 1; }
+          REMOTE
+
+      - name: Log Oracle host out of GHCR
+        if: always()
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: ssh "${ORACLE_USER}@${ORACLE_HOST}" 'docker logout ghcr.io' || true
+
+      - name: Remove runner plaintext
+        if: always()
+        run: |
+          rm -rf \
+            "$RUNNER_TEMP/integration.env" \
+            "$RUNNER_TEMP/production.env" \
+            "$RUNNER_TEMP/sops" \
+            deployment-int \
+            deployment-int.tar.gz
 
   package:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
