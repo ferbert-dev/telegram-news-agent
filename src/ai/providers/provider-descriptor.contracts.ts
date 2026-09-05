@@ -21,6 +21,15 @@ export type AiProviderTraits = {
   /** The provider implements a standalone connection probe. */
   supportsConnectionTest?: boolean;
   /**
+   * Overrides the cascade's per-provider deadline for this provider.
+   *
+   * The default is tuned for a paid API answering in seconds. A provider that
+   * serves free, queued endpoints does not, and killing it at the paid-API
+   * deadline means it can never succeed -- it just burns the wait and falls
+   * through, which is the worst of both.
+   */
+  deadlineMs?: number;
+  /**
    * Implemented only by the typed NestJS runtime, and deliberately absent from
    * the legacy JS runtime in src/*-provider.js.
    *
