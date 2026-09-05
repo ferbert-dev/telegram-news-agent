@@ -125,25 +125,6 @@ services:
       # go instead of reaching for a paid provider.
       OPEN_ROUTER_MODEL: z-ai/glm-5.2:free
 
-      # Pinned, rather than discovered.
-      #
-      # Discovery ranks free models by context window, and context is not
-      # capability: it picked dots-3-note-preview:free (512k), which answered
-      # in 32 seconds and then produced a draft that failed
-      # validateGroundedDraft twice -- citing sources it had not been given.
-      # That guard is the anti-hallucination barrier and is working correctly;
-      # the model simply cannot follow it.
-      #
-      # glm-5.2 is a strong general instruct model with 256k of context, which
-      # matters far more here than the 512k of a preview model built for notes:
-      # the largest call this pipeline makes is curation at roughly 12k tokens,
-      # so capability is the binding constraint and context never was. Still
-      # free.
-      #
-      # Alternative if this one also fails the grounding guard:
-      # nvidia/nemotron-3-super-120b-a12b:free (262k, 120B).
-      OPEN_ROUTER_MODEL: z-ai/glm-5.2:free
-
       # Fifteen minutes: the same as the pipeline lease's TTL, and not less.
       #
       # This is the window during which a claim held by a container that died
