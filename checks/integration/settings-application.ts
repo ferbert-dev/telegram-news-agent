@@ -48,7 +48,9 @@ test(
       assert.equal(created.schedule_interval_minutes, null);
       assert.equal(created.approval_policy, "manual");
       assert.equal(created.quiet_hours_enabled, true);
-      assert.deepEqual(created.excluded_topic_codes, ["war_conflict"]);
+      // A new settings row starts with no excluded topics, so a fresh
+      // installation does not switch on per-article AI classification.
+      assert.deepEqual(created.excluded_topic_codes, []);
 
       let current = created;
       const supportedUpdates = [

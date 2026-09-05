@@ -173,6 +173,20 @@ test(
         ),
       );
 
+      // A new database starts with no excluded topics -- the column default is
+      // '{}', so that a fresh installation does not opt itself into a
+      // per-article AI classifier. The point being tested here is that an
+      // unrelated settings update PRESERVES whatever exclusions exist, so the
+      // exclusions have to be established first rather than inherited.
+      assert.deepEqual(defaultSettings.excluded_topic_codes, []);
+      const excludedFirst = await repository.updateNewsExcludedTopics({
+        channelId: settingsChannel,
+        excludedTopicCodes: ["war_conflict"],
+        updatedBy: settingsUserId,
+        expectedVersion: defaultSettings.version,
+      });
+      assert.deepEqual(excludedFirst.excluded_topic_codes, ["war_conflict"]);
+
       const updatedSettings = await repository.updateNewsSettings({
         channelId: settingsChannel,
         reviewChatId,
@@ -183,12 +197,14 @@ test(
         approvalPolicy: "automatic",
         quietHoursEnabled: false,
         updatedBy: settingsUserId,
-        expectedVersion: defaultSettings.version,
+        expectedVersion: excludedFirst.version,
       });
-      assert.equal(updatedSettings.version, defaultSettings.version + 1);
+      assert.equal(updatedSettings.version, excludedFirst.version + 1);
       assert.equal(updatedSettings.language_code, "de");
       assert.equal(updatedSettings.schedule_interval_minutes, 180);
       assert.equal(updatedSettings.quiet_hours_enabled, false);
+      // The assertion that matters: changing language, schedule and topics must
+      // not clear the excluded-topic policy.
       assert.deepEqual(updatedSettings.excluded_topic_codes, ["war_conflict"]);
       const excludedSettings = await repository.updateNewsExcludedTopics({
         channelId: settingsChannel,

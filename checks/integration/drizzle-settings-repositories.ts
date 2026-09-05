@@ -117,7 +117,11 @@ test(
       assert.equal(created.language_code, "en");
       assert.equal(created.approval_policy, "manual");
       assert.equal(created.quiet_hours_enabled, true);
-      assert.deepEqual(created.excluded_topic_codes, ["war_conflict"]);
+      // Empty, not ['war_conflict']: a new database must not opt itself
+      // into a per-article AI classifier. This pins that default -- the one
+      // whose old value cost 20,278 provider calls in a day on the
+      // integration stage against production's 42.
+      assert.deepEqual(created.excluded_topic_codes, []);
       assert.equal(new Date(created.created_at).toISOString(), created.created_at);
 
       const typedRead = await settingsRepository.getNewsSettings(
