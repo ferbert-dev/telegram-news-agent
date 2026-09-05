@@ -47,12 +47,20 @@ export const OPEN_ROUTER_BASE_URL = "https://openrouter.ai/api/v1";
  * strongest general-purpose alternative if output quality disappoints.
  */
 /**
- * The floor for automatic selection. Well above anything this pipeline sends --
- * its largest single call is curation at roughly 12k tokens -- so it is a
- * quality filter rather than a capacity one: a model with a small window is
- * usually a small model.
+ * No floor by default: every free model that supports structured outputs is a
+ * candidate.
+ *
+ * A floor was a proxy for capability, and a bad one -- ranking by context
+ * picked a 512k model built for notes, which answered and then failed the
+ * grounding guard twice. Context is not capability, and excluding a small
+ * model buys nothing now that the walk exists: a weak model sits at the end of
+ * the list and is only ever reached if everything above it failed, which is
+ * strictly better than falling through to a paid provider.
+ *
+ * OPEN_ROUTER_MIN_CONTEXT_TOKENS can still raise it, and
+ * OPEN_ROUTER_MODEL orders the front of the list by hand.
  */
-export const DEFAULT_MIN_CONTEXT_TOKENS = 200_000;
+export const DEFAULT_MIN_CONTEXT_TOKENS = 0;
 
 /**
  * How long any single free model gets before the next one is tried.
@@ -67,8 +75,11 @@ export const DEFAULT_OPEN_ROUTER_MODEL = "dots-studio/dots-3-note-preview:free";
 
 export type OpenRouterConfig = {
   apiKey: string;
-  /** null means "discover one at first use"; a string is an explicit override. */
-  model: string | null;
+  /**
+   * Preferred models, tried first and in order. Empty means "whatever the
+   * catalogue offers"; discovery supplies the rest of the list either way.
+   */
+  preferredModels: readonly string[];
   baseUrl: string;
   minContextTokens: number;
 };
@@ -122,6 +133,9 @@ export async function discoverOpenRouterModels({
         && prompt === 0
         && completion === 0
         && context >= minContextTokens
+        // The one filter that is not negotiable: every call this adapter
+        // serves is generateStructured, so a model that cannot honour
+        // response_format is unusable here at any size.
         && Array.isArray(model.supported_parameters)
         && model.supported_parameters.includes("structured_outputs")
       );
@@ -169,9 +183,15 @@ export function getOpenRouterConfig(
 
   return {
     apiKey,
-    // An explicit model always wins and skips discovery entirely -- no network
-    // call, no surprise about which model ran.
-    model: (env.OPEN_ROUTER_MODEL ?? env.OPENROUTER_MODEL)?.trim() || null,
+    // A comma-separated preference list, tried before anything discovered.
+    // Pinning a single model used to skip discovery entirely, which also
+    // switched off the walk -- so a rate-limited favourite had nowhere to go
+    // but a paid provider. Preferences now lead the list rather than replace
+    // it.
+    preferredModels: ((env.OPEN_ROUTER_MODEL ?? env.OPENROUTER_MODEL) ?? "")
+      .split(",")
+      .map((model) => model.trim())
+      .filter(Boolean),
     baseUrl: env.OPEN_ROUTER_BASE_URL?.trim() || OPEN_ROUTER_BASE_URL,
     minContextTokens:
       Number.isSafeInteger(minContext) && minContext > 0
@@ -226,24 +246,33 @@ export function createOpenRouterProvider(
   let provenModel: string | null = null;
 
   const candidatesFor = async (signal?: AbortSignal): Promise<string[]> => {
-    // An explicitly pinned model is used alone. Pinning means "use this", not
-    // "start here and wander off to something I did not choose".
-    if (config.model) return [config.model];
     resolvedModels ??= discover({
       baseUrl: config.baseUrl,
       minContextTokens: config.minContextTokens,
       signal,
     });
-    const discovered = await resolvedModels;
-    if (!provenModel) return discovered;
-    return [provenModel, ...discovered.filter((model) => model !== provenModel)];
+    // Preferences first, then everything the catalogue offers, then the pinned
+    // fallback -- deduplicated, order preserved.
+    //
+    // Discovery runs even when preferences are set. A preferred model that is
+    // rate-limited must have somewhere free to go; without the discovered tail
+    // its only fallback is a paid provider, which is what this provider exists
+    // to avoid.
+    const ordered = [
+      ...(provenModel ? [provenModel] : []),
+      ...config.preferredModels,
+      ...(await resolvedModels),
+      DEFAULT_OPEN_ROUTER_MODEL,
+    ];
+    return [...new Set(ordered)];
   };
 
   return {
     name: "openrouter",
-    // Null until first use when discovery is in play; the resolved id is
+    // The first preference when there is one, otherwise null: the model is not
+    // known until the walk finds one that answers. The id that actually ran is
     // reported on every result, which is what the usage ledger records.
-    model: config.model,
+    model: config.preferredModels[0] ?? null,
 
     async generateStructured(input: Record<string, unknown>): Promise<AiProviderResult> {
       const {
@@ -372,6 +401,10 @@ export function createOpenRouterProvider(
           return attempt;
         } catch (error) {
           if (signal?.aborted) throw error;
+          // Stop preferring a model that just failed. Left set, it would be
+          // retried first on every subsequent call, re-paying its timeout or
+          // its rate limit before the walk could reach anything that works.
+          if (provenModel === model) provenModel = null;
           lastError = error;
         }
       }
