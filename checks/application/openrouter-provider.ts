@@ -17,7 +17,7 @@ const Schema = z.object({ verdict: z.string() });
 
 const config = {
   apiKey: "k",
-  model: "some/model",
+  preferredModels: ["some/model"] as readonly string[],
   baseUrl: OPEN_ROUTER_BASE_URL,
   minContextTokens: DEFAULT_MIN_CONTEXT_TOKENS,
 };
@@ -47,7 +47,7 @@ const okResponse = (
   usage,
 });
 
-test("a key alone is enough; the model is discovered unless one is named", () => {
+test("a key alone is enough; models come from the catalogue unless preferred ones are named", () => {
   assert.equal(getOpenRouterConfig({}), null);
   assert.equal(getOpenRouterConfig({ OPEN_ROUTER_API_KEY: "  " }), null);
 
@@ -56,15 +56,24 @@ test("a key alone is enough; the model is discovered unless one is named", () =>
   for (const key of ["OPEN_ROUTER_API_KEY", "OPENROUTER_API_KEY"]) {
     const resolved = getOpenRouterConfig({ [key]: " k " });
     assert.equal(resolved?.apiKey, "k");
-    assert.equal(resolved?.model, null, "null means discover at first use");
+    assert.deepEqual(
+      resolved?.preferredModels,
+      [],
+      "no preference means the whole catalogue, discovered at first use",
+    );
     assert.equal(resolved?.minContextTokens, DEFAULT_MIN_CONTEXT_TOKENS);
+    assert.equal(
+      DEFAULT_MIN_CONTEXT_TOKENS,
+      0,
+      "every free model with structured outputs is a candidate by default",
+    );
   }
 
   assert.equal(
     getOpenRouterConfig({ OPEN_ROUTER_API_KEY: "k", OPEN_ROUTER_MODEL: " a/b " })
-      ?.model,
+      ?.preferredModels[0],
     "a/b",
-    "an explicit model wins and skips discovery",
+    "an explicit model leads the walk",
   );
 
   // The pinned fallback must stay free: it is what discovery falls back to, and
@@ -84,7 +93,9 @@ test("discovery takes the largest free model that can do structured output", asy
       { id: "huge/no-schema:free", context_length: 1_048_576, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["tools"] },
       // Supports schemas and is huge, but is not free.
       { id: "paid/big:paid", context_length: 900_000, pricing: { prompt: "0.5", completion: "1" }, supported_parameters: ["structured_outputs"] },
-      // Free and schema-capable, but under the floor.
+      // Small, but free and schema-capable: a candidate too, last in the
+      // order. It is only ever reached if everything above it failed, which
+      // beats falling through to a paid provider.
       { id: "small/ok:free", context_length: 65_536, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"] },
       { id: "good/mid:free", context_length: 262_144, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"] },
       { id: "best/large:free", context_length: 512_000, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"] },
@@ -99,7 +110,11 @@ test("discovery takes the largest free model that can do structured output", asy
   // The whole ranked list, largest context first -- not just the winner.
   // Calling the next free model costs nothing, so a model that will not answer
   // must not end the attempt.
-  assert.deepEqual(chosen, ["best/large:free", "good/mid:free"]);
+  assert.deepEqual(chosen, [
+    "best/large:free",
+    "good/mid:free",
+    "small/ok:free",
+  ]);
 });
 
 test("a catalogue that cannot be read falls back rather than breaking the provider", async () => {
@@ -136,7 +151,7 @@ test("a catalogue that cannot be read falls back rather than breaking the provid
 test("discovery runs once per process, not once per call", async () => {
   let lookups = 0;
   const provider = createOpenRouterProvider(
-    { ...config, model: null },
+    { ...config, preferredModels: [] },
     {
       client: fakeClient(okResponse('{"verdict":"ok"}')),
       discover: async () => {
@@ -292,7 +307,7 @@ test("a free model that will not answer is replaced by the next one, not by a pa
   };
 
   const provider = createOpenRouterProvider(
-    { ...config, model: null },
+    { ...config, preferredModels: [] },
     {
       client,
       discover: async () => ["dead/queued:free", "alive/fast:free"],
@@ -322,39 +337,6 @@ test("a free model that will not answer is replaced by the next one, not by a pa
   ]);
 });
 
-test("a pinned model is used alone and never wanders to another", async () => {
-  const tried: string[] = [];
-  const provider = createOpenRouterProvider(
-    { ...config, model: "pinned/one:free" },
-    {
-      client: {
-        chat: {
-          completions: {
-            create: async (body: Record<string, unknown>) => {
-              tried.push(body.model as string);
-              throw new Error("nope");
-            },
-          },
-        },
-      },
-      discover: async () => {
-        throw new Error("discovery must not run when a model is pinned");
-      },
-      perModelTimeoutMs: 50,
-    },
-  );
-
-  await assert.rejects(
-    provider!.generateStructured!({
-      systemInstruction: "s",
-      input: {},
-      zodSchema: Schema,
-      schemaName: "verdict",
-    }),
-  );
-  assert.deepEqual(tried, ["pinned/one:free"]);
-});
-
 test("the provider is given longer than the cascade's paid-API deadline", () => {
   // 30s is tuned for a paid API answering in seconds. Free endpoints are
   // queued, and at 30s this provider timed out four times in a row on the
@@ -364,4 +346,95 @@ test("the provider is given longer than the cascade's paid-API deadline", () => 
     typeof deadlineMs === "number" && deadlineMs > 30_000,
     "a free, queued provider needs more than the paid-API deadline",
   );
+});
+
+test("preferences lead the walk but never replace the catalogue", async () => {
+  const tried: string[] = [];
+  const provider = createOpenRouterProvider(
+    {
+      ...config,
+      preferredModels: ["favourite/one:free", "favourite/two:free"],
+    },
+    {
+      client: {
+        chat: {
+          completions: {
+            create: async (body: Record<string, unknown>) => {
+              const model = body.model as string;
+              tried.push(model);
+              // Both favourites are rate limited, which is exactly what
+              // happened on the integration stage: a preferred model answers
+              // twice and is then throttled.
+              if (model.startsWith("favourite/")) throw new Error("429");
+              return okResponse('{"verdict":"ok"}') as never;
+            },
+          },
+        },
+      },
+      discover: async () => ["catalogue/one:free"],
+      perModelTimeoutMs: 50,
+    },
+  );
+
+  const result = await provider!.generateStructured!({
+    systemInstruction: "s",
+    input: {},
+    zodSchema: Schema,
+    schemaName: "verdict",
+  });
+
+  // The point of the change: a throttled favourite must have somewhere FREE to
+  // go. Replacing the catalogue with the preference list left a paid provider
+  // as its only fallback, which is what this provider exists to avoid.
+  assert.deepEqual(tried, [
+    "favourite/one:free",
+    "favourite/two:free",
+    "catalogue/one:free",
+  ]);
+  assert.equal(result.model, "catalogue/one:free");
+});
+
+test("a model that stops working stops being preferred", async () => {
+  let firstModelWorks = true;
+  const tried: string[] = [];
+  const provider = createOpenRouterProvider(
+    { ...config, preferredModels: [] },
+    {
+      client: {
+        chat: {
+          completions: {
+            create: async (body: Record<string, unknown>) => {
+              const model = body.model as string;
+              tried.push(model);
+              if (model === "first/one:free" && !firstModelWorks) {
+                throw new Error("429");
+              }
+              return okResponse('{"verdict":"ok"}') as never;
+            },
+          },
+        },
+      },
+      discover: async () => ["first/one:free", "second/one:free"],
+      perModelTimeoutMs: 50,
+    },
+  );
+
+  const call = () =>
+    provider!.generateStructured!({
+      systemInstruction: "s",
+      input: {},
+      zodSchema: Schema,
+      schemaName: "verdict",
+    });
+
+  await call();
+  firstModelWorks = false;
+  await call();
+  tried.length = 0;
+  await call();
+
+  // Without clearing the preference, the now-dead model would be retried first
+  // on every later call, re-paying its rate limit before the walk could reach
+  // anything that works.
+  assert.deepEqual(tried, ["second/one:free"]);
 });
