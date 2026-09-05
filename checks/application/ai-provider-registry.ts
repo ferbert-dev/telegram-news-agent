@@ -21,7 +21,7 @@ import { AI_PROVIDER } from "../../src/ai/ai-provider.tokens.js";
 
 test("built-in descriptors are valid and uniquely identified", () => {
   assertValidDescriptors(BUILTIN_PROVIDER_DESCRIPTORS);
-  assert.deepEqual(listProviderIds().sort(), ["exa", "gemini", "openai"]);
+  assert.deepEqual(listProviderIds().sort(), ["exa", "gemini", "openai", "openrouter"]);
 });
 
 test("registering a duplicate provider id is rejected", () => {
@@ -53,12 +53,17 @@ test("default order includes exa only when configured, openai/gemini uncondition
   );
 });
 
-test("typed getAiProviderOrder matches the legacy runtime for every built-in id", () => {
+const sharedProviderIds = () =>
+  BUILTIN_PROVIDER_DESCRIPTORS.filter(
+    (descriptor) => !descriptor.traits.typedRuntimeOnly,
+  ).map((descriptor) => descriptor.id);
+
+test("typed getAiProviderOrder matches the legacy runtime for every shared id", () => {
   assert.deepEqual(getAiProviderOrder({}), getLegacyAiProviderOrder({}));
-  const allIds = listProviderIds().join(",");
+  const sharedIds = sharedProviderIds().join(",");
   assert.deepEqual(
-    getAiProviderOrder({ AI_PROVIDER_ORDER: allIds }),
-    getLegacyAiProviderOrder({ AI_PROVIDER_ORDER: allIds }),
+    getAiProviderOrder({ AI_PROVIDER_ORDER: sharedIds }),
+    getLegacyAiProviderOrder({ AI_PROVIDER_ORDER: sharedIds }),
   );
 });
 
@@ -67,13 +72,32 @@ test("typed getAiProviderOrder matches the legacy runtime for every built-in id"
 // this pair of tests fails — catching the divergence in CI instead of in
 // production, where the two runtimes would otherwise silently disagree
 // about which provider names are valid.
-test("drift guard: every registry id is a name the legacy runtime still accepts", () => {
-  const allIds = listProviderIds().join(",");
-  assert.doesNotThrow(() => getLegacyAiProviderOrder({ AI_PROVIDER_ORDER: allIds }));
+test("drift guard: every shared registry id is a name the legacy runtime still accepts", () => {
+  const sharedIds = sharedProviderIds().join(",");
+  assert.doesNotThrow(() => getLegacyAiProviderOrder({ AI_PROVIDER_ORDER: sharedIds }));
+});
+
+test("drift guard: a typed-only provider is genuinely rejected by the legacy runtime", () => {
+  const typedOnly = BUILTIN_PROVIDER_DESCRIPTORS.filter(
+    (descriptor) => descriptor.traits.typedRuntimeOnly,
+  );
+  assert.ok(typedOnly.length > 0, "openrouter is expected to be typed-only");
+
+  // Without this, typedRuntimeOnly would be a way to opt out of the drift
+  // guard by assertion rather than by fact: a provider could carry the flag,
+  // quietly exist in both runtimes, and diverge exactly as the guard was
+  // written to prevent.
+  for (const descriptor of typedOnly) {
+    assert.throws(
+      () => getLegacyAiProviderOrder({ AI_PROVIDER_ORDER: descriptor.id }),
+      /Unsupported AI provider/,
+      `${descriptor.id} claims to be typed-only, so the legacy runtime must not accept it`,
+    );
+  }
 });
 
 test("drift guard: legacy rejects an id the registry does not declare", () => {
-  const allIds = listProviderIds().join(",");
+  const allIds = sharedProviderIds().join(",");
   assert.throws(
     () => getLegacyAiProviderOrder({ AI_PROVIDER_ORDER: `${allIds},not-a-real-provider` }),
     /Unsupported AI provider/,

@@ -2,6 +2,7 @@ import type { AiProviderDescriptor } from "./provider-descriptor.contracts.js";
 import { exaProviderDescriptor } from "./exa.provider.js";
 import { geminiProviderDescriptor } from "./gemini.provider.js";
 import { openaiProviderDescriptor } from "./openai.provider.js";
+import { openrouterProviderDescriptor } from "./openrouter.provider.js";
 
 /**
  * The complete set of built-in AI providers. Adding a provider means writing
@@ -11,8 +12,14 @@ import { openaiProviderDescriptor } from "./openai.provider.js";
 export const BUILTIN_PROVIDER_DESCRIPTORS: readonly AiProviderDescriptor[] = [
   openaiProviderDescriptor,
   geminiProviderDescriptor,
+  openrouterProviderDescriptor,
   exaProviderDescriptor,
 ];
 
-export { exaProviderDescriptor, geminiProviderDescriptor, openaiProviderDescriptor };
+export {
+  exaProviderDescriptor,
+  geminiProviderDescriptor,
+  openaiProviderDescriptor,
+  openrouterProviderDescriptor,
+};
 export type { AiProviderDescriptor, AiProviderTraits } from "./provider-descriptor.contracts.js";

@@ -46,7 +46,7 @@ status=0
 probe() {
   local name="$1" key="$2" url="$3" header="$4"
   if [[ -z "$key" ]]; then
-    printf '  %-8s not set\n' "$name"
+    printf '  %-10s not set\n' "$name"
     return
   fi
   local trimmed="${key#"${key%%[![:space:]]*}"}"
@@ -69,12 +69,18 @@ probe() {
     000) verdict="no response — network or timeout, not a verdict on the key" ;;
     *)   verdict="unexpected status"; status=1 ;;
   esac
-  printf '  %-8s len=%-4s whitespace=%-4s http=%-4s %s\n' "$name" "${#key}" "$whitespace" "$code" "$verdict"
+  printf '  %-10s len=%-4s whitespace=%-4s http=%-4s %s\n' "$name" "${#key}" "$whitespace" "$code" "$verdict"
 }
 
 echo "Credentials in $file"
 probe openai "$(value_of OPENAI_API_KEY)" "https://api.openai.com/v1/models" "Authorization: Bearer "
 probe gemini "$(value_of GEMINI_API_KEY)" "https://generativelanguage.googleapis.com/v1beta/models?key=" ""
+
+# OpenRouter DOES have a free credential endpoint, unlike Exa below. Verified
+# rather than assumed: GET /api/v1/key with a deliberately invalid key returns
+# 401, so a 200 here means the key is genuinely accepted. It reads key metadata
+# and runs no inference, so the check costs nothing.
+probe openrouter "$(value_of OPEN_ROUTER_API_KEY)" "https://openrouter.ai/api/v1/key" "Authorization: Bearer "
 
 # Exa is reported but deliberately NOT probed. Checked against Exa's API
 # reference (exa.ai/docs) rather than assumed:
@@ -92,18 +98,18 @@ probe gemini "$(value_of GEMINI_API_KEY)" "https://generativelanguage.googleapis
 # here worth duplicating.
 exa_key="$(value_of EXA_API_KEY)"
 if [[ "$(value_of EXA_ENABLED)" != "true" ]]; then
-  printf '  %-8s not enabled (EXA_ENABLED is not true)\n' "exa"
+  printf '  %-10s not enabled (EXA_ENABLED is not true)\n' "exa"
 elif [[ -z "$exa_key" ]]; then
-  printf '  %-8s ENABLED BUT NOT SET\n' "exa"
+  printf '  %-10s ENABLED BUT NOT SET\n' "exa"
   status=1
 else
   exa_trimmed="${exa_key#"${exa_key%%[![:space:]]*}"}"
   exa_trimmed="${exa_trimmed%"${exa_trimmed##*[![:space:]]}"}"
   if [[ "$exa_key" != "$exa_trimmed" ]]; then
-    printf '  %-8s len=%-4s whitespace=YES — this alone will cause a 401\n' "exa" "${#exa_key}"
+    printf '  %-10s len=%-4s whitespace=YES — this alone will cause a 401\n' "exa" "${#exa_key}"
     status=1
   else
-    printf '  %-8s len=%-4s whitespace=no   set, not probed (a probe costs a metered search)\n' \
+    printf '  %-10s len=%-4s whitespace=no   set, not probed (a probe costs a metered search)\n' \
       "exa" "${#exa_key}"
   fi
 fi

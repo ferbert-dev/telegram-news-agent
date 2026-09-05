@@ -212,6 +212,54 @@ export function geminiUsageEvent(
   };
 }
 
+export function openRouterUsageEvent(
+  response: { id?: string | null; usage?: unknown },
+  {
+    model,
+    operation,
+  }: {
+    model: string;
+    operation: string;
+  },
+): UsageEventResponse | null {
+  const usage = response?.usage as
+    | {
+        prompt_tokens?: unknown;
+        completion_tokens?: unknown;
+        prompt_tokens_details?: { cached_tokens?: unknown };
+        completion_tokens_details?: { reasoning_tokens?: unknown };
+      }
+    | undefined;
+  if (!usage) return null;
+  // Chat-completions field names, not the Responses API's: OpenRouter speaks
+  // the OpenAI chat schema, where the counts are prompt_tokens and
+  // completion_tokens. Reading input_tokens/output_tokens here -- the names
+  // every other OpenAI-shaped call in this repo uses -- would record every
+  // OpenRouter call as zero tokens, silently.
+  return {
+    provider: "openrouter",
+    providerResponseId: response?.id ?? null,
+    model,
+    operation,
+    inputTokens: nonNegativeInteger(usage.prompt_tokens),
+    cachedInputTokens: nonNegativeInteger(
+      usage.prompt_tokens_details?.cached_tokens,
+    ),
+    outputTokens: nonNegativeInteger(usage.completion_tokens),
+    reasoningTokens: nonNegativeInteger(
+      usage.completion_tokens_details?.reasoning_tokens,
+    ),
+    webSearchCalls: 0,
+    // Left null deliberately. OpenRouter does return usage.cost, but
+    // denominated in OpenRouter credits while this field is USD. Writing one
+    // into the other because they are usually equal would put an unverified
+    // number into the cost ledger, which is the one place a plausible-looking
+    // wrong number does the most damage. The token counts above are exact.
+    estimatedCostUsd: null,
+    pricing: null,
+  };
+}
+
 export function exaUsageEvent(
   response: { requestId?: string | null; id?: string | null },
   {
