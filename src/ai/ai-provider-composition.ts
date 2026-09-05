@@ -381,7 +381,11 @@ export function createFallbackAiProvider(
         continue;
       }
       throwIfAborted(parentSignal);
-      const deadlineAtMs = now().getTime() + providerDeadlineMs;
+      // Per-provider, because the default is tuned for a paid API answering
+      // in seconds and a free queued endpoint does not.
+      const deadlineForProviderMs =
+        traitsOf(provider.name, descriptors).deadlineMs ?? providerDeadlineMs;
+      const deadlineAtMs = now().getTime() + deadlineForProviderMs;
       const controller = new AbortController();
       let providerAttempt = 0;
       try {
@@ -453,7 +457,7 @@ export function createFallbackAiProvider(
     }
     const controller = new AbortController();
     try {
-      const result = await runAttempt(operation, input, provider, correlationId, 1, now().getTime() + providerDeadlineMs, controller);
+      const result = await runAttempt(operation, input, provider, correlationId, 1, now().getTime() + (traitsOf(provider.name, descriptors).deadlineMs ?? providerDeadlineMs), controller);
       recordThrottleOutcome(provider.name, null);
       return result;
     } catch (error) {

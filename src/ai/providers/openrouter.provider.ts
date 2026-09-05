@@ -33,6 +33,15 @@ export const openrouterProviderDescriptor: AiProviderDescriptor<
     // would grow the surface still to be ported. The drift guard asserts that
     // legacy actually rejects it, so this claim is checked rather than trusted.
     typedRuntimeOnly: true,
+    // Well above the cascade's 30s default, because this provider serves FREE
+    // endpoints and free endpoints are queued behind paid traffic. At 30s the
+    // integration stage saw four attempts in a row time out at exactly the
+    // deadline and fall through to a rate-limited OpenAI -- the provider never
+    // got the chance to answer, so it cost the wait and delivered nothing.
+    //
+    // Sized to fit roughly three per-model attempts of 35s, which is what the
+    // adapter's walk through the free models actually needs.
+    deadlineMs: 120_000,
   },
   configure: (env) => getOpenRouterConfig(env),
   createClient: (config) =>

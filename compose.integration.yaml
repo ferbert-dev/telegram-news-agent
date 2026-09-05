@@ -119,7 +119,19 @@ services:
       #
       # Production is untouched by this: it has no OpenRouter key, and its own
       # order is unchanged.
-      AI_PROVIDER_ORDER: openrouter,openai,gemini
+      # Cheapest first: every free OpenRouter model, then Gemini's free tier,
+      # then paid OpenAI as the last resort.
+      #
+      # OpenRouter serves generateStructured only, so the grounded web-search
+      # operations fall through to Gemini and OpenAI without being told to.
+      AI_PROVIDER_ORDER: openrouter,gemini,openai
+
+      # A preference, not a restriction. glm-5.2 is the model that actually
+      # passed validateGroundedDraft on this stage, so it leads -- but the
+      # discovered catalogue still follows it, so when glm is rate limited
+      # (which it was, three times in one run) the walk has somewhere free to
+      # go instead of reaching for a paid provider.
+      OPEN_ROUTER_MODEL: z-ai/glm-5.2:free
 
       # Fifteen minutes: the same as the pipeline lease's TTL, and not less.
       #
