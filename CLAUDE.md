@@ -75,6 +75,29 @@ Operator CLIs (all load `.env`): `npm run pipeline:run`, `npm run drafts -- list
 
 ## Architecture
 
+**The legacy JS runtime is frozen. All new work goes in TypeScript.**
+
+This is a standing instruction from the repository owner, and it overrides the
+temptation to make a one-line change where the code happens to live today.
+
+- Do **not** add features, change behaviour, tune constants, or "improve"
+  anything under `src/*.js`. Not a new provider, not a new scoring weight, not
+  a new tier.
+- Legacy is frozen because it *is* the rollback. Every change to it is a change
+  to the thing that has to still work when the new runtime does not — which is
+  exactly what makes it worthless as a rollback.
+- Bug fixes to legacy are the narrow exception, and only for a defect that is
+  hurting production right now.
+- When new behaviour belongs to logic that currently lives in a legacy module,
+  the work is to **port that slice to TypeScript first**, then change it there
+  — not to edit the JS and let both runtimes inherit it.
+- Shared, runtime-neutral infrastructure is not "legacy": ordered SQL
+  migrations, compose files, `ops/` scripts and CI workflows are edited as
+  normal.
+
+Deleting `src/*.js` is still forbidden (see below) — frozen means untouched,
+not removed.
+
 Two runtimes coexist by design, and this is the single most important fact about the repo:
 
 - **Legacy JS (production).** `src/telegram-bot.js` is the deployed entrypoint (`compose.yaml`, `command: node src/telegram-bot.js`). It wires flat `src/*.js` modules — `news-repository.js`, `pipeline.js`, `draft.js`, `publish.js`, `telegram-control.js`, `telegram-polling.js`, `news-scheduler.js`, `notion-audit.js`, `ai-provider.js` — against a raw `pg` pool.
@@ -135,6 +158,25 @@ Adding a slice usually means editing this check too — it encodes the intended 
 ## Behavior that must be preserved
 
 Manual `/news`, manual Publish, idempotent per-draft publication (an uncertain Telegram response leaves the draft in `publishing` for manual reconciliation — never blind retry), 22:00–08:00 `Europe/Madrid` quiet-hours checkpoint recovery, fail-closed Notion audit with the `notion_audit_outbox` fallback, feeds-first research with paid search reserved for bounded recovery, and per-provider usage accounting. `docs/architecture.md` and the README describe the intended pipeline in detail.
+
+## Verifying an external API
+
+Do not write an integration from memory of how an API "usually" works. Read the
+vendor's own reference, and where the answer is cheap to observe, observe it.
+
+This is not a style preference. An Exa credential probe in `ops/` was written
+with the wrong header and the wrong HTTP method, and it reported the resulting
+404 as a rejected API key — sending someone to rotate a key that was fine. The
+OpenRouter adapter was written the other way: base URL, auth header,
+`response_format` shape, `provider.require_parameters` semantics and the
+`usage` field names were each read from the reference first, the model list was
+queried live rather than guessed, and `GET /api/v1/key` was confirmed to return
+401 for an invalid key before being used as a probe.
+
+If a Context7 (or equivalent documentation) MCP connector is attached, use it
+first — it is the fastest path to a current reference. It is **not** attached by
+default; when it is absent, fall back to the vendor's published reference and to
+unauthenticated live calls that cost nothing.
 
 ## Graphify
 
