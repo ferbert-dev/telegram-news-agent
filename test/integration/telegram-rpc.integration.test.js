@@ -418,7 +418,11 @@ test(
         );
 
         await db.query(
-          "update public.news_bot_settings set quiet_hours_enabled = false, next_run_at = $1 where telegram_channel_id = $2",
+          // excluded_topic_codes is set here rather than inherited from the
+          // column default. The default is '{}' -- a new database must not opt
+          // itself into a per-article AI classifier -- so a test that asserts
+          // anything about exclusions has to establish them itself.
+          "update public.news_bot_settings set quiet_hours_enabled = false, next_run_at = $1, excluded_topic_codes = array['war_conflict']::text[] where telegram_channel_id = $2",
           [new Date("2000-01-01T00:00:00Z"), channelId],
         );
         const pipelineOwner = randomUUID();

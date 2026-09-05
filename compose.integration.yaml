@@ -133,11 +133,13 @@ services:
       # and is what gets the failure message to the operator at all.
       TELEGRAM_NEWS_JOB_MAX_EXECUTION_ATTEMPTS: "1"
 
-      # Six concurrent excluded-topic classifications instead of one.
+      # Deliberately absent: EXCLUDED_TOPIC_CLASSIFICATION_CONCURRENCY.
       #
-      # The default is 1 -- production's behaviour -- because six calls each
-      # retrying three times puts eighteen requests in flight, and the legacy
-      # runtime production executes has no circuit breaker to bound that. Here
-      # the typed runtime does, so the speed-up is safe to take: it turned an
-      # eleven-minute filtering pass into roughly two.
-      EXCLUDED_TOPIC_CLASSIFICATION_CONCURRENCY: "6"
+      # It was six here, to make the excluded-topic policy finish faster. It
+      # did -- and firing six classifications at once is also what turned a
+      # slow, expensive path into a rate-limit wall (237 rejected calls in one
+      # run) and pushed the overflow onto the paid tier.
+      #
+      # The path is now off by default and cheap when on, so there is nothing
+      # left to parallelise around. Speeding up a call that should not be
+      # happening is not an optimisation.

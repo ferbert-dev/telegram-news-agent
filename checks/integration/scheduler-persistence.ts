@@ -52,7 +52,10 @@ async function createDueSettings(
     ],
   );
   await pool.query(
-    "update public.news_bot_settings set next_run_at = $1 where telegram_channel_id = $2",
+    // excluded_topic_codes is seeded here rather than inherited: the column
+    // default is now '{}', so a test asserting that a schedule snapshot
+    // carries the channel's exclusions has to establish them first.
+    "update public.news_bot_settings set next_run_at = $1, excluded_topic_codes = array['war_conflict']::text[] where telegram_channel_id = $2",
     [dueAt, channelId],
   );
   return updated;

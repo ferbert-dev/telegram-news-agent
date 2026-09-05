@@ -20,6 +20,7 @@ on:
           - stop-integration
           - inspect-integration
           - release-integration-news
+          - clear-integration-excluded-topics
 
 concurrency:
   group: production-${{ github.ref }}
@@ -744,6 +745,69 @@ jobs:
           await client.end();
           NODE
           echo "The worker reclaims on its next poll (2s). /news is usable again."
+          REMOTE
+
+
+  clear-integration-excluded-topics:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'clear-integration-excluded-topics'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      # Integration only. The container filter names the integration bot
+      # explicitly, so this cannot reach production's settings even if it is
+      # dispatched by mistake -- and production already has an empty list.
+      - name: Clear the integration channel's excluded topics
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          container_id="$(docker ps -q --filter 'name=^/telegram-news-agent-int-bot-1$')"
+          test -n "$container_id" || { echo "integration bot is not running" >&2; exit 1; }
+          docker exec -i "$container_id" node --input-type=module <<'NODE'
+          import pg from "pg";
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+          const { rows } = await client.query(
+            `select telegram_channel_id, excluded_topic_codes, version, updated_by
+               from public.news_bot_settings order by telegram_channel_id`);
+          if (rows.length === 0) console.log("ExcludedTopics (no settings rows)");
+          for (const row of rows) {
+            if ((row.excluded_topic_codes ?? []).length === 0) {
+              console.log(`ExcludedTopics channel=${row.telegram_channel_id} already empty; nothing to do`);
+              continue;
+            }
+            // Through the settings function, not a raw UPDATE: it validates the
+            // codes, bumps the optimistic version, and is the same path the
+            // Telegram settings menu uses. A raw write would skip all three.
+            const updated = await client.query(
+              `select excluded_topic_codes, version
+                 from public.update_news_excluded_topics($1, $2::text[], $3, $4)`,
+              [row.telegram_channel_id, [], row.updated_by, row.version]);
+            if (updated.rows.length === 0) {
+              console.error(`ExcludedTopics channel=${row.telegram_channel_id} REFUSED (version moved under us)`);
+              process.exitCode = 1;
+              continue;
+            }
+            const after = updated.rows[0];
+            console.log(`ExcludedTopics channel=${row.telegram_channel_id} was=[${(row.excluded_topic_codes ?? []).join(",")}] now=[${(after.excluded_topic_codes ?? []).join(",")}] version=${row.version}->${after.version}`);
+          }
+          await client.end();
+          NODE
           REMOTE
 
   inspect-host-capacity:
