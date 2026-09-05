@@ -119,7 +119,26 @@ services:
       #
       # Production is untouched by this: it has no OpenRouter key, and its own
       # order is unchanged.
-      AI_PROVIDER_ORDER: openrouter,openai,gemini
+      # OpenRouter is deliberately absent.
+      #
+      # It did work on free models -- one /news completed in 51 seconds with
+      # zero paid calls -- but not dependably: latency ranged from 10 to 49
+      # seconds per call, the free tier rate-limited after about two calls, and
+      # a run that could not get a draft out of any free model spent the full
+      # 120-second allowance before falling through. For a stage whose job is
+      # to tell us whether a change works, two minutes of ambiguity per run is
+      # a worse trade than the money it saves.
+      #
+      # The provider itself is left in the codebase. It is typed-runtime only,
+      # so production never loads it, and it costs nothing while it is not
+      # named here. Naming it again is a one-line change; deleting it would
+      # throw away work that is tested and was demonstrated working.
+      #
+      # Order is openai first, gemini second, and that is measured rather than
+      # assumed: gemini's quota on this stage is exhausted, and putting it
+      # first produced 2,131 wasted rate-limited attempts against 708 useful
+      # ones in a single run.
+      AI_PROVIDER_ORDER: openai,gemini
 
       # Fifteen minutes: the same as the pipeline lease's TTL, and not less.
       #
