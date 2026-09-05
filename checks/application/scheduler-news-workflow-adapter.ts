@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { buildSearchPlan } from "../../src/news-settings.js";
+
 import {
   TypedSchedulerNewsWorkflowAdapter,
   buildDraftEvidence,
@@ -132,12 +134,16 @@ test("a first-tier selection returns review_ready with that tier's window and ne
     status: "review_ready",
     draftId: "draft-1",
     preview: "Preview body",
-    windowHours: 48,
+    windowHours: 24,
   });
-  assert.deepEqual(queries, [48], "a successful first tier must not run the second");
+  assert.deepEqual(
+    queries,
+    [24],
+    "a successful first tier must not run the wider ones",
+  );
 });
 
-test("an empty first tier escalates to the seven-day tier and reports its window", async () => {
+test("a quiet day widens by one step rather than jumping to the weekly tier", async () => {
   const windows: number[] = [];
   const adapter = new TypedSchedulerNewsWorkflowAdapter(
     {
@@ -153,8 +159,30 @@ test("an empty first tier escalates to the seven-day tier and reports its window
   const result = await adapter.run({ settingsSnapshot, lease });
 
   assert.equal(result.status, "review_ready");
+  // 48, not 168: skipping the middle tier would reach for week-old news the
+  // moment today had none.
+  assert.equal((result as { windowHours: number }).windowHours, 48);
+  assert.deepEqual(windows, [24, 48]);
+});
+
+test("an empty first and second tier escalate to the seven-day tier", async () => {
+  const windows: number[] = [];
+  const adapter = new TypedSchedulerNewsWorkflowAdapter(
+    {
+      async execute(request) {
+        windows.push(request.input.windowHours!);
+        if (windows.length < 3) throw noCandidates();
+        return { selected: selection() };
+      },
+    },
+    editorialFake(),
+  );
+
+  const result = await adapter.run({ settingsSnapshot, lease });
+
+  assert.equal(result.status, "review_ready");
   assert.equal((result as { windowHours: number }).windowHours, 24 * 7);
-  assert.deepEqual(windows, [48, 24 * 7]);
+  assert.deepEqual(windows, [24, 48, 24 * 7]);
 });
 
 test("every tier empty reports no_candidates rather than throwing", async () => {
@@ -177,7 +205,11 @@ test("every tier empty reports no_candidates rather than throwing", async () => 
   );
 
   assert.deepEqual(await adapter.run({ settingsSnapshot, lease }), { status: "no_candidates" });
-  assert.equal(attempts, 2);
+  // Every tier in the ladder is tried before giving up -- asserted against the
+  // plan rather than a literal, so adding a tier cannot quietly leave one
+  // unexercised here.
+  assert.equal(attempts, buildSearchPlan(settingsSnapshot).length);
+  assert.equal(attempts, 3);
 });
 
 test("a non-empty-tier failure surfaces immediately instead of escalating", async () => {

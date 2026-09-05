@@ -59,7 +59,7 @@ function checkpointRow(
     status: "review_ready",
     draft_id: "draft-1",
     preview: "Preview body",
-    window_hours: 48,
+    window_hours: 24,
     created_at: "2026-09-03T10:00:00.000Z",
     updated_at: "2026-09-03T10:00:00.000Z",
     publication_message_id: null,
@@ -225,7 +225,7 @@ test("a fresh job researches under the pipeline lease and checkpoints review_rea
   assert.deepEqual(calls, [
     "getCheckpoint",
     "acquire",
-    "research:48",
+    "research:24",
     "generate",
     "release",
     "saveCheckpoint:review_ready",
@@ -233,18 +233,20 @@ test("a fresh job researches under the pipeline lease and checkpoints review_rea
   // The lease is released before the checkpoint write, and both happen: a run
   // that kept the lease would block the scheduler for its full 15-minute TTL.
   assert.equal(saved[0]?.preview, "Preview body");
-  assert.equal(saved[0]?.window_hours, 48);
+  assert.equal(saved[0]?.window_hours, 24);
 });
 
-test("an empty first tier escalates to the wider window rather than giving up", async () => {
+test("an empty first tier widens by one step rather than jumping to the weekly one", async () => {
   const { adapter, calls } = harness({ researchResults: ["empty", selection()] });
 
   const outcome = await adapter.run(job(), {});
 
   assert.equal(outcome.status, "review_ready");
+  // 48, not 168: reaching for week-old news the moment today has none would
+  // undo the point of searching today first.
   assert.deepEqual(
     calls.filter((call) => call.startsWith("research")),
-    ["research:48", "research:168"],
+    ["research:24", "research:48"],
   );
 });
 
@@ -257,7 +259,7 @@ test("a non-empty research failure surfaces immediately instead of escalating", 
   // spending more on the same failure.
   assert.deepEqual(
     calls.filter((call) => call.startsWith("research")),
-    ["research:48"],
+    ["research:24"],
   );
   assert.ok(calls.includes("release"), "the lease must be released on failure");
 });
