@@ -26,7 +26,18 @@ git push -u origin release/v1.0.0        # runs the full gate, builds :<sha>
 # 3. Release it. This is the only thing that touches production.
 git tag v1.0.0
 git push origin v1.0.0
+
+# 4. Bring the version home, so main is not left behind its own release.
+git switch main
+npm version 1.0.0 --no-git-tag-version
+# open a pull request with that bump
 ```
+
+Step 4 is easy to skip and worth not skipping. The release job refuses a tag
+whose `package.json` disagrees with it, so a `main` still claiming an older
+version means the *next* release has to bump from a number that was already
+released -- and, more quietly, anything reading the version out of the running
+image on a `main` build reports something that was never released.
 
 | Event | Gate | Image | Production |
 |---|---|---|---|
