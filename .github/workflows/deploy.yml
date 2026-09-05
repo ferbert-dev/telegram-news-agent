@@ -5,6 +5,13 @@ on:
   push:
     branches:
       - main
+      # Release snapshots build too, so a hotfix committed on a release branch
+      # has an image of its own. Without this the "the image must already
+      # exist" guard below would refuse to release any commit that never sat
+      # on main -- which is the entire reason to cut a release branch.
+      - 'release/**'
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       operation:
@@ -34,7 +41,13 @@ env:
 
 jobs:
   test:
-    if: github.event_name != 'workflow_dispatch' || inputs.operation == 'verify-production-db'
+    # Not on tags. A tag releases an image that already exists, and that image
+    # exists only because this gate passed on the commit that built it. Running
+    # it again would re-prove the same thing and put six minutes between the
+    # tag and production for no added certainty.
+    if: >-
+      (github.event_name != 'workflow_dispatch' || inputs.operation == 'verify-production-db')
+      && !startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -822,6 +835,7 @@ jobs:
           NODE
           REMOTE
 
+
   inspect-host-capacity:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect-host-capacity'
     runs-on: ubuntu-latest
@@ -1213,8 +1227,13 @@ jobs:
             || { echo "production bot is not running" >&2; exit 1; }
           REMOTE
 
+  # Builds the immutable per-commit image. Deploys nothing.
+  #
+  # Merging to main used to ship straight to production, so a documentation fix
+  # and a rewrite of the publish path restarted the live bot alike. Building and
+  # releasing are now separate events: this one only makes the artifact.
   package:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1252,15 +1271,110 @@ jobs:
             linux/amd64
             linux/arm64
           push: true
-          tags: |
-            ${{ steps.image.outputs.value }}
-            ${{ env.IMAGE_NAME }}:latest
+          # Deliberately not `latest`. That tag now means "what production is
+          # running", and it is moved by the release job -- not by whatever was
+          # merged most recently, which has never been in production at all.
+          tags: ${{ steps.image.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Turns a version tag into a release. Builds nothing.
+  #
+  # The artifact deployed is the one that was already built and tested for that
+  # exact commit -- retagged, not rebuilt. A rebuild at release time ships
+  # something that has never been through the gate, however identical the
+  # source looks.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.resolve.outputs.image }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Check out the full history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse anything that is not a releasable commit
+        id: resolve
+        run: |
+          set -Eeuo pipefail
+          version="${GITHUB_REF_NAME}"
+          sha="${GITHUB_SHA}"
+
+          # 1. Shape. The trigger already filters, but a tag is the thing that
+          #    reaches production, so it is asserted rather than assumed.
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "refusing: '${version}' is not vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+
+          # 2. Provenance. The commit must sit on a release snapshot branch.
+          #    Tagging an arbitrary commit would put code in production that no
+          #    release branch ever recorded, which is what the snapshot is for.
+          branches="$(git branch -r --contains "$sha" --format '%(refname:short)' \
+            | sed 's#^origin/##' | grep '^release/' || true)"
+          if [[ -z "$branches" ]]; then
+            echo "refusing: ${sha} is not on any release/* branch." >&2
+            echo "Cut one from main first: git switch -c release/${version} main" >&2
+            exit 1
+          fi
+          echo "On release branch(es): $(echo "$branches" | tr '\n' ' ')"
+
+          # 3. Provable gate. The per-commit image exists only because the push
+          #    that created it passed the full test gate. Its absence means this
+          #    commit was never verified -- and no amount of source inspection
+          #    at release time is a substitute for that.
+          built="${IMAGE_NAME}:${sha}"
+          if ! docker manifest inspect "$built" >/dev/null 2>&1; then
+            echo "refusing: no image ${built}." >&2
+            echo "That commit never finished CI, so it has never been tested." >&2
+            exit 1
+          fi
+
+          # 4. The snapshot describes itself. package.json must carry the
+          #    version being released, so the tag, the image and /status cannot
+          #    disagree about what is running.
+          declared="v$(node -p "require('./package.json').version")"
+          if [[ "$declared" != "$version" ]]; then
+            echo "refusing: package.json says ${declared}, the tag says ${version}." >&2
+            echo "Bump it on the release branch, then move the tag." >&2
+            exit 1
+          fi
+
+          {
+            echo "version=${version}"
+            echo "image=${IMAGE_NAME}:${version}"
+            echo "built=${built}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Retag the tested image as the release
+        env:
+          BUILT: ${{ steps.resolve.outputs.built }}
+          RELEASE: ${{ steps.resolve.outputs.image }}
+        run: |
+          set -Eeuo pipefail
+          # imagetools copies the manifest list, so both architectures come
+          # across and no layer is rebuilt.
+          docker buildx imagetools create --tag "$RELEASE" "$BUILT"
+          docker buildx imagetools create --tag "${IMAGE_NAME}:latest" "$BUILT"
+          echo "Released ${RELEASE} (and moved latest) from ${BUILT}"
+
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -1361,7 +1475,7 @@ jobs:
 
       - name: Deploy immutable image
         env:
-          DEPLOY_IMAGE: ${{ needs.package.outputs.image }}
+          DEPLOY_IMAGE: ${{ needs.release.outputs.image }}
           ORACLE_HOST: ${{ vars.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
