@@ -5,7 +5,9 @@ import { z } from "zod";
 import { getAiProviderOrder } from "../../src/ai/ai-provider-composition.js";
 import {
   createOpenRouterProvider,
+  DEFAULT_MIN_CONTEXT_TOKENS,
   DEFAULT_OPEN_ROUTER_MODEL,
+  discoverOpenRouterModel,
   getOpenRouterConfig,
   OPEN_ROUTER_BASE_URL,
 } from "../../src/ai/providers/openrouter.adapter.js";
@@ -17,6 +19,7 @@ const config = {
   apiKey: "k",
   model: "some/model",
   baseUrl: OPEN_ROUTER_BASE_URL,
+  minContextTokens: DEFAULT_MIN_CONTEXT_TOKENS,
 };
 
 type Call = { body: Record<string, unknown> };
@@ -44,7 +47,7 @@ const okResponse = (
   usage,
 });
 
-test("a key alone is enough, and what it defaults to is free", () => {
+test("a key alone is enough; the model is discovered unless one is named", () => {
   assert.equal(getOpenRouterConfig({}), null);
   assert.equal(getOpenRouterConfig({ OPEN_ROUTER_API_KEY: "  " }), null);
 
@@ -53,16 +56,107 @@ test("a key alone is enough, and what it defaults to is free", () => {
   for (const key of ["OPEN_ROUTER_API_KEY", "OPENROUTER_API_KEY"]) {
     const resolved = getOpenRouterConfig({ [key]: " k " });
     assert.equal(resolved?.apiKey, "k");
-    assert.equal(resolved?.model, DEFAULT_OPEN_ROUTER_MODEL);
+    assert.equal(resolved?.model, null, "null means discover at first use");
+    assert.equal(resolved?.minContextTokens, DEFAULT_MIN_CONTEXT_TOKENS);
   }
 
-  // The default must stay free. A paid default would bill for a model nobody
-  // chose, which is why this is an assertion and not a comment.
+  assert.equal(
+    getOpenRouterConfig({ OPEN_ROUTER_API_KEY: "k", OPEN_ROUTER_MODEL: " a/b " })
+      ?.model,
+    "a/b",
+    "an explicit model wins and skips discovery",
+  );
+
+  // The pinned fallback must stay free: it is what discovery falls back to, and
+  // a paid fallback would bill for a model nobody chose.
   assert.match(
     DEFAULT_OPEN_ROUTER_MODEL,
     /:free$/,
-    "the default OpenRouter model must be a free one",
+    "the fallback OpenRouter model must be a free one",
   );
+});
+
+test("discovery takes the largest free model that can do structured output", async () => {
+  const catalogue = {
+    data: [
+      // Biggest window, but no structured outputs: unusable here, because
+      // every call this adapter serves is generateStructured.
+      { id: "huge/no-schema:free", context_length: 1_048_576, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["tools"] },
+      // Supports schemas and is huge, but is not free.
+      { id: "paid/big:paid", context_length: 900_000, pricing: { prompt: "0.5", completion: "1" }, supported_parameters: ["structured_outputs"] },
+      // Free and schema-capable, but under the floor.
+      { id: "small/ok:free", context_length: 65_536, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"] },
+      { id: "good/mid:free", context_length: 262_144, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"] },
+      { id: "best/large:free", context_length: 512_000, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"] },
+    ],
+  };
+
+  const chosen = await discoverOpenRouterModel({
+    baseUrl: OPEN_ROUTER_BASE_URL,
+    minContextTokens: DEFAULT_MIN_CONTEXT_TOKENS,
+    fetchImpl: (async () => ({ ok: true, json: async () => catalogue })) as never,
+  });
+  assert.equal(chosen, "best/large:free");
+});
+
+test("a catalogue that cannot be read falls back rather than breaking the provider", async () => {
+  const cases: Array<typeof fetch> = [
+    (async () => {
+      throw new Error("network down");
+    }) as never,
+    (async () => ({ ok: false, json: async () => ({}) })) as never,
+    (async () => ({ ok: true, json: async () => ({ data: [] }) })) as never,
+    // Everything filtered out: free, but none schema-capable.
+    (async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "x:free", context_length: 900_000, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["tools"] },
+        ],
+      }),
+    })) as never,
+  ];
+
+  for (const fetchImpl of cases) {
+    assert.equal(
+      await discoverOpenRouterModel({
+        baseUrl: OPEN_ROUTER_BASE_URL,
+        minContextTokens: DEFAULT_MIN_CONTEXT_TOKENS,
+        fetchImpl,
+      }),
+      DEFAULT_OPEN_ROUTER_MODEL,
+      "discovery must never leave the provider without a model",
+    );
+  }
+});
+
+test("discovery runs once per process, not once per call", async () => {
+  let lookups = 0;
+  const provider = createOpenRouterProvider(
+    { ...config, model: null },
+    {
+      client: fakeClient(okResponse('{"verdict":"ok"}')),
+      discover: async () => {
+        lookups += 1;
+        return "discovered/model:free";
+      },
+    },
+  );
+
+  const call = () =>
+    provider!.generateStructured!({
+      systemInstruction: "s",
+      input: {},
+      zodSchema: Schema,
+      schemaName: "verdict",
+    });
+
+  // Concurrent first calls must share one lookup, not race into several.
+  const [first] = await Promise.all([call(), call(), call()]);
+  await call();
+
+  assert.equal(lookups, 1, "the catalogue is read once, not per request");
+  assert.equal(first.model, "discovered/model:free");
 });
 
 test("an unconfigured OpenRouter cannot stop the runtime from starting", () => {
@@ -100,7 +194,7 @@ test("the descriptor claims only what the adapter implements", () => {
   ]);
   const adapter = openrouterProviderDescriptor.createAdapter(
     config,
-    fakeClient(okResponse('{"verdict":"ok"}')),
+    fakeClient(okResponse('{"verdict":"ok"}')) as never,
   );
   assert.equal(typeof adapter?.generateStructured, "function");
   assert.equal(adapter?.searchNews, undefined);

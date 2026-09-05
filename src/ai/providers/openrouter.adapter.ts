@@ -46,13 +46,87 @@ export const OPEN_ROUTER_BASE_URL = "https://openrouter.ai/api/v1";
  * with OPEN_ROUTER_MODEL; nvidia/nemotron-3-super-120b-a12b:free is the
  * strongest general-purpose alternative if output quality disappoints.
  */
+/**
+ * The floor for automatic selection. Well above anything this pipeline sends --
+ * its largest single call is curation at roughly 12k tokens -- so it is a
+ * quality filter rather than a capacity one: a model with a small window is
+ * usually a small model.
+ */
+export const DEFAULT_MIN_CONTEXT_TOKENS = 200_000;
+
 export const DEFAULT_OPEN_ROUTER_MODEL = "dots-studio/dots-3-note-preview:free";
 
 export type OpenRouterConfig = {
   apiKey: string;
-  model: string;
+  /** null means "discover one at first use"; a string is an explicit override. */
+  model: string | null;
   baseUrl: string;
+  minContextTokens: number;
 };
+
+/**
+ * Pick a model from OpenRouter's live catalogue instead of trusting a constant.
+ *
+ * A hardcoded id is wrong the day a free model is retired, and free models are
+ * retired often. This asks OpenRouter what exists right now and takes the
+ * largest-context free model that can actually do the job.
+ *
+ * Three filters, and the middle one is not optional: every call this adapter
+ * serves goes through generateStructured, so a model that does not declare
+ * `structured_outputs` is unusable here no matter how large its window is --
+ * with require_parameters set, such a request does not route at all.
+ *
+ * The endpoint is public and unauthenticated, so this leaks no credential. It
+ * is called at most once per process, and any failure -- network, timeout,
+ * empty result -- falls back to the pinned default rather than leaving the
+ * provider unusable.
+ */
+export async function discoverOpenRouterModel({
+  baseUrl,
+  minContextTokens,
+  signal,
+  fetchImpl = fetch,
+}: {
+  baseUrl: string;
+  minContextTokens: number;
+  signal?: AbortSignal;
+  fetchImpl?: typeof fetch;
+}): Promise<string> {
+  try {
+    const response = await fetchImpl(`${baseUrl}/models`, { signal });
+    if (!response.ok) return DEFAULT_OPEN_ROUTER_MODEL;
+    const body = (await response.json()) as {
+      data?: Array<{
+        id?: unknown;
+        context_length?: unknown;
+        pricing?: { prompt?: unknown; completion?: unknown };
+        supported_parameters?: unknown;
+      }>;
+    };
+    const free = (body.data ?? []).filter((model) => {
+      const prompt = Number(model.pricing?.prompt ?? NaN);
+      const completion = Number(model.pricing?.completion ?? NaN);
+      const context = Number(model.context_length ?? 0);
+      return (
+        typeof model.id === "string"
+        && model.id.length > 0
+        && prompt === 0
+        && completion === 0
+        && context >= minContextTokens
+        && Array.isArray(model.supported_parameters)
+        && model.supported_parameters.includes("structured_outputs")
+      );
+    });
+    if (!free.length) return DEFAULT_OPEN_ROUTER_MODEL;
+    free.sort(
+      (left, right) =>
+        Number(right.context_length ?? 0) - Number(left.context_length ?? 0),
+    );
+    return free[0].id as string;
+  } catch {
+    return DEFAULT_OPEN_ROUTER_MODEL;
+  }
+}
 
 /**
  * OpenRouter exists only in the typed runtime, on purpose.
@@ -78,12 +152,18 @@ export function getOpenRouterConfig(
     env.OPEN_ROUTER_API_KEY?.trim() || env.OPENROUTER_API_KEY?.trim();
   if (!apiKey) return null;
 
+  const minContext = Number(env.OPEN_ROUTER_MIN_CONTEXT_TOKENS ?? "");
+
   return {
     apiKey,
-    model:
-      (env.OPEN_ROUTER_MODEL ?? env.OPENROUTER_MODEL)?.trim() ||
-      DEFAULT_OPEN_ROUTER_MODEL,
+    // An explicit model always wins and skips discovery entirely -- no network
+    // call, no surprise about which model ran.
+    model: (env.OPEN_ROUTER_MODEL ?? env.OPENROUTER_MODEL)?.trim() || null,
     baseUrl: env.OPEN_ROUTER_BASE_URL?.trim() || OPEN_ROUTER_BASE_URL,
+    minContextTokens:
+      Number.isSafeInteger(minContext) && minContext > 0
+        ? minContext
+        : DEFAULT_MIN_CONTEXT_TOKENS,
   };
 }
 
@@ -107,12 +187,38 @@ type ChatCompletionsClient = {
 
 export function createOpenRouterProvider(
   config: OpenRouterConfig | null,
-  { client }: { client: ChatCompletionsClient },
+  {
+    client,
+    discover = discoverOpenRouterModel,
+  }: {
+    client: ChatCompletionsClient;
+    discover?: typeof discoverOpenRouterModel;
+  },
 ): AiProviderPort | null {
   if (!config) return null;
 
+  // Resolved once per process, on first use rather than at registration.
+  //
+  // Discovery is a network call and configure() is synchronous, so it cannot
+  // happen there -- and it must not happen per request either, which would put
+  // an extra round trip in front of every call. The promise is memoised, so
+  // concurrent first calls share one lookup, and a failed lookup still resolves
+  // (to the pinned default) rather than rejecting every future call.
+  let resolvedModel: Promise<string> | null = null;
+  const modelFor = (signal?: AbortSignal): Promise<string> => {
+    if (config.model) return Promise.resolve(config.model);
+    resolvedModel ??= discover({
+      baseUrl: config.baseUrl,
+      minContextTokens: config.minContextTokens,
+      signal,
+    });
+    return resolvedModel;
+  };
+
   return {
     name: "openrouter",
+    // Null until first use when discovery is in play; the resolved id is
+    // reported on every result, which is what the usage ledger records.
     model: config.model,
 
     async generateStructured(input: Record<string, unknown>): Promise<AiProviderResult> {
@@ -132,9 +238,10 @@ export function createOpenRouterProvider(
         signal?: AbortSignal;
       };
 
+      const model = await modelFor(signal);
       const response = await client.chat.completions.create(
         {
-          model: config.model,
+          model,
           messages: [
             { role: "system", content: systemInstruction },
             { role: "user", content: JSON.stringify(payload) },
@@ -153,7 +260,7 @@ export function createOpenRouterProvider(
       );
 
       const usage = openRouterUsageEvent(response, {
-        model: config.model,
+        model,
         operation: usageOperation,
       });
       const choice = response?.choices?.[0];
@@ -204,7 +311,7 @@ export function createOpenRouterProvider(
       return {
         value,
         provider: "openrouter",
-        model: config.model,
+        model,
         usageEvents: [usage].filter(Boolean),
       };
     },
