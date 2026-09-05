@@ -76,7 +76,6 @@ test("deployment consumes SOPS and no longer reads the multiline environment sec
   assert.match(workflow, /inputs\.operation == 'verify-production-db'/);
   assert.match(workflow, /RuntimeEnv/);
   assert.match(workflow, /TelegramProbe/);
-  assert.match(workflow, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /PostgreSQL superuser credential verified/);
   assert.match(workflow, /PostgreSQL application credential verified/);
   assert.match(workflow, /trap 'rm -f "\$candidate_env"' EXIT/);
@@ -88,6 +87,40 @@ test("deployment consumes SOPS and no longer reads the multiline environment sec
     workflow,
     /install -m 755 ops\/verify-production-runtime\.sh deployment\/ops\/verify-production-runtime\.sh/,
   );
+});
+
+test("production deploys from a release tag and never from a branch push", () => {
+  const workflow = readFileSync(".github/workflows/deploy.yml", "utf8");
+
+  // The regression this guards is the one that made every safe change
+  // expensive: a merge to main going straight to the live bot. Asserting the
+  // ABSENCE of that gate is the point -- reinstating it anywhere in the file
+  // fails here.
+  assert.doesNotMatch(
+    workflow,
+    /github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/,
+    "no job may be gated on a push to main again",
+  );
+
+  assert.match(workflow, /^ {2}release:$/m);
+  assert.match(workflow, /if: startsWith\(github\.ref, 'refs\/tags\/v'\)/);
+  // package builds on branches and must never build on a tag: a tag releases
+  // an image that already exists rather than making a new one.
+  assert.match(
+    workflow,
+    /if: github\.event_name == 'push' && !startsWith\(github\.ref, 'refs\/tags\/'\)/,
+  );
+
+  // Each of the four refusals, by the message an operator would actually read.
+  assert.match(workflow, /is not vMAJOR\.MINOR\.PATCH/);
+  assert.match(workflow, /is not on any release\/\* branch/);
+  assert.match(workflow, /That commit never finished CI/);
+  assert.match(workflow, /package\.json says/);
+
+  // Retag, never rebuild.
+  assert.match(workflow, /docker buildx imagetools create --tag "\$RELEASE" "\$BUILT"/);
+  // latest is moved by a release, not by whatever merged most recently.
+  assert.doesNotMatch(workflow, /\$\{\{ env\.IMAGE_NAME \}\}:latest/);
 });
 
 test("deploy rollback restores environment, database credential, and image", () => {
