@@ -216,9 +216,6 @@ against a real Telegram channel, through to a published draft.
 
 ## Not done yet
 
-- Production still deploys on every merge to `main`. Moving it behind a release
-  branch is a separate change — and until it is made, even a documentation fix
-  rebuilds the image and restarts the production bot.
 - Research still does not honour the abort signal, so a graceful stop cannot
   drain a run in flight. This is what makes "deploying during a run kills it"
   above a behaviour to plan around rather than a bug to work around.
