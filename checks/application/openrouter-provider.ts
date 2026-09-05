@@ -7,7 +7,7 @@ import {
   createOpenRouterProvider,
   DEFAULT_MIN_CONTEXT_TOKENS,
   DEFAULT_OPEN_ROUTER_MODEL,
-  discoverOpenRouterModel,
+  discoverOpenRouterModels,
   getOpenRouterConfig,
   OPEN_ROUTER_BASE_URL,
 } from "../../src/ai/providers/openrouter.adapter.js";
@@ -91,12 +91,15 @@ test("discovery takes the largest free model that can do structured output", asy
     ],
   };
 
-  const chosen = await discoverOpenRouterModel({
+  const chosen = await discoverOpenRouterModels({
     baseUrl: OPEN_ROUTER_BASE_URL,
     minContextTokens: DEFAULT_MIN_CONTEXT_TOKENS,
     fetchImpl: (async () => ({ ok: true, json: async () => catalogue })) as never,
   });
-  assert.equal(chosen, "best/large:free");
+  // The whole ranked list, largest context first -- not just the winner.
+  // Calling the next free model costs nothing, so a model that will not answer
+  // must not end the attempt.
+  assert.deepEqual(chosen, ["best/large:free", "good/mid:free"]);
 });
 
 test("a catalogue that cannot be read falls back rather than breaking the provider", async () => {
@@ -118,13 +121,13 @@ test("a catalogue that cannot be read falls back rather than breaking the provid
   ];
 
   for (const fetchImpl of cases) {
-    assert.equal(
-      await discoverOpenRouterModel({
+    assert.deepEqual(
+      await discoverOpenRouterModels({
         baseUrl: OPEN_ROUTER_BASE_URL,
         minContextTokens: DEFAULT_MIN_CONTEXT_TOKENS,
         fetchImpl,
       }),
-      DEFAULT_OPEN_ROUTER_MODEL,
+      [DEFAULT_OPEN_ROUTER_MODEL],
       "discovery must never leave the provider without a model",
     );
   }
@@ -138,7 +141,7 @@ test("discovery runs once per process, not once per call", async () => {
       client: fakeClient(okResponse('{"verdict":"ok"}')),
       discover: async () => {
         lookups += 1;
-        return "discovered/model:free";
+        return ["discovered/model:free"];
       },
     },
   );
@@ -269,4 +272,96 @@ test("anything that is not schema-valid JSON fails closed", async () => {
       "an unusable response must throw rather than return an unvalidated value",
     );
   }
+});
+
+test("a free model that will not answer is replaced by the next one, not by a paid provider", async () => {
+  const tried: string[] = [];
+  const client = {
+    chat: {
+      completions: {
+        create: async (body: Record<string, unknown>) => {
+          const model = body.model as string;
+          tried.push(model);
+          // The first free model is queued and never answers -- the exact
+          // failure seen on the integration stage.
+          if (model === "dead/queued:free") throw new Error("timed out");
+          return okResponse('{"verdict":"ok"}') as never;
+        },
+      },
+    },
+  };
+
+  const provider = createOpenRouterProvider(
+    { ...config, model: null },
+    {
+      client,
+      discover: async () => ["dead/queued:free", "alive/fast:free"],
+      perModelTimeoutMs: 50,
+    },
+  );
+
+  const call = () =>
+    provider!.generateStructured!({
+      systemInstruction: "s",
+      input: {},
+      zodSchema: Schema,
+      schemaName: "verdict",
+    });
+
+  const first = await call();
+  assert.deepEqual(tried, ["dead/queued:free", "alive/fast:free"]);
+  assert.equal(first.model, "alive/fast:free");
+
+  // The model that answered goes to the front, so the next call does not
+  // re-pay the dead one's timeout.
+  await call();
+  assert.deepEqual(tried, [
+    "dead/queued:free",
+    "alive/fast:free",
+    "alive/fast:free",
+  ]);
+});
+
+test("a pinned model is used alone and never wanders to another", async () => {
+  const tried: string[] = [];
+  const provider = createOpenRouterProvider(
+    { ...config, model: "pinned/one:free" },
+    {
+      client: {
+        chat: {
+          completions: {
+            create: async (body: Record<string, unknown>) => {
+              tried.push(body.model as string);
+              throw new Error("nope");
+            },
+          },
+        },
+      },
+      discover: async () => {
+        throw new Error("discovery must not run when a model is pinned");
+      },
+      perModelTimeoutMs: 50,
+    },
+  );
+
+  await assert.rejects(
+    provider!.generateStructured!({
+      systemInstruction: "s",
+      input: {},
+      zodSchema: Schema,
+      schemaName: "verdict",
+    }),
+  );
+  assert.deepEqual(tried, ["pinned/one:free"]);
+});
+
+test("the provider is given longer than the cascade's paid-API deadline", () => {
+  // 30s is tuned for a paid API answering in seconds. Free endpoints are
+  // queued, and at 30s this provider timed out four times in a row on the
+  // integration stage without ever getting to answer.
+  const { deadlineMs } = openrouterProviderDescriptor.traits;
+  assert.ok(
+    typeof deadlineMs === "number" && deadlineMs > 30_000,
+    "a free, queued provider needs more than the paid-API deadline",
+  );
 });
