@@ -595,6 +595,17 @@ jobs:
           const perOp = await client.query(`select operation, count(*)::int as n from public.ai_provider_attempts where started_at > now() - interval '24 hours' group by operation order by n desc`);
           if (!perOp.rows.length) console.log("AiCalls24h (none)");
           for (const r of perOp.rows) console.log(`AiCalls24h operation=${r.operation} count=${r.n}`);
+          // Feature flags, because their absence has already been mistaken for a
+          // bug once: editorial enrichment was off on this stage while it was
+          // on in production, and nothing in the inspection said so.
+          const flags = await client.query(
+            `select telegram_channel_id, feature_key, state, version, updated_at
+               from public.news_feature_flags
+              order by telegram_channel_id, feature_key`);
+          if (!flags.rows.length) console.log("FeatureFlag (none configured — every feature is off)");
+          for (const r of flags.rows) {
+            console.log(`FeatureFlag channel=${r.telegram_channel_id} ${r.feature_key}=${r.state} version=${r.version} updated=${r.updated_at?.toISOString?.() ?? r.updated_at}`);
+          }
           const byOp = await client.query(
             `select operation, provider, status, count(*)::int as n,
                     round(avg(latency_ms))::int as avg_ms, max(started_at) as last_at
