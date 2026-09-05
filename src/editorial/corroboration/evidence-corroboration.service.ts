@@ -3,8 +3,9 @@ import { Inject, Injectable } from "@nestjs/common";
 import type {
   CorroborationEvidence,
   CorroborationOutcome,
+  CorroborationSource,
   FactRequest,
-  FactSearchPort,
+  CorroborationSearchPort,
 } from "./evidence-corroboration.contracts.js";
 import { EVIDENCE_CORROBORATION_OPTIONS } from "./evidence-corroboration.tokens.js";
 
@@ -72,10 +73,10 @@ export class EvidenceCorroborationService {
      */
     requests: readonly FactRequest[];
     languageCode: string;
-    factSearch: FactSearchPort;
+    search: CorroborationSearchPort;
     signal?: AbortSignal;
   }): Promise<CorroborationOutcome> {
-    const { evidence, requests, languageCode, factSearch, signal } = input;
+    const { evidence, requests, languageCode, search, signal } = input;
 
     const needsWork = evidence.some(
       (item) =>
@@ -100,37 +101,33 @@ export class EvidenceCorroborationService {
       if (searches >= this.options.maxSearches) break;
       if (found.size >= this.options.requiredPublishers) break;
       searches += 1;
-      let result;
+      let sources: readonly CorroborationSource[];
       try {
-        result = await factSearch.searchFact({
-          query: request.query,
-          expectedClaim: request.expectedClaim,
-          languageCode,
-          signal,
-        });
+        sources = await search.find(request, { languageCode, signal });
       } catch {
         // A failed search spends its budget and stops nothing else. Retrying
-        // the same query against the same provider would spend the rest of the
-        // budget on the same failure.
+        // the same question against the same provider would spend the rest of
+        // the budget on the same failure.
         continue;
       }
 
-      const fact = result?.value?.fact;
-      if (!fact?.sourceUrl) continue;
-      const publisher = publisherOf(fact.sourceUrl);
-      // Independent means a DIFFERENT publisher. A second page from the
-      // newsroom that published the rumour corroborates nothing.
-      if (!publisher || known.has(publisher) || found.has(publisher)) continue;
+      for (const source of sources) {
+        if (found.size >= this.options.requiredPublishers) break;
+        const publisher = publisherOf(source.url);
+        // Independent means a DIFFERENT publisher. A second page from the
+        // newsroom that published the rumour corroborates nothing.
+        if (!publisher || known.has(publisher) || found.has(publisher)) continue;
 
-      found.set(publisher, {
-        sourceUrl: fact.sourceUrl,
-        title: fact.sourceTitle,
-        evidenceText: fact.evidenceText,
-        // web_source, never primary_source: an independent report is not the
-        // same thing as the subject's own announcement, and draft.js ranks
-        // those differently on purpose.
-        verificationStatus: "web_source",
-      });
+        found.set(publisher, {
+          sourceUrl: source.url,
+          title: source.title,
+          evidenceText: source.excerpt,
+          // web_source, never primary_source: an independent report is not the
+          // same thing as the subject's own announcement, and draft.js ranks
+          // those differently on purpose.
+          verificationStatus: "web_source",
+        });
+      }
     }
 
     const publishers = [...found.keys()];

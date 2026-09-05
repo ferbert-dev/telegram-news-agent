@@ -25,14 +25,27 @@ const requests: FactRequest[] = [
   { query: "fourth", reason: "r", expectedClaim: "c" },
 ];
 
+// One call, zero or one source -- what our AI searchFact can return.
 function factSearch(urls: Array<string | null>, seen: string[] = []) {
   let i = 0;
   return {
     seen,
-    async searchFact(input: { query: string }) {
-      seen.push(input.query);
+    async find(request: FactRequest) {
+      seen.push(request.query);
       const url = urls[i++] ?? null;
-      return { value: { fact: url ? { sourceUrl: url, sourceTitle: "t", evidenceText: "e" } : null } };
+      return url ? [{ url, title: "t", excerpt: "e" }] : [];
+    },
+  };
+}
+
+// A provider that answers with a list, as most search APIs do.
+function listSearch(pages: string[][], seen: string[] = []) {
+  let i = 0;
+  return {
+    seen,
+    async find(request: FactRequest) {
+      seen.push(request.query);
+      return (pages[i++] ?? []).map((url) => ({ url, title: "t", excerpt: "e" }));
     },
   };
 }
@@ -43,7 +56,7 @@ test("a story already resting on a primary source costs no searches at all", asy
     evidence: [{ sourceUrl: "https://acme.example/post", verificationStatus: "primary_source" }],
     requests,
     languageCode: "en",
-    factSearch: search,
+    search,
   });
 
   assert.equal(outcome.status, "not_needed");
@@ -59,7 +72,7 @@ test("the model's own queries are used, in its order, and only up to the budget"
     evidence: rumour,
     requests,
     languageCode: "en",
-    factSearch: search,
+    search,
   });
 
   // The model chooses the questions; the budget chooses how many get asked.
@@ -78,7 +91,7 @@ test("two independent publishers clear the story, and searching stops there", as
     evidence: rumour,
     requests,
     languageCode: "en",
-    factSearch: search,
+    search,
   });
 
   assert.equal(outcome.status, "corroborated");
@@ -105,7 +118,7 @@ test("more pages from the same publisher are one source, not two", async () => {
     evidence: rumour,
     requests,
     languageCode: "en",
-    factSearch: search,
+    search,
   });
 
   // www. is the same newsroom, and a newsroom cannot corroborate itself.
@@ -123,7 +136,7 @@ test("the publisher that broke the rumour cannot corroborate it", async () => {
     evidence: rumour,
     requests,
     languageCode: "en",
-    factSearch: search,
+    search,
   });
 
   assert.equal(outcome.status, "uncorroborated");
@@ -135,7 +148,7 @@ test("an uncorroborated story is published with a tag, never suppressed", async 
     evidence: rumour,
     requests,
     languageCode: "en",
-    factSearch: factSearch([null, null, null]),
+    search: factSearch([null, null, null]),
   });
 
   assert.equal(outcome.status, "uncorroborated");
@@ -155,9 +168,9 @@ test("a search that throws spends its budget and does not retry the same questio
     evidence: rumour,
     requests,
     languageCode: "en",
-    factSearch: {
-      async searchFact(input: { query: string }) {
-        seen.push(input.query);
+    search: {
+      async find(request: FactRequest) {
+        seen.push(request.query);
         throw new Error("provider down");
       },
     },
@@ -166,4 +179,23 @@ test("a search that throws spends its budget and does not retry the same questio
   assert.deepEqual(seen, ["first", "second", "third"]);
   assert.equal(outcome.searches, 3);
   assert.equal(outcome.status, "uncorroborated");
+});
+
+test("a provider that returns a list can clear a story in one search", async () => {
+  const search = listSearch([
+    ["https://reuters.example/a", "https://apnews.example/b"],
+  ]);
+  const outcome = await service().corroborate({
+    evidence: rumour,
+    requests,
+    languageCode: "en",
+    search,
+  });
+
+  assert.equal(outcome.status, "corroborated");
+  // One question, two independent publishers. On a metered budget this is the
+  // difference between three articles a day and six -- and it is why the port
+  // returns a list rather than the single fact our own searchFact gives.
+  assert.equal(outcome.searches, 1);
+  assert.deepEqual(search.seen, ["first"]);
 });
