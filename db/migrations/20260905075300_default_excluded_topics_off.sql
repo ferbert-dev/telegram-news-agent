@@ -1,0 +1,24 @@
+-- A new database must not opt itself into a per-article AI classifier.
+--
+-- excluded_topic_codes was added with `default array['war_conflict']`, so every
+-- fresh installation started with the excluded-topic policy switched ON. That
+-- policy is not a filter over metadata: with a non-empty list, research asks
+-- the AI provider to classify EVERY candidate article, at four separate stages
+-- of a run, before local ranking has cut the list down.
+--
+-- Measured, on 2026-09-05, on two stacks running this same code against the
+-- same feeds:
+--
+--   production   excluded_topic_codes = '{}'              42 provider calls / 24h
+--   integration  excluded_topic_codes = '{war_conflict}'  20,278 calls / 24h
+--
+-- 20,257 of integration's calls were that one operation, which does not appear
+-- in production's attempt log at all. A single manual /news cost more than
+-- thirty days of production. Nobody chose that; it was the column default.
+--
+-- Existing rows are deliberately NOT touched. What a channel excludes is the
+-- operator's decision, and a migration must not silently rewrite a policy
+-- someone configured on purpose. This changes only what a database that has
+-- never been configured starts with.
+alter table public.news_bot_settings
+  alter column excluded_topic_codes set default '{}'::text[];

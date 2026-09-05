@@ -35,7 +35,7 @@ export const newsBotSettings = pgTable(
       .notNull(),
     excludedTopicCodes: text("excluded_topic_codes")
       .array()
-      .default(sql`array['war_conflict']::text[]`)
+      .default(sql`'{}'::text[]`)
       .notNull(),
     approvalPolicy: text("approval_policy").default("manual").notNull(),
     nextRunAt: timestampWithTimezone("next_run_at"),
