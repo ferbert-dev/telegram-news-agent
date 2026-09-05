@@ -1858,3 +1858,77 @@ test("a failing policy logger cannot alter an eligible research decision", async
 
   assert.equal(result.selected.article.id, "policy-hostile-log-article");
 });
+
+// The recency term used to decay at a fixed 0.625 points per hour, which was
+// 30/48: it reached zero exactly at the edge of the only window that existed.
+// Deriving the slope from the window has to leave that window untouched, or
+// this change would silently re-rank production's news as a side effect of
+// adding a fresher tier. This is the assertion that keeps the two honest.
+const legacyRecency = (ageHours) =>
+  Math.max(0, 30 - Math.min(30, ageHours * 0.625));
+
+const plainSource = { id: "s", reliability_score: 50, is_primary: false };
+
+const agedCandidate = (ageHours) => ({
+  title: "Untitled",
+  canonicalUrl: `https://example.com/${ageHours}`,
+  publishedAt: new Date(NOW.valueOf() - ageHours * 60 * 60 * 1000).toISOString(),
+});
+
+test("at a 48 hour window the score is identical to the fixed-slope formula", () => {
+  for (const ageHours of [0, 0.5, 1, 6, 12, 23.9, 24, 36, 47.9, 48, 60, 96]) {
+    assert.equal(
+      scoreCandidate(agedCandidate(ageHours), plainSource, {
+        now: NOW,
+        windowHours: 48,
+      }),
+      Number((50 * 0.2 + legacyRecency(ageHours)).toFixed(3)),
+      `age ${ageHours}h must be scored exactly as before at a 48 hour window`,
+    );
+  }
+});
+
+test("a 24 hour window spends the whole recency range inside that window", () => {
+  const at = (ageHours) =>
+    scoreCandidate(agedCandidate(ageHours), plainSource, {
+      now: NOW,
+      windowHours: 24,
+    });
+
+  // Base is reliability only: 50 * 0.2.
+  assert.equal(at(0), 40, "an article published now takes the full 30 points");
+  assert.equal(at(12), 25, "half the window spends half the range");
+  assert.equal(at(24), 10, "the edge of the window is worth no recency at all");
+
+  // The point of the change: under the fixed slope a day-old article kept half
+  // its freshness score, so the fresh tier could not tell it from a new one.
+  assert.equal(
+    Number((50 * 0.2 + legacyRecency(24)).toFixed(3)),
+    25,
+    "the old formula gave a 24-hour-old article the same score as a 12-hour-old one does now",
+  );
+  assert.ok(
+    at(1) - at(23) > 25,
+    "an hour-old article must now clearly outrank a nearly-expired one",
+  );
+});
+
+test("ranking inside a 24 hour window puts the freshest first", () => {
+  const ranked = rankCandidates(
+    [23, 2, 14, 0.5].map((ageHours) => ({
+      ...agedCandidate(ageHours),
+      source: plainSource,
+    })),
+    { now: NOW, windowHours: 24 },
+  );
+
+  assert.deepEqual(
+    ranked.map((candidate) => candidate.canonicalUrl),
+    [
+      "https://example.com/0.5",
+      "https://example.com/2",
+      "https://example.com/14",
+      "https://example.com/23",
+    ],
+  );
+});

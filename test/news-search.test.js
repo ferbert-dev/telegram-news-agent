@@ -6,7 +6,7 @@ import {
 } from "../src/news-search.js";
 import { NoResearchCandidatesError } from "../src/research.js";
 
-test("tiered news search prefers the 48-hour window", async () => {
+test("tiered news search prefers today's news and stops as soon as it finds some", async () => {
   const calls = [];
   const expected = { draft: { id: "draft-1" } };
   const result = await runTieredNewsSearch({
@@ -20,8 +20,29 @@ test("tiered news search prefers the 48-hour window", async () => {
   });
 
   assert.equal(result.result, expected);
-  assert.equal(result.tier.windowHours, 48);
+  assert.equal(result.tier.windowHours, 24);
+  // The wider tiers exist for an empty day, not as extra passes on a normal
+  // one. A second call here would mean every run paid for the whole ladder.
   assert.equal(calls.length, 1);
+});
+
+test("a quiet day widens by one step rather than jumping to the weekly tier", async () => {
+  const windows = [];
+  const result = await runTieredNewsSearch({
+    repository: {},
+    aiClient: {},
+    model: "model",
+    runWorkflow: async (options) => {
+      windows.push(options.windowHours);
+      if (options.windowHours === 24) {
+        throw new NoResearchCandidatesError("empty");
+      }
+      return { draft: { id: "yesterday" } };
+    },
+  });
+
+  assert.deepEqual(windows, [24, 48]);
+  assert.equal(result.result.draft.id, "yesterday");
 });
 
 test("tiered news search falls back to verified seven-day trends", async () => {
@@ -32,14 +53,14 @@ test("tiered news search falls back to verified seven-day trends", async () => {
     model: "model",
     runWorkflow: async (options) => {
       windows.push(options.windowHours);
-      if (options.windowHours === 48) {
+      if (options.windowHours < 168) {
         throw new NoResearchCandidatesError("empty");
       }
       return { draft: { id: "weekly-trend" } };
     },
   });
 
-  assert.deepEqual(windows, [48, 168]);
+  assert.deepEqual(windows, [24, 48, 168]);
   assert.equal(result.result.draft.id, "weekly-trend");
   assert.match(result.tier.query, /trend/);
 });

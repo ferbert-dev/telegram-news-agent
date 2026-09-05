@@ -172,7 +172,7 @@ export function matchPrimarySource(url, sources) {
 export function scoreCandidate(
   candidate,
   source,
-  { now = new Date(), keywords = [] } = {},
+  { now = new Date(), keywords = [], windowHours = 48 } = {},
 ) {
   const reliability = source.reliability_score ?? 50;
   const publishedAt = candidate.publishedAt
@@ -182,7 +182,21 @@ export function scoreCandidate(
     publishedAt && !Number.isNaN(publishedAt.valueOf())
       ? Math.max(0, (now.valueOf() - publishedAt.valueOf()) / HOUR_MS)
       : 72;
-  const recency = Math.max(0, 30 - Math.min(30, ageHours * 0.625));
+  // Recency spans the full 0-30 across whatever window is being searched,
+  // rather than across a fixed 48 hours.
+  //
+  // The constant 0.625 was 30/48: recency decayed to zero exactly at the edge
+  // of the only window that existed. With a 24-hour tier that constant becomes
+  // wrong in the direction that matters -- an article at the edge of the
+  // window would still score 15 of 30, so half the freshness signal would be
+  // spent on articles the tier was created to rank below fresher ones.
+  //
+  // Deriving the slope from the window is identical at 48 hours
+  // (30 * (1 - age/48) === 30 - age * 0.625, asserted in test/research.test.js)
+  // and correct at every other window.
+  const span =
+    Number.isFinite(windowHours) && windowHours > 0 ? windowHours : 48;
+  const recency = Math.max(0, 30 * (1 - ageHours / span));
   const primary = source.is_primary ? 30 : 0;
 
   const discovery =
@@ -222,7 +236,11 @@ export function rankCandidates(
     const existing = unique.get(candidate.canonicalUrl);
     const scored = {
       ...candidate,
-      score: scoreCandidate(candidate, candidate.source, { now, keywords }),
+      score: scoreCandidate(candidate, candidate.source, {
+        now,
+        keywords,
+        windowHours,
+      }),
     };
 
     if (!existing || scored.score > existing.score) {

@@ -124,11 +124,30 @@ test("search plan preserves global coverage and selected output language", () =>
 
   assert.deepEqual(
     plan.map((tier) => tier.windowHours),
-    [48, 168],
+    [24, 48, 168],
   );
+  assert.match(plan[0].query, /last 24 hours/);
   assert.match(plan[0].query, /Nature and environment/);
   assert.match(plan[0].query, /Meeresbiologie/);
   assert.match(plan[0].query, /any language/);
   assert.match(plan[0].query, /German/);
   assert.ok(plan[0].keywords.includes("archaeology"));
+});
+
+test("the search ladder starts fresh and only ever widens", () => {
+  const windows = buildSearchPlan({}).map((tier) => tier.windowHours);
+
+  // A ladder that narrowed at any step would abandon a tier's candidates for a
+  // strictly smaller pool, so the fallback could find nothing where the tier
+  // before it had already found nothing -- a wasted pass by construction.
+  assert.deepEqual(
+    windows,
+    [...windows].sort((left, right) => left - right),
+    "each tier must search at least as far back as the one before it",
+  );
+  assert.equal(windows[0], 24, "the first pass is today's news");
+  assert.ok(
+    windows.at(-1) >= 24 * 7,
+    "the last pass must still reach far enough to survive a quiet week",
+  );
 });
