@@ -21,6 +21,21 @@ export type AiProviderTraits = {
   /** The provider implements a standalone connection probe. */
   supportsConnectionTest?: boolean;
   /**
+   * Implemented only by the typed NestJS runtime, and deliberately absent from
+   * the legacy JS runtime in src/*-provider.js.
+   *
+   * The drift guard in checks/application/ai-provider-registry.ts otherwise
+   * requires every registry id to be a name the legacy runtime also accepts,
+   * so that the two runtimes cannot silently disagree while both are live.
+   * This flag is the sanctioned exception, not a hole in it: the guard asserts
+   * that a provider carrying this flag is REJECTED by the legacy runtime, so
+   * "typed-only" has to be true rather than merely claimed.
+   *
+   * Use it only for a provider that is part of the migration's target state.
+   * Adding one to the legacy runtime grows the surface still to be ported.
+   */
+  typedRuntimeOnly?: boolean;
+  /**
    * Excluded from the default provider order unless `configure()` returns
    * non-null for the current environment. Providers without this trait are
    * always in the default order, whether or not they end up configured.

@@ -97,13 +97,21 @@ services:
       # the encrypted file: they are operational settings for this stage, not
       # secrets, and belong somewhere reviewable in git.
 
-      # Integration has its own OpenAI key; its Gemini key is still production's
-      # and that quota is exhausted. Leaving gemini first meant every call was
-      # tried against it, failed rate-limited three times, and only then fell
-      # through -- 2,131 wasted attempts against 708 useful ones in a single
-      # measured run. Ordering the working provider first is not a workaround
-      # for that; it is just the correct order for this stage's credentials.
-      AI_PROVIDER_ORDER: openai,gemini
+      # Free first, paid as the fallback.
+      #
+      # This stage exists to exercise the system, not to publish to readers, so
+      # the quality of a free model is an acceptable trade for costing nothing
+      # -- and this session established what the alternative costs. OpenAI and
+      # Gemini stay behind it so a run still completes when the free model is
+      # rate-limited or withdrawn, which free models regularly are.
+      #
+      # OpenRouter serves generateStructured only; the cascade falls through to
+      # OpenAI for the grounded web-search operations it cannot serve, without
+      # needing to be told.
+      #
+      # Production is untouched by this: it has no OpenRouter key, and its own
+      # order is unchanged.
+      AI_PROVIDER_ORDER: openrouter,openai,gemini
 
       # Fifteen minutes: the same as the pipeline lease's TTL, and not less.
       #

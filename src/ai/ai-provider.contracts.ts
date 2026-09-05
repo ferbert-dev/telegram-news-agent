@@ -34,5 +34,6 @@ export type AiProviderLogger = { warn?: (message: string) => void };
 export type OpenAiSdkPort = unknown;
 export type GeminiSdkPort = unknown;
 export type ExaSdkPort = unknown;
+export type OpenRouterSdkPort = unknown;
 
 export type GeminiClientPort = { client: GeminiSdkPort; model: string };
