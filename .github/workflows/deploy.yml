@@ -21,6 +21,10 @@ on:
           - inspect-integration
           - release-integration-news
           - clear-integration-excluded-topics
+      ref:
+        description: 'deploy-integration only: branch, tag, or pr/<number> to deploy. Blank = the ref this run was started on.'
+        required: false
+        type: string
 
 concurrency:
   group: production-${{ github.ref }}
@@ -885,9 +889,86 @@ jobs:
     permissions:
       contents: read
       packages: write
+      pull-requests: read
     steps:
+      # Resolve BEFORE checkout, so the thing that gets built, tagged and
+      # deployed is one decision made in one place.
+      #
+      # workflow_dispatch only accepts a branch or tag as its own ref, so
+      # testing a pull request used to mean knowing its head branch name. This
+      # accepts `pr/<number>` as well, which is the form an operator actually
+      # has in front of them.
+      #
+      # Branch and tag NAMES only -- raw SHAs are refused on purpose. GitHub
+      # keeps fork pull-request commits in this repository's object store under
+      # refs/pull/*, so a bare SHA is a way to run a stranger's code on the
+      # host, with the host's secrets and the integration bot's token. A branch
+      # or tag name can only name something a writer of this repository pushed.
+      - name: Resolve the ref to deploy
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED: ${{ inputs.ref }}
+        run: |
+          set -Eeuo pipefail
+          requested="$(printf '%s' "${REQUESTED:-}" | tr -d '[:space:]')"
+
+          if [[ -z "$requested" ]]; then
+            echo "Deploying the ref this run was started on: ${GITHUB_REF_NAME}"
+            {
+              echo "sha=${GITHUB_SHA}"
+              echo "label=${GITHUB_REF_NAME}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$requested" =~ ^pr/([0-9]+)$ ]]; then
+            number="${BASH_REMATCH[1]}"
+            pr="$(gh pr view "$number" -R "$GITHUB_REPOSITORY" \
+              --json headRefOid,headRefName,isCrossRepository,state 2>/dev/null)" || {
+                echo "refusing: no pull request #${number} in ${GITHUB_REPOSITORY}" >&2
+                exit 1
+              }
+            if [[ "$(jq -r '.isCrossRepository' <<<"$pr")" != "false" ]]; then
+              echo "refusing: pull request #${number} comes from a fork." >&2
+              echo "Deploying it would run code this repository's writers have not" >&2
+              echo "accepted, on the host, with the host's secrets." >&2
+              exit 1
+            fi
+            sha="$(jq -r '.headRefOid' <<<"$pr")"
+            branch="$(jq -r '.headRefName' <<<"$pr")"
+            echo "Deploying pull request #${number} (${branch}) at ${sha}"
+            {
+              echo "sha=${sha}"
+              echo "label=pr-${number}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # A branch or tag NAME. Resolved through the refs API rather than the
+          # commits API: the commits API would happily resolve a fork pull
+          # request's SHA, which is exactly what this refuses to deploy.
+          sha=""
+          for namespace in heads tags; do
+            sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/${namespace}/${requested}" \
+              --jq '.object.sha' 2>/dev/null)" && break || sha=""
+          done
+          if [[ -z "$sha" ]]; then
+            echo "refusing: '${requested}' is not a branch or tag in ${GITHUB_REPOSITORY}." >&2
+            echo "Pass a branch name, a tag name, or pr/<number>. Raw commit SHAs are" >&2
+            echo "refused because fork pull-request commits live in this repository too." >&2
+            exit 1
+          fi
+          echo "Deploying ${requested} at ${sha}"
+          {
+            echo "sha=${sha}"
+            echo "label=${requested}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.target.outputs.sha }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -904,7 +985,12 @@ jobs:
 
       - name: Select immutable image name
         id: image
-        run: echo "value=${IMAGE_NAME}:int-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+        # The RESOLVED sha, not GITHUB_SHA: when a pull request is deployed those
+        # differ, and tagging the image with the dispatch ref would name an
+        # image after code it does not contain.
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: echo "value=${IMAGE_NAME}:int-${TARGET_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
         uses: docker/build-push-action@v7
@@ -1017,6 +1103,7 @@ jobs:
         env:
           ORACLE_HOST: ${{ vars.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           test -n "$ORACLE_HOST"
           test -n "$ORACLE_USER"
@@ -1035,7 +1122,7 @@ jobs:
           # overlay. Shipping it here would put two services on one port.
           tar -C deployment-int -czf deployment-int.tar.gz .
           chmod 600 deployment-int.tar.gz
-          remote_archive="/tmp/telegram-news-agent-int-${GITHUB_SHA}.tar.gz"
+          remote_archive="/tmp/telegram-news-agent-int-${TARGET_SHA}.tar.gz"
           scp deployment-int.tar.gz "${ORACLE_USER}@${ORACLE_HOST}:${remote_archive}"
           ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s -- "$remote_archive" <<'REMOTE'
           set -Eeuo pipefail

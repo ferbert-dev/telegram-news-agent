@@ -109,6 +109,11 @@ gh workflow run deploy.yml -f operation=inspect-host-capacity
 # then confirms production is still healthy.
 gh workflow run deploy.yml -f operation=deploy-integration --ref <branch>
 
+# Or deploy something else without switching the ref the run starts on --
+# useful from the Actions UI, whose branch dropdown defaults to main.
+gh workflow run deploy.yml -f operation=deploy-integration -f ref=<branch-or-tag>
+gh workflow run deploy.yml -f operation=deploy-integration -f ref=pr/117
+
 # Tear it down and give the host its memory back. Keeps the volume, so the
 # next deploy resumes with its data rather than re-migrating from empty.
 gh workflow run deploy.yml -f operation=stop-integration
@@ -138,6 +143,8 @@ a guard that has never been observed refusing is indistinguishable from a no-op.
 
 | Guard | Refuses when |
 |---|---|
+| deployable ref | `ref` is not a branch, a tag, or `pr/<number>` in this repository |
+| fork pull request | `pr/<number>` names a pull request opened from a fork |
 | environment stage | the env file is missing `DEPLOY_STAGE=integration` |
 | distinct bot and channel | `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHANNEL_ID` matches production's |
 | project | the script targets the project name `compose.yaml` declares |
@@ -157,6 +164,30 @@ Two of these were wrong when first written and the tests are what found it:
   (`telegram-news-agent_pgdata`; the volume is `postgres_data`) in output that
   reports it unprefixed. It now asserts every resolved volume name carries the
   integration project's prefix.
+
+## Deploying a pull request
+
+`workflow_dispatch` only accepts a branch or a tag as the ref a run starts on,
+so testing a pull request used to mean looking up its head branch name. The
+optional `ref` input takes `pr/<number>` instead, which is the form an operator
+actually has in front of them, and resolves it to that pull request's head
+commit. The workflow *definition* still comes from the ref the run started on;
+only the code being built and deployed comes from the target.
+
+Two refusals matter here, and they are the same refusal seen from two sides:
+
+- **A pull request from a fork is refused.** Deploying it would run code this
+  repository's writers have not accepted, on the host, with the host's secrets
+  and the integration bot's token.
+- **A raw commit SHA is refused**, even one that exists. GitHub keeps fork
+  pull-request commits in this repository's own object store under
+  `refs/pull/*`, so accepting a bare SHA would be a way around the first
+  refusal. Branch and tag *names* can only name something a writer pushed,
+  which is why the resolver uses the refs API rather than the commits API --
+  the commits API would resolve a fork's SHA quite happily.
+
+The resolved commit is what the image is tagged with, so an image is never
+named after code it does not contain.
 
 ## Rollback
 
