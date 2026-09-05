@@ -195,13 +195,30 @@ The deeper cause is that research does not respond to the abort signal, so a
 graceful stop cannot drain it. Fixing that is a separate piece of work; until
 then the claim outliving the container is the behaviour to plan around.
 
+## What the first deploys showed
+
+Everything above was configuration and guards until 2026-09-05. It has now run
+on the host, and these are the observed numbers rather than the intended ones:
+
+| | Observed |
+|---|---|
+| deploy | `v0.1.0+int-a59-int`, capacity guard passed at `available=406MiB required=448MiB` |
+| bot | `running`, `restart_count=0`, `oom_killed=false`, `mem_limit=224MiB` |
+| `/news` | enqueued 09:11:00, `review_ready` 09:15:59, draft approved and published |
+| providers | 464 OpenAI calls succeeded, none failed; Gemini never reached |
+| production | same container before and after the deploy, `restart_count=0` |
+
+Two things that were open questions are now answered. The 224 MiB bot ceiling
+holds through a full research pass — feeds, excluded-topic classification at
+concurrency 6, curation, generation and review delivery — without a kill. And
+the compiled NestJS runtime completes the whole `/news` flow on a real host,
+against a real Telegram channel, through to a published draft.
+
 ## Not done yet
 
-- The stage has never been deployed. Everything above is configuration and
-  guards, verified locally and in CI, not observed on the host.
-- The 224 MiB bot ceiling has not been tested against a real research run. The
-  live runs so far were on an unbounded container; a `/news` pass that overruns
-  will spill to swap rather than be killed outright, but it has not been
-  watched. This is the first thing to check after the first deploy.
 - Production still deploys on every merge to `main`. Moving it behind a release
-  branch is a separate change.
+  branch is a separate change — and until it is made, even a documentation fix
+  rebuilds the image and restarts the production bot.
+- Research still does not honour the abort signal, so a graceful stop cannot
+  drain a run in flight. This is what makes "deploying during a run kills it"
+  above a behaviour to plan around rather than a bug to work around.

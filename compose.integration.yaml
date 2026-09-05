@@ -17,16 +17,19 @@
 #
 # Memory limits are set here and NOT in compose.yaml, on purpose.
 #
-# Production runs unbounded today. That is a deliberate non-change: adding a
-# limit to production is a production change, and it would be made blind. But
-# unbounded production plus unbounded integration means that when the box runs
-# out, the kernel OOM killer picks the victim by its own score — and the fat,
-# long-lived process it tends to pick is production's postgres.
+# compose.yaml already bounds production — db 384m, migrate 256m, bot 384m —
+# and those stay exactly as they are. Integration cannot reuse those numbers:
+# it has to fit in what is left on the box beside a running production, so it
+# needs its own, smaller ceilings. Setting them in this overlay is what keeps
+# the two sizings independent. (An earlier version of this comment said
+# production ran unbounded. It never did — the limits are in compose.yaml,
+# and the paragraph below this one always said so.)
 #
-# Bounding only the new stack fixes that asymmetry without touching production:
-# integration cannot grow into the memory production needs, because the cgroup
-# stops it first. If integration is the thing that overreaches, integration is
-# the thing that dies.
+# The ceilings are what make co-location survivable: the two stacks share one
+# kernel, and without a cgroup on integration a runaway there would push the
+# box into the OOM killer, which picks its victim by score — and the fat,
+# long-lived process it favours is production's postgres. Bounded, integration
+# is what dies instead.
 #
 # Sized against a real measurement, not a guess: the host is a 952MiB instance
 # with 461MiB available, and production is using ~141MiB of its 768MiB of
@@ -87,6 +90,11 @@ services:
     # it, tight enough to fit beside production. A research pass that does
     # overrun spills to swap (2GB, 95% free) rather than being killed outright,
     # and if it is killed the cgroup means integration dies, not production.
+    #
+    # Confirmed on the host on 2026-09-05, not just reasoned about: a full
+    # /news pass — feeds, excluded-topic classification at concurrency 6,
+    # curation, generation and review delivery — ran for five minutes at this
+    # ceiling and finished with oom_killed=false and restart_count=0.
     mem_limit: 224m
     environment:
       # Distinguishable in logs and in /status, so nobody has to guess which
