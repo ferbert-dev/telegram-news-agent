@@ -90,15 +90,19 @@ test("discovery takes the largest free model that can do structured output", asy
     data: [
       // Biggest window, but no structured outputs: unusable here, because
       // every call this adapter serves is generateStructured.
-      { id: "huge/no-schema:free", context_length: 1_048_576, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["tools"] },
+      { id: "huge/no-schema:free", context_length: 1_048_576, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["tools"], architecture: { input_modalities: ["text"], output_modalities: ["text"] } },
       // Supports schemas and is huge, but is not free.
-      { id: "paid/big:paid", context_length: 900_000, pricing: { prompt: "0.5", completion: "1" }, supported_parameters: ["structured_outputs"] },
+      { id: "paid/big:paid", context_length: 900_000, pricing: { prompt: "0.5", completion: "1" }, supported_parameters: ["structured_outputs"], architecture: { input_modalities: ["text"], output_modalities: ["text"] } },
       // Small, but free and schema-capable: a candidate too, last in the
       // order. It is only ever reached if everything above it failed, which
       // beats falling through to a paid provider.
-      { id: "small/ok:free", context_length: 65_536, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"] },
-      { id: "good/mid:free", context_length: 262_144, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"] },
-      { id: "best/large:free", context_length: 512_000, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"] },
+      { id: "small/ok:free", context_length: 65_536, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"], architecture: { input_modalities: ["text"], output_modalities: ["text"] } },
+      { id: "good/mid:free", context_length: 262_144, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"], architecture: { input_modalities: ["text"], output_modalities: ["text"] } },
+      { id: "best/large:free", context_length: 512_000, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"], architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] } },
+      // A free music generator with a huge window. structured_outputs alone
+      // would not have kept it out on its own, and nothing here would know
+      // what to do with an audio response.
+      { id: "music/maker:free", context_length: 1_048_576, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["structured_outputs"], architecture: { input_modalities: ["text"], output_modalities: ["audio"] } },
     ],
   };
 
@@ -110,6 +114,10 @@ test("discovery takes the largest free model that can do structured output", asy
   // The whole ranked list, largest context first -- not just the winner.
   // Calling the next free model costs nothing, so a model that will not answer
   // must not end the attempt.
+  // best/large takes an image as INPUT and answers in text, so it stays: we
+  // only ever send text, and what a model will read costs us nothing.
+  // music/maker answers in audio and is excluded despite being free, huge, and
+  // nominally schema-capable.
   assert.deepEqual(chosen, [
     "best/large:free",
     "good/mid:free",
@@ -129,7 +137,7 @@ test("a catalogue that cannot be read falls back rather than breaking the provid
       ok: true,
       json: async () => ({
         data: [
-          { id: "x:free", context_length: 900_000, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["tools"] },
+          { id: "x:free", context_length: 900_000, pricing: { prompt: "0", completion: "0" }, supported_parameters: ["tools"], architecture: { input_modalities: ["text"], output_modalities: ["text"] } },
         ],
       }),
     })) as never,

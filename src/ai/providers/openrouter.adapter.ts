@@ -121,19 +121,44 @@ export async function discoverOpenRouterModels({
         context_length?: unknown;
         pricing?: { prompt?: unknown; completion?: unknown };
         supported_parameters?: unknown;
+        architecture?: {
+          input_modalities?: unknown;
+          output_modalities?: unknown;
+        };
       }>;
     };
     const free = (body.data ?? []).filter((model) => {
       const prompt = Number(model.pricing?.prompt ?? NaN);
       const completion = Number(model.pricing?.completion ?? NaN);
       const context = Number(model.context_length ?? 0);
+      const inputs = model.architecture?.input_modalities;
+      const outputs = model.architecture?.output_modalities;
+      // Text in, text ONLY out.
+      //
+      // Checked on the output rather than on the whole modality string: the
+      // catalogue carries image and music generators, and one of them
+      // (google/lyria-3-pro-preview, a music model) is free with a 1M window.
+      // Nothing here would know what to do with an audio or image response.
+      //
+      // Deliberately NOT the strict "text->text" modality, which would also
+      // drop openrouter/free and dots-3 -- both accept an image as INPUT and
+      // answer in text. We only ever send text, so what a model is willing to
+      // read costs us nothing; what it answers with is the part that has to
+      // be text.
+      const textIn = Array.isArray(inputs) && inputs.includes("text");
+      const textOnlyOut =
+        Array.isArray(outputs)
+        && outputs.length === 1
+        && outputs[0] === "text";
       return (
         typeof model.id === "string"
         && model.id.length > 0
         && prompt === 0
         && completion === 0
         && context >= minContextTokens
-        // The one filter that is not negotiable: every call this adapter
+        && textIn
+        && textOnlyOut
+        // The other filter that is not negotiable: every call this adapter
         // serves is generateStructured, so a model that cannot honour
         // response_format is unusable here at any size.
         && Array.isArray(model.supported_parameters)
