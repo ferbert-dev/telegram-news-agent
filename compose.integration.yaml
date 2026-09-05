@@ -113,6 +113,20 @@ services:
       # order is unchanged.
       AI_PROVIDER_ORDER: openrouter,openai,gemini
 
+      # Pinned, rather than discovered.
+      #
+      # Discovery ranks free models by context window, and context is not
+      # capability: it picked dots-3-note-preview:free (512k), which answered
+      # in 32 seconds and then produced a draft that failed
+      # validateGroundedDraft twice -- citing sources it had not been given.
+      # That guard is the anti-hallucination barrier and is working correctly;
+      # the model simply cannot follow it.
+      #
+      # nemotron-3-super-120b is a 120B general instruct model, which is a far
+      # better bet for grounded editorial writing with strict citation rules
+      # than a preview model built for notes. Still free.
+      OPEN_ROUTER_MODEL: nvidia/nemotron-3-super-120b-a12b:free
+
       # Fifteen minutes: the same as the pipeline lease's TTL, and not less.
       #
       # This is the window during which a claim held by a container that died
