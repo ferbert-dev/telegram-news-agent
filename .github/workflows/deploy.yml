@@ -550,6 +550,22 @@ jobs:
           docker inspect --format \
             'IntegrationBot status={{.State.Status}} running={{.State.Running}} restart_count={{.RestartCount}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} mem_limit={{.HostConfig.Memory}} started_at={{.State.StartedAt}}' \
             "$container_id"
+
+          # Which providers the container can actually build.
+          #
+          # AI_PROVIDER_ORDER naming a provider proves nothing: an unconfigured
+          # one is filtered out of the cascade without a word. exa was named in
+          # the order while nobody could say whether EXA_ENABLED was true, so
+          # "is fact search reaching exa?" had no answer short of spending a
+          # /news run and reading the attempt log afterwards.
+          #
+          # Presence only, never a value.
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container_id" |
+            awk -F= '
+              $1 == "AI_PROVIDER_ORDER" { printf "ProviderConfig order=%s\n", $2 }
+              $1 == "EXA_ENABLED" { printf "ProviderConfig EXA_ENABLED=%s\n", $2 }
+              $1 ~ /_API_KEY$/ { printf "ProviderConfig %s=%s\n", $1, ($2 == "" ? "empty" : "present") }
+            '
           docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.CPUPerc}}' \
             $(docker ps -q --filter 'name=telegram-news-agent') || true
           awk '/^(MemAvailable|SwapFree):/ { printf "  %-14s %8.0f MiB\n", $1, $2/1024 }' /proc/meminfo
