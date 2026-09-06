@@ -91,19 +91,26 @@ export function exaArticleContentPort(
     ): Promise<ArticleContent | null> {
       reserve();
       const response = await client.getContents([url], {
-        // An explicit ceiling, because `text: true` is not "the whole page".
+        // `verbosity: "full"` is the option that decides how much of the page
+        // comes back. `maxCharacters` is only a ceiling.
         //
-        // A live run retrieved exactly 1000 characters from a Guardian
-        // article -- a round number is a default, not an article -- while the
-        // HTML extractor had returned 12,579 characters from a comparable page
-        // the run before. Making retrieval the primary path while silently
-        // accepting a 1000-character cap gave the model LESS of the article
-        // than the extractor it replaced, which is the opposite of the point.
+        // Two live runs returned exactly 1000 characters from two different
+        // Guardian articles. A round number repeated is a default, not an
+        // article. Raising `maxCharacters` to 20,000 changed nothing, because
+        // nothing was hitting the ceiling: exa-js documents
+        // `verbosity` as defaulting to "compact", with "full" described as
+        // "Complete content including all sections". Read from the installed
+        // SDK's own type declarations, after the first assumption was wrong.
         //
-        // The shape is the one this repository already uses successfully
-        // against the installed SDK (`contents: { text: { maxCharacters } }`
-        // in src/exa-provider.js), not a recalled one.
-        text: { maxCharacters: MAX_ARTICLE_CHARACTERS },
+        // `maxAgeHours: 0` is not optional here -- the SDK states verbosity
+        // "Requires maxAgeHours: 0" -- and it means a fresh crawl rather than
+        // Exa's cache. That is slower and is the more expensive call, which is
+        // the trade being made: at most one article per run, under the same
+        // daily cap, in exchange for the whole article instead of a summary of
+        // it. For news published hours ago, fresh is also the more correct
+        // read.
+        text: { maxCharacters: MAX_ARTICLE_CHARACTERS, verbosity: "full" },
+        maxAgeHours: 0,
         ...(context.signal ? { signal: context.signal } : {}),
       });
       const result = response?.results?.[0];

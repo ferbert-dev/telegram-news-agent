@@ -11,6 +11,10 @@ import {
   SOURCE_ACQUISITION_DNS,
   SOURCE_ACQUISITION_TRANSPORT,
 } from "../../../src/research/source-acquisition.tokens.js";
+import {
+  CURATION_DNS_LOOKUP,
+  CURATION_HTTP,
+} from "../../../src/research/curation/evidence-curation.tokens.js";
 import { TypedResearchExecutionGatewayModule } from "../../../src/research/typed-research-execution.module.js";
 import { RESEARCH_EXECUTION_GATEWAY } from "../../../src/research/research-gateway.tokens.js";
 import { EditorialApplicationModule } from "../../../src/editorial/editorial-application.module.js";
@@ -282,6 +286,17 @@ export type NewsRigOptions = {
   articleContent?: ArticleContentPort | null;
   /** Answers the feed fetch. Default: 200 with valid RSS. */
   feedResponse?: (xml: string) => Response;
+  /**
+   * The article body the HTML extractor finds, or null to make it fail the way
+   * an unreachable page does.
+   *
+   * The rig used to leave this path on the real network: `fetchArticle` went
+   * through the un-overridden curation transport, every fallback made a real
+   * outbound request, and the scenario that depended on it silently tested a
+   * DNS failure rather than an extractor. "Costs nothing and needs nothing"
+   * was not true of the fallback path until this existed.
+   */
+  extractedHtml?: string | null;
   /** The Telegram send, the one thing between this rig and a real post. */
   publish?: (
     request: Record<string, unknown>,
@@ -320,6 +335,8 @@ export type NewsRig = {
   workerLog: string[];
   researchErrors: string[];
   feedRequests: () => number;
+  /** How often the HTML extractor was asked for a page. */
+  extractorRequests: () => number;
   enqueue: (updateId?: number) => Promise<{ status: string }>;
   runWorkerOnce: () => Promise<string>;
   jobRow: (updateId?: number) => Promise<Record<string, unknown> | undefined>;
@@ -363,9 +380,12 @@ export async function withNewsRig(
   const defaultContent: ArticleContentPort = {
     async fetch(url: string) {
       contentFetches.push(url);
-      // Long enough to clear the port's own minimum, so the "full text" branch
-      // is genuinely taken rather than silently skipped.
-      return { url, text: "Extracted body. ".repeat(60) };
+      // Long enough to clear the port's own minimum AND the gateway's
+      // thin-article threshold, because the shape being modelled is
+      // `verbosity: "full"` -- a whole article, not the 1000-character compact
+      // summary that made retrieval lose to the free extractor on the stage.
+      // A scenario that wants the thin case asks for it explicitly.
+      return { url, text: "Retrieved article body. ".repeat(200) };
     },
   };
   const articleContent =
@@ -397,6 +417,24 @@ export async function withNewsRig(
       );
     },
   };
+  // The HTML extractor's own transport, faked exactly like the feed's. The
+  // extractor parses real HTML, so this serves real HTML.
+  const extractorBody =
+    options.extractedHtml === undefined
+      ? `<html><body><article>${"The extracted article body continues. ".repeat(80)}</article></body></html>`
+      : options.extractedHtml;
+  let extractorRequests = 0;
+  const curationHttp = {
+    async fetchPinned(_url: URL) {
+      extractorRequests += 1;
+      if (extractorBody === null) throw new Error("page unreachable");
+      return new Response(extractorBody, {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    },
+  };
+
   const dns = {
     async lookup() {
       // A routable public address, and deliberately not a documentation range.
@@ -483,6 +521,10 @@ export async function withNewsRig(
     .useValue(transport)
     .overrideProvider(SOURCE_ACQUISITION_DNS)
     .useValue(dns)
+    .overrideProvider(CURATION_HTTP)
+    .useValue(curationHttp)
+    .overrideProvider(CURATION_DNS_LOOKUP)
+    .useValue(async () => [{ address: "93.184.216.34", family: 4 as const }])
     .compile();
   await moduleRef.init();
   legacyPersistence.bind(
@@ -605,6 +647,7 @@ export async function withNewsRig(
       workerLog,
       researchErrors,
       feedRequests: () => feedRequests,
+      extractorRequests: () => extractorRequests,
       async enqueue(updateId = firstUpdateId) {
         claimedUpdateIds.add(updateId);
         const claim = await updates.claimTelegramUpdate({
@@ -656,6 +699,7 @@ export async function withNewsRig(
           `draft evidence text lengths: ${JSON.stringify(draftEvidenceText)}`,
           `content fetches: ${contentFetches.length}`,
           `feed requests: ${feedRequests}`,
+          `extractor requests: ${extractorRequests}`,
         ].join("\n  ");
       },
     };

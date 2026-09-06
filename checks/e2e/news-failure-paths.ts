@@ -111,6 +111,62 @@ test(
 );
 
 test(
+  "a thin retrieval loses to the free extractor that found the whole article",
+  { skip },
+  async () => {
+    // The regression this exists to prevent, and it shipped: retrieval was made
+    // the primary path so the model would write from the whole article, and a
+    // live run then had it return 1000 characters of a Guardian piece while the
+    // extractor had returned 12,579 from a comparable page the run before.
+    // "Primary" had quietly traded twelve times the article for a paid summary
+    // of it, and nothing noticed, because both paths simply produce "text".
+    await withNewsRig(
+      {
+        host: "thin-retrieval.example.test",
+        articleContent: {
+          async fetch(url: string) {
+            return { url, text: "A compact summary of the piece. ".repeat(20) };
+          },
+        },
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        assert.equal(
+          job?.outcome_status,
+          "review_ready",
+          `the article must still be written\n  ${rig.diagnosis()}`,
+        );
+        assert.ok(
+          rig.extractorRequests() > 0,
+          `a thin retrieval must not stop the extractor being tried\n  ${rig.diagnosis()}`,
+        );
+
+        const { rows } = await rig.pool.query(
+          `select metadata->>'retrieved_by' as retrieved_by, length(content) as chars
+             from public.raw_contents
+            where metadata->>'source_url' like $1
+            order by created_at desc limit 1`,
+          [`https://${rig.host}/%`],
+        );
+        assert.equal(
+          rows[0]?.retrieved_by,
+          "html-extractor",
+          `the longer text must win; got ${JSON.stringify(rows[0])}`,
+        );
+        assert.ok(
+          Number(rows[0]?.chars) > 1500,
+          `and it must be the whole article, not the summary; got ${JSON.stringify(rows[0])}`,
+        );
+      },
+    );
+  },
+);
+
+test(
   "one failed search does not throw away the source another already paid for",
   { skip },
   async () => {
