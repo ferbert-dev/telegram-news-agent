@@ -78,3 +78,52 @@ test("a planner that fails leaves the article exactly as it would have been", as
     assert.deepEqual(plan, [], `must degrade for ${JSON.stringify(bad)}`);
   }
 });
+
+test("an uncorroborated story keeps its caveat until the tag exists", async () => {
+  const { LegacyEditorialDraftGateway } = await import(
+    "../../src/editorial/legacy-editorial-draft.gateway.js"
+  );
+  const { EvidenceCorroborationService, DEFAULT_CORROBORATION_OPTIONS } =
+    await import(
+      "../../src/editorial/corroboration/evidence-corroboration.service.js"
+    );
+
+  const evidence = [
+    { sourceUrl: "https://forum.example.com/1", verificationStatus: "unverified_community" },
+  ];
+  let handed: unknown;
+
+  const gateway = new LegacyEditorialDraftGateway(
+    {
+      model: "m",
+      repository: { recordAiUsageEvents: async () => {} } as never,
+      // Nothing corroborates: the planner asks, every search comes back empty.
+      aiProvider: {
+        generateStructured: async () => ({
+          value: { requests: [{ query: "q", reason: "r", expectedClaim: "c" }] },
+        }),
+        searchFact: async () => ({ value: { fact: null } }),
+      } as never,
+      factPlan: new FactPlanService(),
+      corroboration: new EvidenceCorroborationService(DEFAULT_CORROBORATION_OPTIONS),
+    } as never,
+    (async (args: { evidence: unknown }) => {
+      handed = args.evidence;
+      throw new Error("stop after the seam");
+    }) as never,
+  );
+
+  await gateway
+    .generate({
+      article: { title: "t", summary: "s" },
+      evidence,
+      languageCode: "en",
+    } as never)
+    .catch(() => {});
+
+  // The service clears unverified_community on the uncorroborated path too,
+  // for a #rumor tag that does not reach the published text yet. Taking that
+  // here would strip the caveat from a story nothing confirmed and put nothing
+  // in its place.
+  assert.deepEqual(handed, evidence, "uncorroborated evidence must pass through untouched");
+});
