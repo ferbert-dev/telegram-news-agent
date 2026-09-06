@@ -13,6 +13,11 @@ import { AI_PROVIDER } from "../ai/ai-provider.tokens.js";
 import type { FallbackAiProvider } from "../ai/ai-provider-composition.js";
 
 import { DatabaseModule } from "../database/database.module.js";
+import {
+  DEFAULT_CORROBORATION_OPTIONS,
+  EvidenceCorroborationService,
+} from "../editorial/corroboration/evidence-corroboration.service.js";
+import { FactPlanService } from "../editorial/corroboration/fact-plan.service.js";
 import { PersistenceFacadeModule } from "../persistence/persistence-facade.module.js";
 import { LEGACY_PERSISTENCE } from "../persistence/legacy-persistence.tokens.js";
 import type { LegacyPersistence } from "../persistence/legacy-persistence.contracts.js";
@@ -328,6 +333,17 @@ export class NewsAgentModule {
             model: draftModel,
             repository: legacyPersistence.port as never,
             editor: getNewsEditor(env),
+            // Corroboration runs before drafting: the unverified caveat is
+            // derived from the evidence, so this is the only point that can
+            // affect it without editing the frozen legacy draft module.
+            //
+            // Both are constructed here rather than injected as ports because
+            // the gateway is itself built here by hand -- the same seam the
+            // other legacy gateways use.
+            factPlan: new FactPlanService(),
+            corroboration: new EvidenceCorroborationService(
+              DEFAULT_CORROBORATION_OPTIONS,
+            ),
           }),
           publication: new LegacyEditorialPublicationGateway({ token }),
           excludedTopics: new LegacyEditorialPublicationPolicyGateway({

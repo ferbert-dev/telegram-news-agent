@@ -10,6 +10,9 @@ import type {
   ArticleTopicAssignment,
   ArticleTopicAssignmentSource,
 } from "../research/research-persistence.contracts.js";
+import type { EvidenceCorroborationService } from "./corroboration/evidence-corroboration.service.js";
+import type { FactPlanService } from "./corroboration/fact-plan.service.js";
+import { factSearchCorroborationPort } from "./corroboration/fact-search.adapter.js";
 
 const ARTICLE_TAGS_FEATURE_KEY = "article_tags";
 const EDITORIAL_ENRICHMENT_FEATURE_KEY = "editorial_enrichment";
@@ -259,6 +262,13 @@ export type LegacyEditorialDraftGatewayDependencies = {
   model: string;
   repository: LegacyDraftRepository;
   editor?: unknown;
+  /**
+   * Both optional. Absent, the gateway behaves exactly as it did before
+   * corroboration existed -- which is what keeps this change safe to deploy
+   * before it is switched on anywhere.
+   */
+  factPlan?: FactPlanService;
+  corroboration?: EvidenceCorroborationService;
 };
 
 export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
@@ -301,6 +311,54 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
       usageEvents,
     );
 
+    // Corroborate before drafting, because src/draft.js derives the unverified
+    // caveat from the EVIDENCE (draft.js:296), not from the prose. By the time
+    // the draft is being written the decision has already been taken, so this
+    // is the only point at which it can be affected without editing frozen
+    // legacy code.
+    //
+    // Every failure here falls back to the original evidence. Adding detail
+    // must never become a way for an article to stop being produced.
+    let corroboratedEvidence = input.evidence;
+    if (this.dependencies.factPlan && this.dependencies.corroboration) {
+      try {
+        const requests = await this.dependencies.factPlan.plan({
+          article: input.article as { title?: string; summary?: string | null },
+          evidence: input.evidence as never,
+          languageCode: input.languageCode,
+          generator: this.dependencies.aiProvider as never,
+        });
+        if (requests.length) {
+          const outcome = await this.dependencies.corroboration.corroborate({
+            evidence: input.evidence as never,
+            requests,
+            languageCode: input.languageCode,
+            search: factSearchCorroborationPort(
+              this.dependencies.aiProvider as never,
+            ),
+          });
+          // ONLY when corroborated.
+          //
+          // The service also clears `unverified_community` on the
+          // uncorroborated path, because the plan was for those stories to
+          // carry a #rumor tag instead of the legacy caveat. That tag does not
+          // reach the published text yet. Taking the cleared evidence here
+          // before it does would strip the caveat from a story nothing
+          // confirmed and put nothing in its place -- a rumour published as
+          // fact, unmarked.
+          //
+          // So an uncorroborated story keeps its original evidence and its
+          // caveat until the tag exists. This line changes when the tag ships,
+          // and not before.
+          if (outcome.status === "corroborated") {
+            corroboratedEvidence = outcome.evidence as never;
+          }
+        }
+      } catch {
+        corroboratedEvidence = input.evidence;
+      }
+    }
+
     const generated = await this.generateDraft(
       {
         aiProvider: this.dependencies.aiProvider,
@@ -308,7 +366,7 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
         model: this.dependencies.model,
         repository: generationRepository,
         article: input.article,
-        evidence: input.evidence,
+        evidence: corroboratedEvidence,
         allowUnverified: input.allowUnverified,
         lease: input.lease,
         languageCode: input.languageCode,
