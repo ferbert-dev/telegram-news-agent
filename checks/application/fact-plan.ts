@@ -8,7 +8,12 @@ const service = () => new FactPlanService();
 const article = { title: "Acme buys Initech", summary: "A forum post claims it." };
 
 const rumour: CorroborationEvidence[] = [
-  { url: "https://forum.example.com/1", verificationStatus: "unverified_community" },
+  {
+    url: "https://forum.example.com/1",
+    text: "A forum account says the deal is signed.",
+    primary: false,
+    verificationStatus: "unverified_community",
+  },
 ];
 
 function generator(value: unknown, calls: unknown[] = []) {
@@ -26,7 +31,12 @@ test("every article is planned for, including one on a primary source", async ()
   const gen = generator({ requests: [] });
   await service().plan({
     article,
-    evidence: [{ url: "https://acme.example/pr", verificationStatus: "primary_source" }],
+    evidence: [{
+      url: "https://acme.example/pr",
+      text: "Acme announced the acquisition.",
+      primary: true,
+      verificationStatus: "primary_source",
+    }],
     languageCode: "en",
     generator: gen,
   });
@@ -89,7 +99,12 @@ test("an uncorroborated story keeps its caveat until the tag exists", async () =
     );
 
   const evidence = [
-    { url: "https://forum.example.com/1", verificationStatus: "unverified_community" },
+    {
+    url: "https://forum.example.com/1",
+    text: "A forum account says the deal is signed.",
+    primary: false,
+    verificationStatus: "unverified_community",
+  },
   ];
   let handed: unknown;
 

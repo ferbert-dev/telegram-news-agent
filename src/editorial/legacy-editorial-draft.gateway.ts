@@ -325,13 +325,19 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
       try {
         const requests = await this.dependencies.factPlan.plan({
           article: input.article as { title?: string; summary?: string | null },
-          evidence: input.evidence as never,
+          // No `as never` on the evidence, in either call.
+          //
+          // Those casts are how `evidenceText` survived review: they silenced
+          // the one check that would have said corroboration was producing a
+          // shape the editorial pipeline does not consume. A cast at a seam is
+          // a decision to stop checking the seam.
+          evidence: input.evidence,
           languageCode: input.languageCode,
           generator: this.dependencies.aiProvider as never,
         });
         if (requests.length) {
           const outcome = await this.dependencies.corroboration.corroborate({
-            evidence: input.evidence as never,
+            evidence: input.evidence,
             requests,
             languageCode: input.languageCode,
             search: factSearchCorroborationPort(
@@ -349,7 +355,7 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
           if (outcome.status !== "not_needed") {
             corroborationAddedSources =
               outcome.evidence.length > input.evidence.length;
-            corroboratedEvidence = outcome.evidence as never;
+            corroboratedEvidence = [...outcome.evidence];
           }
         }
       } catch {
