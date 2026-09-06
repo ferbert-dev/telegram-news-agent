@@ -28,6 +28,7 @@ on:
           - inspect-integration
           - release-integration-news
           - clear-integration-excluded-topics
+          - test-exa-connection
 
 concurrency:
   group: production-${{ github.ref }}
@@ -864,6 +865,71 @@ jobs:
           NODE
           REMOTE
 
+
+
+  test-exa-connection:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'test-exa-connection'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      # Exa has never been called once on this stage -- the attempt log carries
+      # gemini, openai and openrouter and nothing else. So "Exa does not work"
+      # was never established; only "Exa has never been tried".
+      #
+      # Every route to it sits behind a condition that has not fired:
+      # searchFact only when the model asks, and the enrichment prompt tells it
+      # not to; searchNews only when ranking yields nothing, which has not
+      # happened; searchFeeds only during source discovery.
+      #
+      # ops/check-provider-credentials.sh deliberately does not probe Exa,
+      # because a probe spends metered quota. That was the right default and it
+      # is also why the key's validity has stayed unknown for a week.
+      #
+      # This spends exactly one search: numResults 1, contents off, the
+      # provider's own health check. One metered call to replace a guess.
+      - name: Ask Exa whether it accepts the key
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          container_id="$(docker ps -q --filter 'name=^/telegram-news-agent-int-bot-1$')"
+          test -n "$container_id" || { echo "integration bot is not running" >&2; exit 1; }
+          docker exec -i "$container_id" node --input-type=module <<'NODE'
+          const { getExaProviderConfig, createExaProvider } = await import("/app/src/exa-provider.js");
+          const config = getExaProviderConfig(process.env);
+          if (!config) {
+            console.log("ExaCheck NOT CONFIGURED (EXA_ENABLED must be true and EXA_API_KEY set)");
+            process.exit(1);
+          }
+          console.log(`ExaCheck configured model=${config.model} search_type=${config.searchType} daily_cap=${config.dailySearchCap}`);
+          const provider = createExaProvider(config);
+          try {
+            const result = await provider.testConnection();
+            console.log(`ExaCheck ACCEPTED ok=${result.ok} results=${result.results ?? "n/a"}`);
+          } catch (error) {
+            // The message, never the key. A rejected credential and an
+            // exhausted quota look nothing alike here, and the difference is
+            // the whole point of running this.
+            console.log(`ExaCheck REJECTED code=${error?.code ?? "none"} status=${error?.status ?? error?.statusCode ?? "none"} message=${String(error?.message ?? error).slice(0, 200)}`);
+            process.exit(1);
+          }
+          NODE
+          REMOTE
 
   inspect-host-capacity:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect-host-capacity'
