@@ -5,7 +5,19 @@ export type EvidenceVerificationStatus =
   | "unverified_community";
 
 export type CorroborationEvidence = {
-  sourceUrl: string;
+  /**
+   * `url`, not `sourceUrl`.
+   *
+   * draft.js:199 builds its allowed-source set with
+   * `evidence.map((item) => item.url)`. An evidence item carrying any other
+   * field name is invisible to the grounding validator: the model cites a
+   * source it was given, the validator cannot find it, and the draft is
+   * rejected as citing an unsupported source.
+   *
+   * This module was written against `sourceUrl` and every appended source was
+   * therefore unusable. The name is load-bearing.
+   */
+  url: string;
   verificationStatus?: EvidenceVerificationStatus;
   primary?: boolean;
   title?: string;

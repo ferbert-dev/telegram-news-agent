@@ -23,6 +23,12 @@ import { PIPELINE_LEASE_APPLICATION } from "../../src/operations/operations-appl
 import { PersistenceFacadeModule } from "../../src/persistence/persistence-facade.module.js";
 import { SettingsApplicationModule } from "../../src/settings/settings-application.module.js";
 import { LateBoundPortRegistry } from "../../src/composition/late-bound-port.js";
+import { FactPlanService } from "../../src/editorial/corroboration/fact-plan.service.js";
+import {
+  DEFAULT_CORROBORATION_OPTIONS,
+  EvidenceCorroborationService,
+} from "../../src/editorial/corroboration/evidence-corroboration.service.js";
+import type { ArticleContentPort } from "../../src/research/content/article-content.contracts.js";
 import { getNewsEditor } from "../../src/editor.js";
 import { LEGACY_PERSISTENCE } from "../../src/persistence/legacy-persistence.tokens.js";
 import { TelegramPersistenceModule } from "../../src/telegram/telegram-persistence.module.js";
@@ -94,7 +100,7 @@ function feedXml(now: Date): string {
  * pipeline asks for different things at each stage, and a fake that ignored
  * that would pass while proving nothing about the stages it skipped.
  */
-function fakeAiProvider(counters: Record<string, number>) {
+function fakeAiProvider(counters: Record<string, number>, factSearches: string[] = []) {
   const answer = (request: Record<string, unknown>): unknown => {
     const schema = String(request.schemaName ?? "");
     counters[schema] = (counters[schema] ?? 0) + 1;
@@ -118,6 +124,41 @@ function fakeAiProvider(counters: Record<string, number>) {
         selections: [{ index: 0, reason: "Most significant verified result in the window." }],
       };
     }
+    // searchFact carries no schemaName, so it is recognised by its own fields.
+    // Without this the fake returned {}, corroboration found nothing, no source
+    // was ever appended, and the assertions below could not fail however broken
+    // the appending was -- which is exactly what a mutation showed.
+    if (request.expectedClaim && request.query) {
+      factSearches.push(String(request.query));
+      return {
+        fact: {
+          claim: String(request.expectedClaim),
+          sourceUrl: `https://corroborator-${factSearches.length}.example/story`,
+          sourceTitle: "Independent report",
+          sourceKind: "reputable_news",
+          evidenceText: "A second newsroom reported the same result.",
+        },
+      };
+    }
+    if (schema.includes("fact_plan")) {
+      // The planner runs for every article now, so the fake has to answer it
+      // or the whole corroboration path is skipped and this test goes back to
+      // proving nothing about it.
+      return {
+        requests: [
+          {
+            query: "independent confirmation of the reported result",
+            reason: "a second newsroom would have to have reported it",
+            expectedClaim: "The result was reported independently.",
+          },
+          {
+            query: "second independent account of the result",
+            reason: "two publishers are required to clear the story",
+            expectedClaim: "A second publisher reported it.",
+          },
+        ],
+      };
+    }
     if (schema.includes("draft") || schema.includes("Draft")) {
       // Built FROM the request, not from a constant.
       //
@@ -133,6 +174,19 @@ function fakeAiProvider(counters: Record<string, number>) {
         evidence?: Array<{ url?: string }>;
       };
       const url = requestInput.evidence?.[0]?.url ?? requestInput.article?.url ?? "";
+      // Cite the LAST evidence item too -- the one corroboration appended.
+      //
+      // This is the assertion that would have caught the original defect. The
+      // module was written against a field named `sourceUrl` while draft.js
+      // builds its allowed set from `item.url` (draft.js:199), so every
+      // appended source was invisible to the grounding validator: the model
+      // cites a source it was handed, the validator cannot find it, and the
+      // draft is rejected. Citing only evidence[0] never touched that.
+      const evidenceItems = requestInput.evidence ?? [];
+      const corroboratedUrl =
+        evidenceItems.length > 1
+          ? evidenceItems[evidenceItems.length - 1]?.url
+          : undefined;
       const headline = String(requestInput.article?.title ?? "Untitled");
       const claim = "An independent group reported the result under review conditions.";
       return {
@@ -152,8 +206,16 @@ function fakeAiProvider(counters: Record<string, number>) {
         claims: [
           { text: headline, sourceUrl: url },
           { text: claim, sourceUrl: url },
+          ...(corroboratedUrl
+            ? [
+                {
+                  text: "A second publisher reported the same result.",
+                  sourceUrl: corroboratedUrl,
+                },
+              ]
+            : []),
         ],
-        sourceUrls: [url],
+        sourceUrls: corroboratedUrl ? [url, corroboratedUrl] : [url],
         caveat: "The result awaits independent replication.",
         topicTags: [],
       };
@@ -194,8 +256,19 @@ test(
     const updateId = 2_100_000_000 + Math.floor(Math.random() * 50_000_000);
     const now = new Date();
 
+    // Stands in for Exa. Returns a body long enough to pass the port's own
+    // minimum, so the "full text" branch is genuinely taken.
+    const contentFetches: string[] = [];
+    const fakeArticleContent: ArticleContentPort = {
+      async fetch(url: string) {
+        contentFetches.push(url);
+        return { url, text: "Extracted body. ".repeat(60) };
+      },
+    };
+
+    const factSearches: string[] = [];
     const schemaCounters: Record<string, number> = {};
-    const aiProvider = fakeAiProvider(schemaCounters);
+    const aiProvider = fakeAiProvider(schemaCounters, factSearches);
 
     // The only network seam in the research path. Serving canned XML here means
     // the whole feed pipeline -- fetch, parse, canonicalise, hash, dedupe --
@@ -258,13 +331,27 @@ test(
         OperationsApplicationModule.register({
           notionAudit: { finish: async () => undefined, start: async () => ({}) } as never,
         }),
-        TypedResearchExecutionGatewayModule.register({ aiProvider: aiProvider as never }),
+        TypedResearchExecutionGatewayModule.register({
+          aiProvider: aiProvider as never,
+          articleContent: fakeArticleContent,
+        }),
         EditorialApplicationModule.register({
           draft: new LegacyEditorialDraftGateway({
             aiProvider: aiProvider as never,
             model: "fake-model",
             repository: legacyPersistence.port as never,
             editor: getNewsEditor({}) as never,
+            // The corroboration path, exercised rather than assumed.
+            //
+            // This test stayed green through every change to it because the
+            // module graph here never included these two, so the new code was
+            // never reached. A check that cannot fail for the code it is meant
+            // to cover is worse than no check: it reports safety it did not
+            // establish.
+            factPlan: new FactPlanService(),
+            corroboration: new EvidenceCorroborationService(
+              DEFAULT_CORROBORATION_OPTIONS,
+            ),
           }) as never,
           publication: publicationGateway as never,
           excludedTopics: new LegacyEditorialPublicationPolicyGateway({
@@ -490,6 +577,34 @@ test(
 
       // The point of the whole exercise: this cost nothing.
       assert.ok(feedRequests > 0, "the feed transport must actually have been used");
+
+      // Both Exa paths, on a primary-source article, which is the case that
+      // used to fail outright.
+      //
+      // The search path adds `web_source` items, and draft.js:293 refuses a
+      // primary article whose evidence is not all primary. The gateway opts
+      // the draft in only when it actually added sources, which is what makes
+      // "always search" possible without touching frozen legacy. Removing
+      // either the guard or the opt-in brings back
+      // "Draft generation requires primary-source evidence".
+      assert.ok(
+        (schemaCounters.fact_plan ?? 0) > 0,
+        `every article must be planned for; schemas: ${JSON.stringify(schemaCounters)}`,
+      );
+      assert.ok(
+        factSearches.length > 0,
+        `every article must be searched; queries: ${JSON.stringify(factSearches)}`,
+      );
+
+      // The content port now runs for EVERY article, primary included: it
+      // loads the same url the candidate already has, so it adds no source and
+      // cannot change the verification class. That is what separates it from
+      // the search path, which does add sources and stays gated.
+      assert.ok(
+        contentFetches.length > 0,
+        "the full article must be retrieved through the content port",
+      );
+
       assert.ok(
         Object.keys(schemaCounters).length > 0,
         "the AI provider must actually have been asked for something",

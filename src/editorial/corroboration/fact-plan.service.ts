@@ -99,7 +99,7 @@ export class FactPlanService {
             title: String(input.article?.title ?? "").slice(0, 300),
             summary: String(input.article?.summary ?? "").slice(0, 1200),
           },
-          knownSources: input.evidence.map((item) => item.sourceUrl).slice(0, 10),
+          knownSources: input.evidence.map((item) => item.url).slice(0, 10),
         },
         zodSchema: FactPlan,
         jsonSchema: FACT_PLAN_JSON_SCHEMA,

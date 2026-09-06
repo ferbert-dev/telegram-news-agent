@@ -15,7 +15,7 @@ const service = () =>
   new EvidenceCorroborationService(DEFAULT_CORROBORATION_OPTIONS);
 
 const rumour: CorroborationEvidence[] = [
-  { sourceUrl: "https://forum.example.com/thread/1", verificationStatus: "unverified_community" },
+  { url: "https://forum.example.com/thread/1", verificationStatus: "unverified_community" },
 ];
 
 const requests: FactRequest[] = [
@@ -53,7 +53,7 @@ function listSearch(pages: string[][], seen: string[] = []) {
 test("nothing to ask means nothing is spent", async () => {
   const search = factSearch([]);
   const outcome = await service().corroborate({
-    evidence: [{ sourceUrl: "https://acme.example/post", verificationStatus: "primary_source" }],
+    evidence: [{ url: "https://acme.example/post", verificationStatus: "primary_source" }],
     requests: [],
     languageCode: "en",
     search,
@@ -68,7 +68,7 @@ test("nothing to ask means nothing is spent", async () => {
 
 test("a primary-source article is searched too, and keeps its status", async () => {
   const primary = [
-    { sourceUrl: "https://acme.example/pr", verificationStatus: "primary_source" as const },
+    { url: "https://acme.example/pr", verificationStatus: "primary_source" as const },
   ];
   const outcome = await service().corroborate({
     evidence: primary,

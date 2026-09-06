@@ -320,6 +320,7 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
     // Every failure here falls back to the original evidence. Adding detail
     // must never become a way for an article to stop being produced.
     let corroboratedEvidence = input.evidence;
+    let corroborationAddedSources = false;
     if (this.dependencies.factPlan && this.dependencies.corroboration) {
       try {
         const requests = await this.dependencies.factPlan.plan({
@@ -346,6 +347,8 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
           // the searches found, which is the point of searching every article
           // rather than only the doubtful ones.
           if (outcome.status !== "not_needed") {
+            corroborationAddedSources =
+              outcome.evidence.length > input.evidence.length;
             corroboratedEvidence = outcome.evidence as never;
           }
         }
@@ -362,7 +365,21 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
         repository: generationRepository,
         article: input.article,
         evidence: corroboratedEvidence,
-        allowUnverified: input.allowUnverified,
+        // Opted in HERE, and only when this gateway actually added sources.
+        //
+        // draft.js:293 refuses a draft when `!allowUnverified && hasNonPrimary`,
+        // and every corroborating source arrives as `web_source`. Without this
+        // a primary-source article that we deliberately corroborated becomes
+        // undraftable -- the run fails with "Draft generation requires
+        // primary-source evidence", which is exactly what happened in
+        // integration and what the end-to-end check now reproduces.
+        //
+        // The caveat does NOT come back. draft.js only sets `unverified` for
+        // `unverified_community`, and a primary article gaining web sources
+        // computes to `web_source`. What changes is the system prompt it picks,
+        // which is the honest outcome: the story now rests on more than one
+        // kind of source.
+        allowUnverified: corroborationAddedSources || input.allowUnverified,
         lease: input.lease,
         languageCode: input.languageCode,
         newsSettings: effectiveNewsSettings,
