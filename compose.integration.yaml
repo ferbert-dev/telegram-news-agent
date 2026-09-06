@@ -157,6 +157,24 @@ services:
       # The provider stays in the codebase. It is typed-runtime only, so
       # production never loads it, and it costs nothing while unnamed here.
       # Naming it again is a one-line change.
+      # Twenty-four, raised from the five the encrypted environment carries.
+      #
+      # Set here rather than in the secrets file for the reason this block
+      # already exists: it is an operational setting for this stage, not a
+      # secret, and it belongs somewhere reviewable in git.
+      #
+      # The arithmetic, so the number can be raised knowingly rather than
+      # discovered at the end of the month. Searches and content retrievals are
+      # counted SEPARATELY against this one figure, and one article can spend
+      # up to three searches plus a content fetch. Twenty-four therefore covers
+      # roughly five or six articles a day -- comfortable for a manually driven
+      # stage, and short of the eight runs production makes on its schedule.
+      #
+      # It is not removed. An unbounded metered service against a ~$10 monthly
+      # budget is the shape of the incident this system spent a day recovering
+      # from: 20,278 provider calls in twenty-four hours, none of them chosen.
+      EXA_DAILY_SEARCH_CAP: "24"
+
       AI_PROVIDER_ORDER: exa,gemini,openai
 
       # Fifteen minutes: the same as the pipeline lease's TTL, and not less.

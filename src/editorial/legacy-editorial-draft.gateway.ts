@@ -337,20 +337,15 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
               this.dependencies.aiProvider as never,
             ),
           });
-          // ONLY when corroborated.
+          // Always take the outcome's evidence now.
           //
-          // The service also clears `unverified_community` on the
-          // uncorroborated path, because the plan was for those stories to
-          // carry a #rumor tag instead of the legacy caveat. That tag does not
-          // reach the published text yet. Taking the cleared evidence here
-          // before it does would strip the caveat from a story nothing
-          // confirmed and put nothing in its place -- a rumour published as
-          // fact, unmarked.
-          //
-          // So an uncorroborated story keeps its original evidence and its
-          // caveat until the tag exists. This line changes when the tag ships,
-          // and not before.
-          if (outcome.status === "corroborated") {
+          // The service no longer clears `unverified_community` unless the
+          // threshold was met, so this can no longer strip a caveat that was
+          // not earned -- the reason this was restricted to `corroborated`
+          // before. What it does take, on every article, are the extra sources
+          // the searches found, which is the point of searching every article
+          // rather than only the doubtful ones.
+          if (outcome.status !== "not_needed") {
             corroboratedEvidence = outcome.evidence as never;
           }
         }
