@@ -609,8 +609,16 @@ jobs:
             try {
               const notes = JSON.parse(r.reviewer_notes ?? "{}");
               const e = notes.editorial_enrichment;
+              // `diagnostic` is the whole point of this line.
+              //
+              // Enrichment reported fallback_to_baseline on four consecutive
+              // runs and the reason was recorded every time -- in a field
+              // nothing printed. "It fell back" is not a finding; it is the
+              // observation that hides one. The field distinguishes a missing
+              // provider from a thrown enrichment from an enriched draft the
+              // validator refused, and those have nothing in common.
               enrichment = e
-                ? `state=${e.state} status=${e.status} selected=${e.selected_version} evidence_map=${(e.evidence_map ?? []).length} searches=${e.search?.attempts ?? "n/a"}`
+                ? `state=${e.state} status=${e.status} selected=${e.selected_version} diagnostic=${e.diagnostic ?? "none"} evidence_map=${(e.evidence_map ?? []).length} searches=${e.search?.attempts ?? "n/a"} enriched_words=${e.quality?.word_count ?? "n/a"} target=${e.quality?.target_min_words ?? "?"}-${e.quality?.target_max_words ?? "?"}`
                 : "absent";
             } catch { enrichment = "unparsed"; }
             console.log(`DraftDetail id=${r.id} status=${r.status} body_chars=${r.body_chars} ${enrichment} created=${r.created_at?.toISOString?.() ?? r.created_at}`);
