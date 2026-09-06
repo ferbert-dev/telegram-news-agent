@@ -598,6 +598,24 @@ jobs:
           // Feature flags, because their absence has already been mistaken for a
           // bug once: editorial enrichment was off on this stage while it was
           // on in production, and nothing in the inspection said so.
+          // Why an article came out the length it did. The enrichment
+          // diagnostic and the body length answer that directly; without them
+          // the only honest answer is a guess about a text nobody can see.
+          const drafts = await client.query(
+            `select id, status, length(body) as body_chars, reviewer_notes, created_at
+               from public.drafts order by created_at desc limit 3`);
+          for (const r of drafts.rows) {
+            let enrichment = "unparsed";
+            try {
+              const notes = JSON.parse(r.reviewer_notes ?? "{}");
+              const e = notes.editorial_enrichment;
+              enrichment = e
+                ? `state=${e.state} status=${e.status} selected=${e.selected_version} evidence_map=${(e.evidence_map ?? []).length} searches=${e.search?.attempts ?? "n/a"}`
+                : "absent";
+            } catch { enrichment = "unparsed"; }
+            console.log(`DraftDetail id=${r.id} status=${r.status} body_chars=${r.body_chars} ${enrichment} created=${r.created_at?.toISOString?.() ?? r.created_at}`);
+          }
+
           const flags = await client.query(
             `select telegram_channel_id, feature_key, state, version, updated_at
                from public.news_feature_flags
@@ -610,13 +628,13 @@ jobs:
             `select operation, provider, status, count(*)::int as n,
                     round(avg(latency_ms))::int as avg_ms, max(started_at) as last_at
                from public.ai_provider_attempts
-              where started_at > now() - interval '30 minutes'
+              where started_at > now() - interval '24 hours'
               group by operation, provider, status
-              order by n desc limit 12`);
+              order by n desc limit 20`);
           for (const r of byOp.rows) {
             console.log(`AiByOperation operation=${r.operation} provider=${r.provider} status=${r.status} count=${r.n} avg_latency_ms=${r.avg_ms ?? "n/a"} last=${r.last_at?.toISOString?.() ?? r.last_at}`);
           }
-          if (!byOp.rows.length) console.log("AiByOperation (nothing in the last 30 minutes)");
+          if (!byOp.rows.length) console.log("AiByOperation (nothing in the last 24 hours)");
           const agg = await client.query(
             `select provider, status, error_code, count(*)::int as n,
                     round(avg(latency_ms))::int as avg_ms, max(started_at) as last_at
