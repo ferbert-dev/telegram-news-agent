@@ -167,6 +167,74 @@ test(
 );
 
 test(
+  "editorial enrichment produces the longer article when the model plays by its rules",
+  { skip },
+  async () => {
+    // Enrichment is `enabled` on the integration stage and has fallen back to
+    // the baseline on every run there, reporting `enrichment_failed` with no
+    // message. Nothing in this repository exercised the path, so there was no
+    // way to tell a broken pipeline from a model that had missed one of four
+    // exact-match gates.
+    //
+    // This settles that half: given an enrichment that satisfies the gates, the
+    // pipeline must accept it and select it. A failure here is ours. A failure
+    // on the stage with this passing is the model's output, and the next step
+    // is the prompt, not the plumbing.
+    await withNewsRig(
+      {
+        host: "enrichment.example.test",
+        featureFlags: { editorial_enrichment: "enabled" },
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        assert.equal(
+          job?.error_code,
+          null,
+          `enrichment must not fail the run\n  ${rig.diagnosis()}`,
+        );
+        assert.equal(
+          job?.outcome_status,
+          "review_ready",
+          `the article must be written\n  ${rig.diagnosis()}`,
+        );
+
+        const { rows } = await rig.pool.query(
+          "select reviewer_notes, length(body) as chars from public.drafts where id = $1",
+          [job?.draft_id],
+        );
+        const notes = JSON.parse(String(rows[0]?.reviewer_notes ?? "{}")) as {
+          editorial_enrichment?: {
+            status?: string;
+            selected_version?: string;
+            diagnostic?: string | null;
+            evidence_map?: unknown[];
+          };
+        };
+        const enrichment = notes.editorial_enrichment ?? {};
+        assert.equal(
+          enrichment.status,
+          "completed",
+          `enrichment must complete, not fall back; diagnostic=${enrichment.diagnostic ?? "none"}`,
+        );
+        assert.equal(
+          enrichment.selected_version,
+          "enriched",
+          "and the enriched version must be the one that ships",
+        );
+        assert.ok(
+          (enrichment.evidence_map ?? []).length > 0,
+          "with a source for every claim it makes",
+        );
+      },
+    );
+  },
+);
+
+test(
   "one failed search does not throw away the source another already paid for",
   { skip },
   async () => {
