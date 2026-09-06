@@ -22,19 +22,19 @@ function generator(value: unknown, calls: unknown[] = []) {
   };
 }
 
-test("a story already on a primary source is never planned for", async () => {
+test("every article is planned for, including one on a primary source", async () => {
   const gen = generator({ requests: [] });
-  const plan = await service().plan({
+  await service().plan({
     article,
     evidence: [{ sourceUrl: "https://acme.example/pr", verificationStatus: "primary_source" }],
     languageCode: "en",
     generator: gen,
   });
 
-  assert.deepEqual(plan, []);
-  // No model call at all: the same rule the corroboration service follows, so
-  // an article that needs nothing costs nothing on either step.
-  assert.equal(gen.calls.length, 0);
+  // This used to be skipped, which was right while the only purpose was
+  // lifting the unverified caveat. The purpose is now also detail: a story
+  // with one solid source still gains from what a second newsroom reported.
+  assert.equal(gen.calls.length, 1);
 });
 
 test("the model's questions are returned as written", async () => {

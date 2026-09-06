@@ -78,16 +78,9 @@ export class EvidenceCorroborationService {
   }): Promise<CorroborationOutcome> {
     const { evidence, requests, languageCode, search, signal } = input;
 
-    const needsWork = evidence.some(
-      (item) =>
-        (item.verificationStatus ??
-          (item.primary ? "primary_source" : "unverified_community")) ===
-        "unverified_community",
-    );
-    // A story already resting on a primary source costs nothing. Spending a
-    // metered search on it would burn the month's budget on the articles that
-    // least need it.
-    if (!needsWork) {
+    // Searches run for every article now, so `not_needed` no longer means
+    // "primary source". It means there was nothing to ask.
+    if (!requests.length) {
       return { status: "not_needed", evidence, searches: 0 };
     }
 
@@ -135,7 +128,8 @@ export class EvidenceCorroborationService {
     // draft.js takes the WEAKEST status in the set, so an original left as
     // `unverified_community` keeps the UNVERIFIED TREND headline and the "could
     // not be independently read" caveat however much corroboration was found.
-    // Clearing it is therefore necessary in both branches below.
+    // Clearing it is what lifts the caveat -- and it is done ONLY when the
+    // threshold was actually met.
     const cleared = evidence.map((item) =>
       (item.verificationStatus ?? "unverified_community") ===
       "unverified_community"
@@ -155,7 +149,12 @@ export class EvidenceCorroborationService {
       // not given.
       return {
         status: "uncorroborated",
-        evidence: [...cleared, ...found.values()],
+        // The ORIGINAL evidence, uncleared, plus whatever was found. The extra
+        // sources give the draft more to write from, which is the point of
+        // searching every article -- but the caveat stays, because nothing
+        // reached the threshold. Detail is not verification, and until the
+        // #rumor tag renders, clearing here would publish a rumour unmarked.
+        evidence: [...evidence, ...found.values()],
         searches,
         publishers,
         tag: RUMOUR_TAG,

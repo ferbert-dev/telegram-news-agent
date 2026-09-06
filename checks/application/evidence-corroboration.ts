@@ -50,20 +50,39 @@ function listSearch(pages: string[][], seen: string[] = []) {
   };
 }
 
-test("a story already resting on a primary source costs no searches at all", async () => {
+test("nothing to ask means nothing is spent", async () => {
   const search = factSearch([]);
   const outcome = await service().corroborate({
     evidence: [{ sourceUrl: "https://acme.example/post", verificationStatus: "primary_source" }],
-    requests,
+    requests: [],
     languageCode: "en",
     search,
   });
 
+  // `not_needed` no longer means "primary source" -- searches run for every
+  // article now. It means the model asked for nothing.
   assert.equal(outcome.status, "not_needed");
-  // The month's Exa budget must not be spent on the articles that least need
-  // it -- this is the assertion that keeps that true.
   assert.equal(outcome.searches, 0);
   assert.deepEqual(search.seen, []);
+});
+
+test("a primary-source article is searched too, and keeps its status", async () => {
+  const primary = [
+    { sourceUrl: "https://acme.example/pr", verificationStatus: "primary_source" as const },
+  ];
+  const outcome = await service().corroborate({
+    evidence: primary,
+    requests,
+    languageCode: "en",
+    search: factSearch(["https://reuters.example/a", "https://apnews.example/b"]),
+  });
+
+  assert.equal(outcome.status, "corroborated");
+  if (outcome.status !== "corroborated") return;
+  // The extra sources are what the draft writes from. The original must not be
+  // downgraded from primary_source on its way through.
+  assert.equal(outcome.evidence.length, 3);
+  assert.equal(outcome.evidence[0].verificationStatus, "primary_source");
 });
 
 test("the model's own queries are used, in its order, and only up to the budget", async () => {
@@ -143,23 +162,27 @@ test("the publisher that broke the rumour cannot corroborate it", async () => {
   assert.deepEqual(outcome.publishers, []);
 });
 
-test("an uncorroborated story is published with a tag, never suppressed", async () => {
+test("an uncorroborated story gains sources but keeps its caveat", async () => {
   const outcome = await service().corroborate({
     evidence: rumour,
     requests,
     languageCode: "en",
-    search: factSearch([null, null, null]),
+    search: factSearch(["https://only.example/a", null, null]),
   });
 
   assert.equal(outcome.status, "uncorroborated");
   if (outcome.status !== "uncorroborated") return;
   assert.equal(outcome.tag, RUMOUR_TAG);
-  // The heavy legacy caveat must not fire: draft.js reads the evidence, so the
-  // originals are cleared here even though nothing corroborated them. That is
-  // the trade the operator chose, and it is asserted rather than implied.
-  assert.ok(
-    outcome.evidence.every((item) => item.verificationStatus !== "unverified_community"),
-  );
+
+  // The found source is added -- the draft has more to write from, which is
+  // why every article is searched now. But the original KEEPS
+  // unverified_community, so draft.js still applies the caveat.
+  //
+  // Clearing it while the #rumor tag does not reach the published text would
+  // put a rumour in the channel unmarked. That is what this assertion exists
+  // to prevent.
+  assert.equal(outcome.evidence.length, 2);
+  assert.equal(outcome.evidence[0].verificationStatus, "unverified_community");
 });
 
 test("a search that throws spends its budget and does not retry the same question", async () => {
