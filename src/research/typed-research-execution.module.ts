@@ -11,6 +11,8 @@ import { SourceAcquisitionModule } from "./source-acquisition.module.js";
 import { EvidenceCurationModule } from "./curation/evidence-curation.module.js";
 import { FallbackSourceDiscoveryAdapter, FallbackStructuredGenerationAdapter } from "./research-ai-adapter.js";
 import { TypedResearchExecutionGateway } from "./typed-research-execution.gateway.js";
+import type { ArticleContentPort } from "./content/article-content.contracts.js";
+import { ARTICLE_CONTENT_PORT } from "./content/article-content.tokens.js";
 
 export type TypedResearchExecutionGatewayModuleOptions = {
   /**
@@ -21,11 +23,19 @@ export type TypedResearchExecutionGatewayModuleOptions = {
    * its discoveryProvider from the caller.
    */
   aiProvider: FallbackAiProvider;
+  /**
+   * Optional. Absent, the gateway extracts exactly as it did before, so this
+   * module can ship before any content provider is configured.
+   */
+  articleContent?: ArticleContentPort | null;
 };
 
 @Module({})
 export class TypedResearchExecutionGatewayModule {
-  static register({ aiProvider }: TypedResearchExecutionGatewayModuleOptions): DynamicModule {
+  static register({
+    aiProvider,
+    articleContent = null,
+  }: TypedResearchExecutionGatewayModuleOptions): DynamicModule {
     const gatewayProvider: Provider = {
       provide: RESEARCH_EXECUTION_GATEWAY,
       useClass: TypedResearchExecutionGateway,
@@ -44,6 +54,7 @@ export class TypedResearchExecutionGatewayModule {
       providers: [
         gatewayProvider,
         { provide: AI_PROVIDER, useValue: aiProvider },
+        { provide: ARTICLE_CONTENT_PORT, useValue: articleContent },
       ],
       exports: [RESEARCH_EXECUTION_GATEWAY],
     };

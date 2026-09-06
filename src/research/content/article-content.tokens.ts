@@ -1,0 +1,1 @@
+export const ARTICLE_CONTENT_PORT = Symbol("ARTICLE_CONTENT_PORT");
