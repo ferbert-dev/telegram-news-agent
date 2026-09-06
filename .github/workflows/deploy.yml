@@ -29,6 +29,7 @@ on:
           - release-integration-news
           - run-integration-news
           - clear-integration-excluded-topics
+          - integration-logs
 
 concurrency:
   group: production-${{ github.ref }}
