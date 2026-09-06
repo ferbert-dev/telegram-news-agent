@@ -625,9 +625,13 @@ jobs:
             try {
               const notes = JSON.parse(r.reviewer_notes ?? "{}");
               const e = notes.editorial_enrichment;
+              // verification_status decides the unverified caveat AND whether
+              // the fact planner runs at all, so it is the first thing to look
+              // at when neither happened.
+              const v = notes.verification_status ?? "unknown";
               enrichment = e
-                ? `state=${e.state} status=${e.status} selected=${e.selected_version} evidence_map=${(e.evidence_map ?? []).length} searches=${e.search?.attempts ?? "n/a"}`
-                : "absent";
+                ? `verification=${v} state=${e.state} status=${e.status} selected=${e.selected_version} evidence_map=${(e.evidence_map ?? []).length} searches=${e.search?.attempts ?? "n/a"}`
+                : `verification=${v} enrichment=absent`;
             } catch { enrichment = "unparsed"; }
             console.log(`DraftDetail id=${r.id} status=${r.status} body_chars=${r.body_chars} ${enrichment} created=${r.created_at?.toISOString?.() ?? r.created_at}`);
           }
