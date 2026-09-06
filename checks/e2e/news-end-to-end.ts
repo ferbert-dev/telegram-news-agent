@@ -158,6 +158,32 @@ test(
         rig.contentFetches.length > 0,
         "the full article must be retrieved through the content port",
       );
+
+      // And the database has to say so afterwards.
+      //
+      // Both retrieval paths used to write the same `extractor`, so once a run
+      // was over nothing recorded which one produced the text. On the stage
+      // that made "is the full-article path working?" unanswerable from any
+      // artefact the run left behind -- the ledger showed searchFact and
+      // nothing at all for content retrieval. A dependency that spends metered
+      // budget and leaves no trace cannot be told from one that never ran.
+      const { rows: rawContents } = await rig.pool.query(
+        `select extractor, metadata->>'retrieved_by' as retrieved_by, length(content) as chars
+           from public.raw_contents
+          where metadata->>'source_url' like $1
+          order by created_at desc limit 1`,
+        [`https://${rig.host}/%`],
+      );
+      assert.equal(
+        rawContents[0]?.retrieved_by,
+        "content-service",
+        `the stored text must name its producer; got ${JSON.stringify(rawContents[0])}`,
+      );
+      assert.match(
+        String(rawContents[0]?.extractor),
+        /content-service$/,
+        `and the extractor column must agree with it; got ${JSON.stringify(rawContents[0])}`,
+      );
     });
   },
 );

@@ -616,6 +616,23 @@ jobs:
             console.log(`DraftDetail id=${r.id} status=${r.status} body_chars=${r.body_chars} ${enrichment} created=${r.created_at?.toISOString?.() ?? r.created_at}`);
           }
 
+          // Which retrieval path actually produced the article text.
+          //
+          // Added because a live run showed `searchFact provider=exa` in the
+          // ledger and nothing whatsoever for content retrieval, so "did the
+          // full-article path work?" could not be answered from the stage at
+          // all. Both paths used to write the same extractor, which made the
+          // stored text silent about its own origin.
+          const contents = await client.query(
+            `select extractor, metadata->>'retrieved_by' as retrieved_by,
+                    length(content) as chars, metadata->>'source_url' as source_url,
+                    created_at
+               from public.raw_contents order by created_at desc limit 5`);
+          if (!contents.rows.length) console.log("ArticleContent (none)");
+          for (const r of contents.rows) {
+            console.log(`ArticleContent retrieved_by=${r.retrieved_by ?? "unrecorded"} extractor=${r.extractor ?? "none"} chars=${r.chars} url=${r.source_url ?? "none"} created=${r.created_at?.toISOString?.() ?? r.created_at}`);
+          }
+
           const flags = await client.query(
             `select telegram_channel_id, feature_key, state, version, updated_at
                from public.news_feature_flags

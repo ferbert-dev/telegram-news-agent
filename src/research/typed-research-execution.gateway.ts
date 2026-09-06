@@ -807,8 +807,21 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
         // article's verification class. That distinction matters: the search
         // path does add sources, which is why it stays gated to non-primary
         // articles, while this one is safe for every article.
+        // `retrievedBy` is carried, not derived later.
+        //
+        // Both paths used to write the same `extractor` value, so once the
+        // text was in the database nothing recorded whether it came from the
+        // retrieval service or from the HTML extractor. On a live stage that
+        // made "is the full-article path working?" unanswerable -- the only
+        // honest answer available was "we cannot tell from here", which is not
+        // an answer anyone can act on.
         let extracted:
-          | { text: string; contentHash: string; finalUrl: string }
+          | {
+              text: string;
+              contentHash: string;
+              finalUrl: string;
+              retrievedBy: "content-service" | "html-extractor";
+            }
           | null = null;
         let extractionFailure = "article content unavailable";
 
@@ -822,8 +835,14 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
                 text: content.text,
                 contentHash: hashText(content.text),
                 finalUrl: content.url,
+                retrievedBy: "content-service",
               };
             }
+            await recordAiUsageEvents(usageRepository, content?.usageEvents, {
+              channelId,
+              searchRunId: run.id,
+              articleId: candidate.article.id,
+            } as never);
           } catch (error) {
             extractionFailure =
               error instanceof Error ? error.message : String(error);
@@ -832,10 +851,11 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
 
         if (!extracted) {
           try {
-            extracted = await this.curation.withRetry(
+            const fetched = await this.curation.withRetry(
               () => this.curation.fetchArticle(candidate.canonicalUrl),
               { attempts: 3, baseDelayMs: 300 },
             );
+            extracted = { ...fetched, retrievedBy: "html-extractor" };
           } catch (error) {
             // The extractor's message is the more useful of the two when both
             // paths fail: it names what the page did, not what a quota said.
@@ -843,6 +863,20 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
               error instanceof Error ? error.message : String(error);
           }
         }
+
+        // One line per candidate, whichever way it went. `integration-logs`
+        // carries nothing about research today, so a failed retrieval is
+        // currently indistinguishable from one that never ran.
+        console.log(
+          JSON.stringify({
+            event: "article_content_retrieved",
+            retrieved_by: extracted?.retrievedBy ?? "none",
+            chars: extracted?.text.length ?? 0,
+            content_service_available: Boolean(this.articleContent),
+            url: candidate.canonicalUrl,
+            ...(extracted ? {} : { error: extractionFailure }),
+          }),
+        );
 
         if (!extracted) {
           extractionErrors.push({
@@ -857,11 +891,22 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
           content: extracted.text,
           content_type: "text",
           language_code: null,
-          extractor: candidate.source.is_primary ? "primary-html" : "web-html",
+          // Names the producer, not just the shape. "primary-html" for text
+          // that came from a retrieval service was a true statement about the
+          // article and a false one about where the text came from.
+          extractor:
+            extracted.retrievedBy === "content-service"
+              ? candidate.source.is_primary
+                ? "primary-content-service"
+                : "web-content-service"
+              : candidate.source.is_primary
+                ? "primary-html"
+                : "web-html",
           content_hash: extracted.contentHash,
           metadata: {
             source_url: candidate.canonicalUrl,
             final_url: extracted.finalUrl,
+            retrieved_by: extracted.retrievedBy,
             extraction_kind: candidate.source.is_primary ? "primary_article_text" : "web_article_text",
           },
         });

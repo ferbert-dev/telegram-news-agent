@@ -1,3 +1,4 @@
+import { exaUsageEvent } from "../../ai-usage.js";
 import type {
   ArticleContent,
   ArticleContentPort,
@@ -97,6 +98,15 @@ export function exaArticleContentPort(
         url: result?.url ?? url,
         text,
         ...(result?.title ? { title: result.title } : {}),
+        // Billed as one Exa call, the same way a search is, and recorded
+        // through the same ledger so `AiByOperation` can show it beside
+        // searchFact rather than leaving content retrieval invisible.
+        usageEvents: [
+          exaUsageEvent(response as never, {
+            model: "contents",
+            operation: "article_content",
+          }),
+        ],
       };
     },
   };
