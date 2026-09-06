@@ -119,19 +119,45 @@ services:
       #
       # Production is untouched by this: it has no OpenRouter key, and its own
       # order is unchanged.
-      # Cheapest first: every free OpenRouter model, then Gemini's free tier,
-      # then paid OpenAI as the last resort.
+      # exa first, then openai, then gemini.
       #
-      # OpenRouter serves generateStructured only, so the grounded web-search
-      # operations fall through to Gemini and OpenAI without being told to.
-      AI_PROVIDER_ORDER: openrouter,gemini,openai
-
-      # A preference, not a restriction. glm-5.2 is the model that actually
-      # passed validateGroundedDraft on this stage, so it leads -- but the
-      # discovered catalogue still follows it, so when glm is rate limited
-      # (which it was, three times in one run) the walk has somewhere free to
-      # go instead of reaching for a paid provider.
-      OPEN_ROUTER_MODEL: z-ai/glm-5.2:free
+      # exa leads without any risk of taking work it cannot do: the cascade
+      # skips a provider that does not implement the operation
+      # (ai-provider-composition.ts:376), and exa declares only the three
+      # search operations. What it does own is searchFact, exclusively --
+      # `exclusiveOperations: ["searchFact"]` means that once exa is
+      # configured, fact search is never raced or served by anyone else.
+      #
+      # Leaving exa out of this list was a real defect, not a preference. It
+      # was absent while editorial enrichment was switched on, so the one
+      # provider that can actually search the web was not in the cascade at
+      # all. Any fact request would have gone to openai or gemini instead.
+      #
+      # gemini before openai: free tier first, paid only when it cannot serve.
+      #
+      # An earlier version of this file said the opposite, citing 2,131 wasted
+      # rate-limited attempts against 708 useful ones from putting gemini
+      # first. That measurement was real but it was a snapshot of an exhausted
+      # quota window, not a standing property -- the free tier resets, and a
+      # few hours after that run gemini wrote a draft in 8.3 seconds. Treating
+      # one bad hour as permanent would have kept every call on the paid
+      # provider for no reason.
+      #
+      # If gemini is exhausted the cascade falls through to openai on its own,
+      # which costs a rate-limited attempt rather than a wrong default.
+      #
+      # openrouter is deliberately absent. It worked -- one /news finished in
+      # 51 seconds with zero paid calls -- but not dependably: per-call latency
+      # ranged from 10 to 106 seconds, the free tier rate-limited after about
+      # two calls, and a run that could get no draft out of any free model
+      # spent its full 120-second allowance before falling through. For a stage
+      # whose job is to say whether a change works, that much ambiguity per run
+      # costs more than the money it saves.
+      #
+      # The provider stays in the codebase. It is typed-runtime only, so
+      # production never loads it, and it costs nothing while unnamed here.
+      # Naming it again is a one-line change.
+      AI_PROVIDER_ORDER: exa,gemini,openai
 
       # Fifteen minutes: the same as the pipeline lease's TTL, and not less.
       #
