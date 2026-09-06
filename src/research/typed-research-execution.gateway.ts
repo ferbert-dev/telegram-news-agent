@@ -21,6 +21,8 @@ import {
   SEMANTIC_ATTEMPT_CEILING,
 } from "./curation/evidence-curation.engine.js";
 import { SOURCE_ACQUISITION } from "./source-acquisition.tokens.js";
+import type { ArticleContentPort } from "./content/article-content.contracts.js";
+import { ARTICLE_CONTENT_PORT } from "./content/article-content.tokens.js";
 import type { SourceAcquisition } from "./source-acquisition.contracts.js";
 import type {
   ResearchExecutionCandidate,
@@ -236,6 +238,16 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
     @Inject(USAGE_REPORTING_PERSISTENCE) private readonly usage: UsageReportingPersistence,
     @Optional() private readonly now: () => Date = () => new Date(),
     @Optional() private readonly log: Pick<Console, "info" | "warn"> = console,
+    // Last on purpose. Every existing call site passes these positionally, and
+    // inserting ahead of them silently rebinds `now` to a content port -- which
+    // is exactly what happened on the first attempt, caught by the type
+    // checker rather than at runtime.
+    //
+    // Absent, the gateway behaves exactly as it did before, which is what lets
+    // this ship before it is switched on anywhere.
+    @Optional()
+    @Inject(ARTICLE_CONTENT_PORT)
+    private readonly articleContent: ArticleContentPort | null = null,
   ) {}
 
   async execute(request: ResearchExecutionRequest, signal?: AbortSignal): Promise<RunResearchResult> {
@@ -714,20 +726,85 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
         if (storyDecision.relation === "follow_up") storyDeduplication.followUps += 1;
 
         if (candidate.verificationStatus === "unverified_community") {
-          const evidenceText = candidate.summary || candidate.title;
+          // Two different things share this status, and treating them alike is
+          // what made articles thin.
+          //
+          // reddit.js marks every Reddit discovery unverified, and its page
+          // genuinely is a discussion thread -- reading it as an article would
+          // be wrong, so those keep the summary.
+          //
+          // research.js marks anything from a non-primary SOURCE unverified,
+          // and its page is an ordinary news article with the full text on it.
+          // Reducing that to an RSS description, as if it were a forum post, is
+          // how a story arrives at 317 characters pointing at a link.
+          //
+          // Fetching the page does not make the story verified. The status is
+          // unchanged and the caveat still applies: this is more of the same
+          // source, not confirmation from another one. It is corroboration
+          // that lifts the caveat, and it works far better against full text
+          // than against a snippet it cannot form a question from.
+          const isCommunityPost = candidate.discoveryKind === "reddit";
+          let evidenceText = candidate.summary || candidate.title;
+          if (!isCommunityPost && this.articleContent) {
+            try {
+              const content = await this.articleContent.fetch(
+                candidate.canonicalUrl,
+              );
+              if (content?.text) evidenceText = content.text;
+            } catch {
+              // Retrieval is an improvement, never a gate. A page that cannot
+              // be read leaves the candidate exactly as it would have been --
+              // thin, but present.
+            }
+          }
           if (!(await evidenceAllowed(candidate, evidenceText))) continue;
           selected = { ...candidate, evidenceText };
           break;
         }
 
-        let extracted: { text: string; contentHash: string; finalUrl: string };
+        // Extract, and ask Exa before giving the candidate up.
+        //
+        // Three failed attempts from the HTML extractor means a paywall, a
+        // JavaScript shell or bot protection -- exactly the pages a
+        // purpose-built retrieval service reaches and a plain extractor does
+        // not. Until now such a candidate was simply dropped, so those stories
+        // were lost rather than told.
+        let extracted:
+          | { text: string; contentHash: string; finalUrl: string }
+          | null = null;
+        let extractionFailure = "article content unavailable";
         try {
-          extracted = await this.curation.withRetry(() => this.curation.fetchArticle(candidate.canonicalUrl), { attempts: 3, baseDelayMs: 300 });
+          extracted = await this.curation.withRetry(
+            () => this.curation.fetchArticle(candidate.canonicalUrl),
+            { attempts: 3, baseDelayMs: 300 },
+          );
         } catch (error) {
+          extractionFailure =
+            error instanceof Error ? error.message : String(error);
+          if (this.articleContent) {
+            try {
+              const content = await this.articleContent.fetch(
+                candidate.canonicalUrl,
+              );
+              if (content?.text) {
+                extracted = {
+                  text: content.text,
+                  contentHash: hashText(content.text),
+                  finalUrl: content.url,
+                };
+              }
+            } catch (contentError) {
+              // Both paths failed. The original extractor's message is the
+              // more useful of the two, so it is the one kept.
+              void contentError;
+            }
+          }
+        }
+        if (!extracted) {
           extractionErrors.push({
             article_id: candidate.article.id,
             source_url: candidate.canonicalUrl,
-            error: error instanceof Error ? error.message : String(error),
+            error: extractionFailure,
           });
           continue;
         }

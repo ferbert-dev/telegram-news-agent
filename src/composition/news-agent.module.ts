@@ -18,6 +18,7 @@ import {
   EvidenceCorroborationService,
 } from "../editorial/corroboration/evidence-corroboration.service.js";
 import { FactPlanService } from "../editorial/corroboration/fact-plan.service.js";
+import { buildArticleContentPort } from "../research/content/article-content.factory.js";
 import { PersistenceFacadeModule } from "../persistence/persistence-facade.module.js";
 import { LEGACY_PERSISTENCE } from "../persistence/legacy-persistence.tokens.js";
 import type { LegacyPersistence } from "../persistence/legacy-persistence.contracts.js";
@@ -323,6 +324,10 @@ export class NewsAgentModule {
 
         TypedResearchExecutionGatewayModule.register({
           aiProvider: aiProvider as never,
+          // Null unless Exa is configured, and the gateway then extracts
+          // exactly as it did before. Nothing here reaches for a provider that
+          // the environment has not set up.
+          articleContent: buildArticleContentPort(env),
         }),
 
         OperationsApplicationModule.register({ notionAudit }),
