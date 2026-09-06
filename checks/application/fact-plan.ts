@@ -100,7 +100,7 @@ test("an uncorroborated story keeps its caveat until the tag exists", async () =
       // Nothing corroborates: the planner asks, every search comes back empty.
       aiProvider: {
         generateStructured: async () => ({
-          value: { requests: [{ query: "q", reason: "r", expectedClaim: "c" }] },
+          value: { requests: [{ query: "acme initech acquisition", reason: "confirm the deal", expectedClaim: "Acme acquired Initech" }] },
         }),
         searchFact: async () => ({ value: { fact: null } }),
       } as never,
