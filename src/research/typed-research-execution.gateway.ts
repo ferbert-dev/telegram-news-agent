@@ -686,11 +686,44 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
 
       for (const candidate of articles) {
         throwIfAborted(signal);
-        const storyDecision = await this.curation.evaluateStoryDuplicate(
-          candidate as never,
-          recentPublishedStories,
-          semanticBudget.hasRemaining() ? semanticProvider : null,
-        );
+        // One flaky answer must cost one candidate, not the whole run.
+        //
+        // Deduplication calls generateStructuredOnce -- a single attempt, no
+        // retry, no fallback provider -- which is a deliberate choice: this
+        // decision is not worth three providers. But the throw travelled all
+        // the way out of the candidate loop and failed the job, so a single
+        // malformed structured response from one model ended a /news that had
+        // other candidates waiting.
+        //
+        // Observed on 2026-09-06, twice in two minutes:
+        //   ai_provider_failed operation=generateStructured provider=gemini
+        //   error_code=schema_validation_failed
+        //
+        // Skipping the candidate is also the safe reading. A deduplication
+        // decision that could not be made is not evidence that the story is
+        // new, and `uncertain` already means "do not publish this one".
+        let storyDecision: Awaited<
+          ReturnType<typeof this.curation.evaluateStoryDuplicate>
+        >;
+        try {
+          storyDecision = await this.curation.evaluateStoryDuplicate(
+            candidate as never,
+            recentPublishedStories,
+            semanticBudget.hasRemaining() ? semanticProvider : null,
+          );
+        } catch (error) {
+          throwIfAborted(signal);
+          storyDeduplication.uncertain += 1;
+          deduplicationRejectedArticleIds.add(candidate.article.id);
+          this.log.warn?.(
+            JSON.stringify({
+              event: "story_deduplication_unavailable",
+              article_id: candidate.article.id,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+          continue;
+        }
         if (storyDecision.classifierAttempted) storyDeduplication.aiCalls += 1;
         await recordAiUsageEvents(usageRepository, storyDecision.usageEvents, {
           channelId,
