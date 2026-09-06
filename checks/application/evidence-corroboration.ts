@@ -222,3 +222,38 @@ test("a provider that returns a list can clear a story in one search", async () 
   assert.equal(outcome.searches, 1);
   assert.deepEqual(search.seen, ["first"]);
 });
+
+test("a deduplication failure costs one candidate, not the whole run", async () => {
+  const { TypedResearchExecutionGateway } = await import(
+    "../../src/research/typed-research-execution.gateway.js"
+  );
+  // Reaching the real gateway needs its whole dependency set, so the property
+  // is asserted where it is decided instead: evaluateStoryDuplicate throwing
+  // must not escape the candidate loop.
+  const source = (
+    await import("node:fs")
+  ).readFileSync(
+    new URL("../../src/research/typed-research-execution.gateway.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.ok(TypedResearchExecutionGateway, "gateway must load");
+  const call = source.slice(
+    source.indexOf("storyDecision = await this.curation.evaluateStoryDuplicate"),
+  );
+  const guard = source.slice(
+    source.indexOf("try {", source.indexOf("let storyDecision")),
+    source.indexOf("storyDecision = await this.curation.evaluateStoryDuplicate"),
+  );
+
+  assert.ok(guard.includes("try {"), "the deduplication call must be guarded");
+  const handler = call.slice(0, call.indexOf("await this.storyDedup"));
+  assert.ok(
+    handler.includes("catch") && handler.includes("continue"),
+    "a failure must skip the candidate rather than propagate",
+  );
+  assert.ok(
+    handler.includes("deduplicationRejectedArticleIds"),
+    "a candidate whose duplicate check failed must not be treated as new",
+  );
+});
