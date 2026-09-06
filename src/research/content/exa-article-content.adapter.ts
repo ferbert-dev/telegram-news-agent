@@ -9,6 +9,13 @@ export type DailyCallStore = {
   set(key: string, value: { date: string; calls: number }): void;
 };
 
+/**
+ * Long enough for a feature article, short enough that one bad page cannot
+ * dominate a prompt. The pipeline's own extractor returns 12-13k on ordinary
+ * news pages, so this leaves headroom without inviting a book.
+ */
+const MAX_ARTICLE_CHARACTERS = 20_000;
+
 export class ExaDailyContentCapError extends Error {
   readonly code = "exa_daily_content_cap";
   constructor(cap: number) {
@@ -84,7 +91,19 @@ export function exaArticleContentPort(
     ): Promise<ArticleContent | null> {
       reserve();
       const response = await client.getContents([url], {
-        text: true,
+        // An explicit ceiling, because `text: true` is not "the whole page".
+        //
+        // A live run retrieved exactly 1000 characters from a Guardian
+        // article -- a round number is a default, not an article -- while the
+        // HTML extractor had returned 12,579 characters from a comparable page
+        // the run before. Making retrieval the primary path while silently
+        // accepting a 1000-character cap gave the model LESS of the article
+        // than the extractor it replaced, which is the opposite of the point.
+        //
+        // The shape is the one this repository already uses successfully
+        // against the installed SDK (`contents: { text: { maxCharacters } }`
+        // in src/exa-provider.js), not a recalled one.
+        text: { maxCharacters: MAX_ARTICLE_CHARACTERS },
         ...(context.signal ? { signal: context.signal } : {}),
       });
       const result = response?.results?.[0];

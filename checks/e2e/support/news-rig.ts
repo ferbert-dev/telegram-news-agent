@@ -316,6 +316,8 @@ export type NewsRig = {
   sentToTelegram: Array<{ method: string; payload: Record<string, unknown> }>;
   /** Real errors, before the worker classifies them into an error_code. */
   workflowErrors: string[];
+  /** What the worker actually wrote to its error log. */
+  workerLog: string[];
   researchErrors: string[];
   feedRequests: () => number;
   enqueue: (updateId?: number) => Promise<{ status: string }>;
@@ -545,6 +547,7 @@ export async function withNewsRig(
 
     // The worker classifies any error into an error_code and moves on, which is
     // right for production and useless here. Capture the real one.
+    const workerLog: string[] = [];
     const workflowErrors: string[] = [];
     const originalRun = workflow.run.bind(workflow);
     (workflow as unknown as { run: unknown }).run = async (...args: unknown[]) => {
@@ -575,7 +578,14 @@ export async function withNewsRig(
       }) as never,
       newClaimToken: () => randomUUID(),
       maxExecutionAttempts: 1,
-      log: { info() {}, error() {} },
+      // Captured, not discarded. A failed job that logs nothing is the state
+      // that made a stage failure take a whole session to diagnose.
+      log: {
+        info() {},
+        error(message: string) {
+          workerLog.push(message);
+        },
+      },
     });
 
     const rig: NewsRig = {
@@ -592,6 +602,7 @@ export async function withNewsRig(
       deliveries,
       sentToTelegram,
       workflowErrors,
+      workerLog,
       researchErrors,
       feedRequests: () => feedRequests,
       async enqueue(updateId = firstUpdateId) {

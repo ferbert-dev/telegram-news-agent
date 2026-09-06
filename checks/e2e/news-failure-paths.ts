@@ -483,6 +483,28 @@ test(
           0,
           "and no review card may be delivered",
         );
+
+        // And the operator must be able to find out why.
+        //
+        // This is a genuine throw, unlike the dead feed above, which reaches a
+        // clean `no_candidates`. `news_job_failed` is what the classifier
+        // returns for anything it does not recognise, and on the stage it was
+        // the ENTIRE record of a failed run: no message, no name, nothing in
+        // the log. Diagnosing it meant reading the usage ledger for which AI
+        // calls were missing and reasoning backwards -- and that still did not
+        // identify the throw. The reason has to reach the log.
+        const failures = rig.workerLog.filter((line) =>
+          line.includes("telegram_news_job_execution_failed"),
+        );
+        assert.ok(
+          failures.length > 0,
+          `a failed run must log why\n  worker log: ${JSON.stringify(rig.workerLog)}`,
+        );
+        const reported = JSON.parse(failures[0] ?? "{}") as { error?: string };
+        assert.ok(
+          (reported.error ?? "").length > 0,
+          `and the line must carry the real message, not just a code: ${failures[0]}`,
+        );
       },
     );
   },
