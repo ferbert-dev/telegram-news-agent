@@ -113,6 +113,10 @@ gh workflow run deploy.yml -f operation=deploy-integration --ref <branch>
 # next deploy resumes with its data rather than re-migrating from empty.
 gh workflow run deploy.yml -f operation=stop-integration
 
+# Run /news without typing it in Telegram. Refuses while a run is in flight,
+# and copies the channel, chat and settings snapshot from the last real run.
+gh workflow run deploy.yml -f operation=run-integration-news
+
 # Free a /news job whose worker was killed mid-research — after a deploy, say.
 # Without this the claim stands for the full stale window and every /news on
 # that channel is suppressed as already-running until it expires.

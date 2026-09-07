@@ -19,6 +19,7 @@ import {
 } from "../editorial/corroboration/evidence-corroboration.service.js";
 import { FactPlanService } from "../editorial/corroboration/fact-plan.service.js";
 import { buildArticleContentPort } from "../research/content/article-content.factory.js";
+import { buildCorroborationSearchPort } from "../editorial/corroboration/fact-search.factory.js";
 import { PersistenceFacadeModule } from "../persistence/persistence-facade.module.js";
 import { LEGACY_PERSISTENCE } from "../persistence/legacy-persistence.tokens.js";
 import type { LegacyPersistence } from "../persistence/legacy-persistence.contracts.js";
@@ -26,7 +27,12 @@ import type { LegacyPersistence } from "../persistence/legacy-persistence.contra
 import { EditorialApplicationModule } from "../editorial/editorial-application.module.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../editorial/editorial-application.tokens.js";
 import type { EditorialWorkflowApplicationPort } from "../editorial/editorial-application.contracts.js";
-import { LegacyEditorialDraftGateway } from "../editorial/legacy-editorial-draft.gateway.js";
+import {
+  LegacyEditorialDraftGateway,
+  LEGACY_EDITORIAL_ENRICHMENT_PORTS,
+} from "../editorial/legacy-editorial-draft.gateway.js";
+import { EditorialEnrichmentService } from "../editorial/enrichment/editorial-enrichment.service.js";
+import { DEFAULT_ENRICHMENT_LIMITS } from "../editorial/enrichment/editorial-enrichment.contracts.js";
 import { LegacyEditorialPublicationGateway } from "../editorial/legacy-editorial-publication.gateway.js";
 import { LegacyEditorialPublicationPolicyGateway } from "../editorial/legacy-editorial-publication-policy.gateway.js";
 
@@ -338,6 +344,22 @@ export class NewsAgentModule {
             model: draftModel,
             repository: legacyPersistence.port as never,
             editor: getNewsEditor(env),
+            // The editorial pass, ours. Legacy's is switched off inside the
+            // gateway: its structure validation required the model to
+            // reproduce source text verbatim, which discarded the whole pass
+            // whenever the model wrote rather than copied.
+            // Corroboration searches through the typed Exa adapter when Exa
+            // is configured. The cascade's own searchFact reaches the frozen
+            // provider, which returns one result per search and only from a
+            // fixed host list -- fifteen paid candidates became one cited
+            // source on the integration stage.
+            ...(buildCorroborationSearchPort(env)
+              ? { factSearch: buildCorroborationSearchPort(env)! }
+              : {}),
+            enrichment: new EditorialEnrichmentService(
+              LEGACY_EDITORIAL_ENRICHMENT_PORTS,
+              DEFAULT_ENRICHMENT_LIMITS,
+            ),
             // Corroboration runs before drafting: the unverified caveat is
             // derived from the evidence, so this is the only point that can
             // affect it without editing the frozen legacy draft module.

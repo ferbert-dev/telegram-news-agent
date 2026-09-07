@@ -1,8 +1,9 @@
 import type {
   CorroborationSearchPort,
-  CorroborationSource,
+  CorroborationSearchResult,
   FactRequest,
 } from "./evidence-corroboration.contracts.js";
+import { tierOf } from "./source-policy.js";
 
 type AiFactSearch = {
   searchFact: (input: Record<string, unknown>) => Promise<{
@@ -34,7 +35,7 @@ export function factSearchCorroborationPort(
     async find(
       request: FactRequest,
       context: { languageCode: string; signal?: AbortSignal },
-    ): Promise<readonly CorroborationSource[]> {
+    ): Promise<CorroborationSearchResult> {
       const result = await provider.searchFact({
         query: request.query,
         expectedClaim: request.expectedClaim,
@@ -42,14 +43,17 @@ export function factSearchCorroborationPort(
         ...(context.signal ? { signal: context.signal } : {}),
       });
       const fact = result?.value?.fact;
-      if (!fact?.sourceUrl) return [];
-      return [
-        {
-          url: fact.sourceUrl,
-          title: fact.sourceTitle,
-          excerpt: fact.evidenceText,
-        },
-      ];
+      if (!fact?.sourceUrl) return { sources: [] };
+      return {
+        sources: [
+          {
+            url: fact.sourceUrl,
+            title: fact.sourceTitle,
+            excerpt: fact.evidenceText,
+            tier: tierOf(fact.sourceUrl) ?? "other",
+          },
+        ],
+      };
     },
   };
 }

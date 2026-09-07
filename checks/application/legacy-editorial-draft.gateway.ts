@@ -219,7 +219,19 @@ test("LegacyEditorialDraftGateway preserves dependency values and identity, uses
     output: {
       baselineDraft: { tag: "baseline" },
       enrichedDraft: null,
-      editorialEnrichment: { state: "enabled" },
+      // This now describes what THIS gateway did, rather than echoing back
+      // whatever the legacy call returned. The fixture's feature flags leave
+      // the editorial pass off, so it reports "off"/"disabled" -- where before
+      // it repeated the fake's canned `{ state: "enabled" }`, which was not a
+      // statement about anything that happened.
+      editorialEnrichment: {
+        state: "off",
+        status: "disabled",
+        selected_version: "baseline",
+        diagnostic: null,
+        evidence_map: [],
+        implementation: "typed-editorial-pass-v1",
+      },
       selectedModel: "provider-model",
       selectedProvider: "openai",
     },
@@ -337,7 +349,14 @@ test("LegacyEditorialDraftGateway builds effective news settings from input when
         state: "enabled",
         catalog: CATALOG,
       });
-      assert.deepEqual(args.editorialEnrichment, { state: "enabled" });
+      // Legacy is told the editorial pass is off, always, even when the
+      // feature is enabled for the channel. The pass moved into this gateway
+      // because legacy's version required the model to reproduce source text
+      // verbatim and discarded the whole result when it did not.
+      //
+      // The resolved state is not lost -- it is asserted below, on the output
+      // this gateway returns, which is where it now belongs.
+      assert.deepEqual(args.editorialEnrichment, { state: "off" });
       return {
         draft: { telegramText: "Generated body" },
         baselineDraft: { tag: "baseline" },

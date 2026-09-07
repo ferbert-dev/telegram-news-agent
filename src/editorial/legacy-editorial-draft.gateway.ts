@@ -1,9 +1,14 @@
 import type { EditorialDraftGenerationResult } from "./editorial-application.contracts.js";
 import type {
   EditorialDraftGateway,
+  EditorialEvidence,
   GenerateReviewDraftInput,
 } from "./editorial-application.contracts.js";
-import { generateDraft as legacyGenerateDraft } from "../draft.js";
+import {
+  generateDraft as legacyGenerateDraft,
+  validateGroundedDraft as legacyValidateGroundedDraft,
+} from "../draft.js";
+import { measureEditorialSimilarity as legacyMeasureEditorialSimilarity } from "../editorial-enrichment.js";
 import type { CreateReviewDraftInput } from "./editorial-persistence.contracts.js";
 import type { RecordAiUsageInput } from "../usage/usage-persistence.contracts.js";
 import type {
@@ -13,6 +18,26 @@ import type {
 import type { EvidenceCorroborationService } from "./corroboration/evidence-corroboration.service.js";
 import type { FactPlanService } from "./corroboration/fact-plan.service.js";
 import { factSearchCorroborationPort } from "./corroboration/fact-search.adapter.js";
+import type { CorroborationSearchPort } from "./corroboration/evidence-corroboration.contracts.js";
+import type {
+  EditorialEnrichmentService,
+} from "./enrichment/editorial-enrichment.service.js";
+import type {
+  EditorialEnrichmentPorts,
+  EnrichedArticle,
+} from "./enrichment/editorial-enrichment.contracts.js";
+
+/**
+ * The legacy seam for the typed editorial pass, in the file that is allowed to
+ * hold one. Grounding stays the single implementation production already uses.
+ */
+export const LEGACY_EDITORIAL_ENRICHMENT_PORTS: EditorialEnrichmentPorts = {
+  validateDraft: legacyValidateGroundedDraft as EditorialEnrichmentPorts["validateDraft"],
+  measureSimilarity:
+    legacyMeasureEditorialSimilarity as EditorialEnrichmentPorts["measureSimilarity"],
+};
+import { appendTopicHashtags } from "../article-tags.js";
+import { validateMessage } from "../telegram.js";
 
 const ARTICLE_TAGS_FEATURE_KEY = "article_tags";
 const EDITORIAL_ENRICHMENT_FEATURE_KEY = "editorial_enrichment";
@@ -269,7 +294,58 @@ export type LegacyEditorialDraftGatewayDependencies = {
    */
   factPlan?: FactPlanService;
   corroboration?: EvidenceCorroborationService;
+  /**
+   * Optional, like the two above: absent, the article is the baseline and the
+   * gateway behaves as it did before a typed editorial pass existed.
+   */
+  enrichment?: EditorialEnrichmentService;
+  /**
+   * Where corroboration looks. Absent, it goes through the provider cascade's
+   * `searchFact`, which reaches the frozen Exa provider -- and that one keeps
+   * at most one result per search and only from a fixed list of hosts.
+   */
+  factSearch?: CorroborationSearchPort;
 };
+
+/** Any unverified item makes the whole set unverified, as draft.js decides it. */
+function isUnverified(evidence: readonly { verificationStatus?: string | null }[]): boolean {
+  return evidence.some(
+    (item) => (item.verificationStatus ?? "") === "unverified_community",
+  );
+}
+
+type EditorialPassResult = {
+  draft: EnrichedArticle | null;
+  body: string | null;
+  summary: Record<string, unknown>;
+};
+
+/**
+ * Replaces the `editorial_enrichment` block legacy wrote with what actually
+ * happened, leaving the rest of its reviewer notes untouched.
+ *
+ * Legacy was told the pass was off, so its own block says "disabled" -- which
+ * would be a false record of a run where the pass ran here and succeeded.
+ */
+function withEnrichmentNotes(
+  notes: string | null | undefined,
+  pass: EditorialPassResult,
+): string | null {
+  if (!notes) return notes ?? null;
+  // Nothing to say when the pass never ran. Writing a block for a disabled
+  // feature would put our record over legacy's for a decision legacy made,
+  // and would invent an editorial_enrichment key on notes that had none.
+  if (pass.summary.status === "disabled") return notes;
+  try {
+    const parsed = JSON.parse(notes) as Record<string, unknown>;
+    parsed.editorial_enrichment = pass.summary;
+    return JSON.stringify(parsed);
+  } catch {
+    // Unparseable notes are legacy's to own; replacing them with our own
+    // shape would lose whatever they did contain.
+    return notes;
+  }
+}
 
 export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
   private readonly generateDraft: GenerateDraftFunction;
@@ -279,6 +355,110 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
     generateDraftFn: GenerateDraftFunction = legacyGenerateDraft as GenerateDraftFunction,
   ) {
     this.generateDraft = generateDraftFn;
+  }
+
+  /**
+   * The editorial pass and the composition of its result into a publishable
+   * body: editor credit and topic hashtags, then Telegram's own message
+   * validation -- the same finishing legacy applies to the baseline, applied
+   * once and only to the version that ships.
+   *
+   * Returns the baseline untouched whenever the pass is off, unavailable, or
+   * did not produce something publishable. Adding detail must never be a way
+   * for an article to stop existing.
+   */
+  private async runEditorialPass(request: {
+    state: "off" | "collect" | "enabled";
+    article: { title?: string | null; canonical_url?: string | null };
+    baseline: EnrichedArticle;
+    evidence: readonly EditorialEvidence[];
+    languageCode: string;
+    editor: unknown;
+    tagging: { state: string } & Record<string, unknown>;
+    unverified: boolean;
+  }): Promise<EditorialPassResult> {
+    const baselineOnly = (
+      status: string,
+      diagnostic: string | null = null,
+    ): EditorialPassResult => ({
+      draft: null,
+      body: null,
+      summary: {
+        state: request.state,
+        status,
+        selected_version: "baseline",
+        diagnostic,
+        evidence_map: [],
+        implementation: "typed-editorial-pass-v1",
+      },
+    });
+
+    if (request.state === "off") return baselineOnly("disabled");
+    if (!this.dependencies.enrichment) {
+      return baselineOnly("fallback_to_baseline", "pass_not_configured");
+    }
+    // An unverified story keeps legacy's baseline, prefix and caveat intact.
+    // Reproducing the UNVERIFIED TREND headline handling here would duplicate
+    // a rule that exists to keep a rumour marked, and duplicated safety rules
+    // drift. The pass is an improvement; skipping it costs nothing.
+    if (request.unverified) {
+      return baselineOnly("fallback_to_baseline", "unverified_story");
+    }
+
+    const outcome = await this.dependencies.enrichment.enrich({
+      article: request.article,
+      // The first evidence item is the article this run went to; corroborating
+      // sources are appended after it.
+      primarySourceUrl: request.evidence[0]?.url ?? "",
+      baselineDraft: request.baseline,
+      evidence: request.evidence,
+      languageCode: request.languageCode,
+      generator: this.dependencies.aiProvider as never,
+    });
+
+    if (outcome.status !== "completed") {
+      return baselineOnly("fallback_to_baseline", outcome.diagnostic);
+    }
+
+    let body: string;
+    try {
+      // No editor credit.
+      //
+      // "Знайшов і підготував для вас: <name>" was appended to every article,
+      // which is exactly why it stopped carrying information: a line that is
+      // identical on every post is furniture. Removed at the owner's request.
+      // The baseline path keeps its own credit; legacy appends that one.
+      body = appendTopicHashtags(
+        outcome.draft.telegramText,
+        [],
+        request.tagging,
+        { languageCode: request.languageCode },
+      ) as string;
+      validateMessage(body);
+    } catch (error) {
+      return baselineOnly(
+        "fallback_to_baseline",
+        `unpublishable: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    return {
+      draft: outcome.draft,
+      body,
+      summary: {
+        state: request.state,
+        status: "completed",
+        selected_version: "enriched",
+        diagnostic: null,
+        reader_angle: outcome.readerAngle,
+        evidence_map: outcome.evidenceMap,
+        similarity: outcome.similarity,
+        attempts: outcome.attempts,
+        provider: outcome.provider,
+        model: outcome.model,
+        implementation: "typed-editorial-pass-v1",
+      },
+    };
   }
 
   async generate(
@@ -340,9 +520,9 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
             evidence: input.evidence,
             requests,
             languageCode: input.languageCode,
-            search: factSearchCorroborationPort(
-              this.dependencies.aiProvider as never,
-            ),
+            search:
+              this.dependencies.factSearch
+              ?? factSearchCorroborationPort(this.dependencies.aiProvider as never),
           });
           // Always take the outcome's evidence now.
           //
@@ -352,6 +532,10 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
           // before. What it does take, on every article, are the extra sources
           // the searches found, which is the point of searching every article
           // rather than only the doubtful ones.
+          // Paid searches, accounted for. Without this the ledger shows
+          // nothing for a corroboration round, which is the state content
+          // retrieval was in when "did Exa run?" could not be answered.
+          usageEvents.push(...(outcome.usageEvents as RecordAiUsageInput[]));
           if (outcome.status !== "not_needed") {
             corroborationAddedSources =
               outcome.evidence.length > input.evidence.length;
@@ -391,15 +575,43 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
         newsSettings: effectiveNewsSettings,
         editor: this.dependencies.editor,
         articleTagging,
-        editorialEnrichment,
+        // Legacy's own editorial pass is switched off here, always.
+        //
+        // Not because it is bad, but because its structure validation demands
+        // the model reproduce source text verbatim (editorial-enrichment.js:237
+        // and :249) and `draft.js` swallows the throw, so a straight quote
+        // where the source had a typographic one discarded the entire pass as
+        // `enrichment_failed`. The owner's decision is that the model should
+        // write its own article from the retrieved details rather than copy
+        // them, so the pass moved here, where that requirement is gone and
+        // grounding is still enforced by the same validator.
+        editorialEnrichment: { state: "off" as const },
       },
       signal,
     );
 
+    // The editorial pass, ours, on the baseline legacy just produced.
+    //
+    // It runs HERE and not inside `generateDraft` because the repository facade
+    // above intercepts `createReviewDraft` and persists nothing -- legacy
+    // composes the draft, this gateway is what returns it to be saved. So the
+    // final article can still be changed at this point, which is what makes a
+    // typed editorial pass possible without porting draft.js.
+    const enrichment = await this.runEditorialPass({
+      state: editorialEnrichment.state,
+      article: input.article as { title?: string | null; canonical_url?: string | null },
+      baseline: generated.baselineDraft as EnrichedArticle,
+      evidence: corroboratedEvidence,
+      languageCode: input.languageCode,
+      editor: this.dependencies.editor,
+      tagging: articleTagging,
+      unverified: isUnverified(input.evidence),
+    });
+
     const output = {
       baselineDraft: generated.baselineDraft,
-      enrichedDraft: generated.enrichedDraft,
-      editorialEnrichment: generated.editorialEnrichment,
+      enrichedDraft: enrichment.draft ?? null,
+      editorialEnrichment: enrichment.summary,
       selectedModel: generated.model,
       selectedProvider: generated.provider,
     };
@@ -407,10 +619,15 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
     return {
       draft: {
         article_id: generated.saved.article_id,
-        body: generated.saved.body,
+        body: enrichment.body ?? generated.saved.body,
         model: generated.saved.model,
-        prompt_version: generated.saved.prompt_version,
-        reviewer_notes: generated.saved.reviewer_notes,
+        prompt_version: enrichment.draft
+          ? `${generated.saved.prompt_version}+typed-editorial-pass-v1`
+          : generated.saved.prompt_version,
+        reviewer_notes: withEnrichmentNotes(
+          generated.saved.reviewer_notes,
+          enrichment,
+        ),
         lease_name: generated.saved.lease_name ?? input.lease?.name ?? null,
         lease_owner_id: generated.saved.lease_owner_id ?? input.lease?.ownerId ?? null,
         // Omitted, not null, when tagging is off -- exactly what src/draft.js

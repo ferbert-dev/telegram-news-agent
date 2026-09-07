@@ -176,10 +176,9 @@ test(
     // way to tell a broken pipeline from a model that had missed one of four
     // exact-match gates.
     //
-    // This settles that half: given an enrichment that satisfies the gates, the
-    // pipeline must accept it and select it. A failure here is ours. A failure
-    // on the stage with this passing is the model's output, and the next step
-    // is the prompt, not the plumbing.
+    // The fixture PARAPHRASES its evidence rather than quoting it, which is the
+    // case legacy rejected outright and the case the owner asked for: the point
+    // of retrieving details is that the model writes from them.
     await withNewsRig(
       {
         host: "enrichment.example.test",
@@ -203,7 +202,7 @@ test(
         );
 
         const { rows } = await rig.pool.query(
-          "select reviewer_notes, length(body) as chars from public.drafts where id = $1",
+          "select reviewer_notes, body, length(body) as chars from public.drafts where id = $1",
           [job?.draft_id],
         );
         const notes = JSON.parse(String(rows[0]?.reviewer_notes ?? "{}")) as {
@@ -220,6 +219,62 @@ test(
           "completed",
           `enrichment must complete, not fall back; diagnostic=${enrichment.diagnostic ?? "none"}`,
         );
+        // Longer than legacy could ever produce.
+        //
+        // `validateGroundedDraft` defaults to 120 words and the legacy
+        // editorial pass raised that only to 140. An article above that ceiling
+        // proves the injected limits are the ones in force, not the compiled-in
+        // ones -- which is the whole reason length became a parameter.
+        const publishedWords = String(rows[0]?.body ?? "")
+          .split(/\n\s*(?:Sources?|Quellen?|Джерела):\s*\n/iu, 1)[0]
+          .trim()
+          .split(/\s+/).length;
+        // The published floor, on the published body.
+        //
+        // Not the model's output: stripping the URLs it wrote into the prose
+        // removes words, so a draft can clear the minimum before the rebuild
+        // and fall under it after -- and the rebuilt one is what ships.
+        assert.ok(
+          publishedWords >= 185 && publishedWords <= 220,
+          `the article must be 185-220 words; got ${publishedWords}`,
+        );
+
+        // One link, and it is the primary source.
+        //
+        // A published post carried three: the primary glued mid-sentence as
+        // "Джерело: https://..." and a formal block listing the two
+        // corroborating outlets -- the two the reader had no reason to visit.
+        // The fixture reproduces that stray link on purpose.
+        const body = String(rows[0]?.body ?? "");
+        const links = body.match(/https?:\/\/\S+/gu) ?? [];
+        assert.equal(
+          links.length,
+          1,
+          `the article must publish exactly one link; got ${JSON.stringify(links)}`,
+        );
+        assert.ok(
+          links[0]?.includes(rig.host),
+          `and it must be the source the run went to; got ${links[0]}`,
+        );
+        assert.ok(
+          !body.includes("dw.com"),
+          "a link the model wrote into the prose must not survive",
+        );
+
+        // No editor signature on the enriched article.
+        //
+        // "Знайшов і підготував для вас: …" was appended to every post, which
+        // is why it stopped carrying information. The baseline path keeps its
+        // own; this is the path that ships.
+        assert.ok(
+          !/Знайшов і підготував|Найшов і підготував/u.test(body),
+          `the enriched article must carry no editor credit; got ${JSON.stringify(body.slice(-160))}`,
+        );
+        const proseBeforeSources = body.split(/\n\s*(?:Sources?|Джерела|Quellen):/iu, 1)[0] ?? "";
+        assert.ok(
+          !/https?:\/\//u.test(proseBeforeSources),
+          `no URL may appear in the prose; got ${JSON.stringify(proseBeforeSources.slice(-120))}`,
+        );
         assert.equal(
           enrichment.selected_version,
           "enriched",
@@ -228,6 +283,113 @@ test(
         assert.ok(
           (enrichment.evidence_map ?? []).length > 0,
           "with a source for every claim it makes",
+        );
+      },
+    );
+  },
+);
+
+test(
+  "a short first attempt is asked again, not thrown away",
+  { skip },
+  async () => {
+    // The mechanism that makes a 185-word floor usable at all.
+    //
+    // A floor on its own makes articles SHORTER: a refused enrichment falls
+    // back to the baseline, which runs to about a hundred words -- shorter
+    // than anything the floor would have rejected. So a short draft is told
+    // its own word count and asked again.
+    await withNewsRig(
+      {
+        host: "short-first.example.test",
+        featureFlags: { editorial_enrichment: "enabled" },
+        shortFirstEnrichment: true,
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        const { rows } = await rig.pool.query(
+          "select reviewer_notes, body from public.drafts where id = $1",
+          [job?.draft_id],
+        );
+        const notes = JSON.parse(String(rows[0]?.reviewer_notes ?? "{}")) as {
+          editorial_enrichment?: {
+            status?: string;
+            attempts?: number;
+            diagnostic?: string | null;
+          };
+        };
+        assert.equal(
+          notes.editorial_enrichment?.status,
+          "completed",
+          `a short first attempt must not cost the article its editorial pass; diagnostic=${notes.editorial_enrichment?.diagnostic ?? "none"}`,
+        );
+        assert.equal(
+          notes.editorial_enrichment?.attempts,
+          2,
+          "and it must have taken the retry to get there",
+        );
+        const words = String(rows[0]?.body ?? "")
+          .split(/\n\s*(?:Sources?|Джерела|Quellen):/iu, 1)[0]
+          .trim()
+          .split(/\s+/u).length;
+        assert.ok(
+          words >= 185,
+          `the published article must clear the floor; got ${words} words`,
+        );
+      },
+    );
+  },
+);
+
+test(
+  "an unvetted publisher reaches the article without clearing the story",
+  { skip },
+  async () => {
+    // The blocker the whole Exa search half was losing to, end to end.
+    //
+    // On the stage, three paid searches for a Miami runway crash returned
+    // fifteen candidates and the published article cited one source -- the one
+    // it started with. The story was covered by the Miami Herald, CNN and local
+    // broadcasters, and the frozen provider discards every host outside about
+    // forty domains, keeping at most one result per search anyway.
+    //
+    // Both now reach the article as material to write from. Neither clears it:
+    // that still takes two vetted publishers.
+    await withNewsRig(
+      {
+        host: "weak-sources.example.test",
+        searchResults: [
+          ["https://www.miamiherald.com/news/a", "https://www.cnn.com/2026/09/b"],
+          [],
+          [],
+        ],
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        assert.equal(
+          job?.outcome_status,
+          "review_ready",
+          `the article must be written\n  ${rig.diagnosis()}`,
+        );
+
+        const handed = rig.draftEvidence.at(-1) ?? [];
+        assert.ok(
+          handed.some((url) => url.includes("miamiherald.com"))
+            && handed.some((url) => url.includes("cnn.com")),
+          `both unvetted publishers must reach the model; got ${JSON.stringify(handed)}`,
+        );
+        const lengths = rig.draftEvidenceText.at(-1) ?? [];
+        assert.ok(
+          lengths.every((chars) => chars > 0),
+          `each with readable text, not a bare link; lengths ${JSON.stringify(lengths)}`,
         );
       },
     );
@@ -247,17 +409,10 @@ test(
     //
     // So the scenario has to distinguish them: the first search succeeds, the
     // second throws, and the source from the first must still reach the draft.
-    let searches = 0;
     await withNewsRig(
       {
         host: "search-partial.example.test",
-        ai(request) {
-          if (request.expectedClaim && request.query) {
-            searches += 1;
-            if (searches > 1) throw new Error("Exa search unavailable");
-          }
-          return undefined;
-        },
+        searchResults: [["https://www.reuters.com/world/first"], "throws", "throws"],
       },
       async (rig) => {
         assert.equal((await rig.enqueue()).status, "research_queued");
@@ -275,14 +430,9 @@ test(
           "review_ready",
           `the article must still be written\n  ${rig.diagnosis()}`,
         );
-        assert.equal(
-          rig.factSearches.length,
-          1,
-          `exactly one search may be recorded as successful\n  ${rig.diagnosis()}`,
-        );
         const evidence = rig.draftEvidence.at(-1) ?? [];
         assert.ok(
-          evidence.some((url) => url.startsWith("https://corroborator-")),
+          evidence.some((url) => url.includes("reuters.com")),
           `the source the successful search found must survive the failed one\n  ${rig.diagnosis()}`,
         );
       },
@@ -301,12 +451,7 @@ test(
     await withNewsRig(
       {
         host: "search-down.example.test",
-        ai(request) {
-          if (request.expectedClaim && request.query) {
-            throw new Error("Exa search unavailable");
-          }
-          return undefined;
-        },
+        searchResults: ["throws", "throws", "throws"],
       },
       async (rig) => {
         assert.equal((await rig.enqueue()).status, "research_queued");
@@ -324,10 +469,11 @@ test(
           "review_ready",
           `the article must still be written\n  ${rig.diagnosis()}`,
         );
+        const evidence = rig.draftEvidence.at(-1) ?? [];
         assert.equal(
-          rig.factSearches.length,
-          0,
-          "no search may be recorded as successful when every one threw",
+          evidence.length,
+          1,
+          `no source may be appended when every search threw; got ${JSON.stringify(evidence)}`,
         );
         assert.ok(
           (rig.schemaCounters.fact_plan ?? 0) > 0,
@@ -561,6 +707,76 @@ test(
       );
       assert.equal(rows[0]?.n, 1, "exactly one job may be live for a channel");
     });
+  },
+);
+
+test(
+  "an enriched article citing a source it was never given is still refused",
+  { skip },
+  async () => {
+    // The control that survives removing the excerpt check, stated on its own.
+    //
+    // Dropping the verbatim requirement means the model may describe its
+    // sources in its own words. It does not mean it may invent one. This is
+    // the same grounding validator the baseline goes through, reused rather
+    // than reimplemented so there is one rule and not two.
+    await withNewsRig(
+      {
+        host: "enrichment-ungrounded.example.test",
+        featureFlags: { editorial_enrichment: "enabled" },
+        ai(request, schema) {
+          if (!schema.includes("editorial_enrichment")) return undefined;
+          const invented = "https://never-supplied.example/exclusive";
+          const headline = "An exclusive nobody supplied";
+          return {
+            readerAngle: "An angle built on a source that was never given.",
+            draft: {
+              headline,
+              telegramText: `${headline}\n\nThe claim rests entirely on a report this pipeline never retrieved, and it should not survive.\n\nSources:\n${invented}`,
+              claims: [{ text: headline, sourceUrl: invented }],
+              sourceUrls: [invented],
+              caveat: "None.",
+            },
+            evidenceMap: [
+              { claim: headline, sourceUrl: invented, evidenceExcerpt: "As reported." },
+            ],
+          };
+        },
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        assert.equal(
+          job?.outcome_status,
+          "review_ready",
+          `the baseline must still ship\n  ${rig.diagnosis()}`,
+        );
+        const { rows } = await rig.pool.query(
+          "select reviewer_notes, body from public.drafts where id = $1",
+          [job?.draft_id],
+        );
+        const notes = JSON.parse(String(rows[0]?.reviewer_notes ?? "{}")) as {
+          editorial_enrichment?: { status?: string; diagnostic?: string | null };
+        };
+        assert.equal(
+          notes.editorial_enrichment?.status,
+          "fallback_to_baseline",
+          "an ungrounded enrichment must be discarded",
+        );
+        assert.match(
+          String(notes.editorial_enrichment?.diagnostic ?? ""),
+          /not_grounded/,
+          `and the reason must say so; got ${notes.editorial_enrichment?.diagnostic}`,
+        );
+        assert.ok(
+          !String(rows[0]?.body ?? "").includes("never-supplied.example"),
+          "and the invented source must not reach the article",
+        );
+      },
+    );
   },
 );
 

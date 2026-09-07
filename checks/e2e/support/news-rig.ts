@@ -20,7 +20,12 @@ import { RESEARCH_EXECUTION_GATEWAY } from "../../../src/research/research-gatew
 import { EditorialApplicationModule } from "../../../src/editorial/editorial-application.module.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../../../src/editorial/editorial-application.tokens.js";
 import { EDITORIAL_PERSISTENCE } from "../../../src/editorial/editorial-persistence.tokens.js";
-import { LegacyEditorialDraftGateway } from "../../../src/editorial/legacy-editorial-draft.gateway.js";
+import {
+  LegacyEditorialDraftGateway,
+  LEGACY_EDITORIAL_ENRICHMENT_PORTS,
+} from "../../../src/editorial/legacy-editorial-draft.gateway.js";
+import { EditorialEnrichmentService } from "../../../src/editorial/enrichment/editorial-enrichment.service.js";
+import { DEFAULT_ENRICHMENT_LIMITS } from "../../../src/editorial/enrichment/editorial-enrichment.contracts.js";
 import { LegacyEditorialPublicationPolicyGateway } from "../../../src/editorial/legacy-editorial-publication-policy.gateway.js";
 import { OperationsApplicationModule } from "../../../src/operations/operations-application.module.js";
 import { PIPELINE_LEASE_APPLICATION } from "../../../src/operations/operations-application.tokens.js";
@@ -34,6 +39,7 @@ import {
 } from "../../../src/editorial/corroboration/evidence-corroboration.service.js";
 import type { ArticleContentPort } from "../../../src/research/content/article-content.contracts.js";
 import { getNewsEditor } from "../../../src/editor.js";
+import { tierOf } from "../../../src/editorial/corroboration/source-policy.js";
 import { LEGACY_PERSISTENCE } from "../../../src/persistence/legacy-persistence.tokens.js";
 import { TelegramPersistenceModule } from "../../../src/telegram/telegram-persistence.module.js";
 import {
@@ -108,7 +114,9 @@ function fakeAiProvider(
   draftEvidence: string[][],
   draftEvidenceText: number[][],
   override?: AiAnswer,
+  shortFirstEnrichment = false,
 ) {
+  let enrichmentCalls = 0;
   const fallback = (request: Record<string, unknown>, schema: string): unknown => {
     // Substring, not equality: the policy runs twice under two schema names --
     // "excluded_topic_classification" during research and
@@ -168,74 +176,90 @@ function fakeAiProvider(
       };
     }
     if (schema.includes("editorial_enrichment")) {
-      // A correct enrichment, written out in full.
+      // An enrichment that PARAPHRASES its evidence instead of quoting it.
       //
-      // This fixture is the point of the scenario. `validateEditorialStructure`
-      // imposes four separate gates that a generative model has to satisfy
-      // exactly, and until now nothing anywhere stated what satisfying them
-      // looks like -- enrichment simply failed on the stage with no message.
+      // That is the point of the scenario. The legacy pass required
+      // `evidenceExcerpt` to appear as an exact substring of the source and
+      // threw when it did not, so this fixture would have failed there -- and
+      // did, when it was written that way: the paraphrase mutation reproduced
+      // the stage's `enrichment_failed` exactly. The requirement is gone at the
+      // owner's direction, because retrieving details is worth nothing if the
+      // model is then forbidden to write from them.
       //
-      //   1. `hook` must equal the draft's first prose sentence, exactly.
-      //   2. That hook must be less than 0.5 similar to the baseline's
-      //      headline AND to the baseline's own first sentence.
-      //   3. `hookEvidence.evidenceExcerpt` must appear VERBATIM in the text of
-      //      the evidence item it names, and that URL must be in the draft's
-      //      sourceUrls.
-      //   4. Every `causalArc` span must appear VERBATIM in the draft text.
-      //
-      // Then the result is validated again at 90-140 words and at most six
-      // sentences -- a narrower window than the baseline's own 60-100.
-      //
-      // Built from the request, never from constants: the excerpts have to be
-      // slices of the evidence this run actually supplied, which is exactly
-      // the constraint a fixed fixture cannot honour.
+      // What must still hold is grounding: every claim cites a URL that was
+      // actually supplied. A separate scenario proves an invented URL is still
+      // refused.
       const input = request.input as {
         evidence?: Array<{ url?: string; text?: string }>;
       };
-      const source = input.evidence?.[0];
-      const url = String(source?.url ?? "");
-      const excerpt = String(source?.text ?? "").slice(0, 40).trim();
+      const url = String(input.evidence?.[0]?.url ?? "");
       const headline = "Independent accounts converge on one measurement";
-      const hook =
-        "Two newsrooms and a peer-reviewed paper now point the same way.";
-      const change = "the uncertainty band narrowed";
-      const consequence = "fewer competing explanations survive";
-      const significance = "anyone relying on the older figure will see it revised";
-      const prose = [
-        hook,
-        `The reported change is that ${change}, which the supplied evidence sets out in plain terms for a general reader.`,
-        `Because of that, ${consequence}, and the disagreement that remains is far narrower than it was a year ago.`,
-        `For readers following this story, ${significance}, though the work still awaits independent replication elsewhere.`,
-        "That is the whole of what the supplied sources will currently support.",
-      ].join(" ");
-      const telegramText = `${headline}\n\n${prose}\n\nSources:\n${url}`;
-      const claims = [
-        { text: headline, sourceUrl: url },
-        { text: change, sourceUrl: url },
-      ];
+      const claim = "the reported uncertainty band narrowed";
+      // The template, written out: four paragraphs, each with its one job,
+      // and a URL glued into the prose the way the model actually did it.
+      //
+      // The stray link is deliberate. A published post carried three -- the
+      // primary buried mid-sentence as "Джерело: https://..." and a formal
+      // block listing the two corroborating outlets. The pipeline has to strip
+      // that and publish one link, so the fixture has to produce it.
+      enrichmentCalls += 1;
+      const strayLink = "https://www.dw.com/en/some-other-report";
+      const paragraphs = [
+        // 1. hook, then what happened
+        "A second newsroom has now described the same result, and the two accounts agree on the part that matters most to an ordinary reader. "
+          + `Taken together they show that ${claim}, which is the whole of what the supplied reporting will currently support. `
+          + "That leaves fewer competing explanations standing than there were a year ago.",
+        // 2. the detail, with the stray link the pipeline must remove
+        "The narrowed range is the concrete change here: where the earlier figure left room for three competing accounts of how the measurement came about, it now leaves room for one. "
+          + "The revision is small in absolute terms and large in what it rules out, which is why the groups involved described it as the most useful result of the year. "
+          + `Джерело: ${strayLink}`,
+        // 3. why it matters
+        "Anyone who has been relying on the older figure should expect to see it revised over the coming months, in textbooks as well as in ordinary press coverage. "
+          + "The practical effect is small today and larger later, once the revised number reaches the reference material that everyone else quotes without checking.",
+        // 4. what is unknown
+        "The underlying analysis has not yet been reproduced by a group with no involvement in either effort, and neither account says when that work might be finished, so none of this is settled.",
+      ].join("\n\n");
+      // Deliberately under the floor on the first call, so the scenario fails
+      // unless the pass asks again with its own word count as feedback.
+      const bodyText =
+        shortFirstEnrichment && enrichmentCalls === 1
+          ? paragraphs.split("\n\n")[0] ?? ""
+          : paragraphs;
       return {
         readerAngle: "What the narrowed figure changes for a general reader.",
-        hook,
-        hookEvidence: { sourceUrl: url, evidenceExcerpt: excerpt },
-        causalArc: {
-          change,
-          causeOrEnabler: null,
-          consequence,
-          readerSignificance: significance,
-        },
         draft: {
           headline,
-          telegramText,
-          claims,
+          telegramText: `${headline}\n\n${bodyText}\n\nSources:\n${url}`,
+          claims: [
+            { text: headline, sourceUrl: url },
+            { text: claim, sourceUrl: url },
+          ],
           sourceUrls: [url],
           caveat: "The work still awaits independent replication.",
         },
-        evidenceMap: claims.map((claim) => ({
-          claim: claim.text,
-          sourceUrl: url,
-          evidenceExcerpt: excerpt,
-        })),
-        factRequest: null,
+        // Worded differently from draft.claims on purpose.
+        //
+        // The first version of the map check required these to match the claim
+        // text byte-for-byte, and the stage rejected a real enrichment with
+        // `evidence_map_does_not_match_claims` within minutes of the provider
+        // timeout being fixed. A model does not repeat its own sentence
+        // identically in two fields, and asking it to was the same demand this
+        // module exists to remove.
+        evidenceMap: [
+          {
+            claim: `${headline} — as the article states it`,
+            sourceUrl: url,
+            // Deliberately not a quotation. This is the model's own account of
+            // what supports the claim, which is exactly what the removed check
+            // would have rejected.
+            evidenceExcerpt: "The source reports the same convergence in its own words.",
+          },
+          {
+            claim: `${claim}, in the reporting's own framing`,
+            sourceUrl: url,
+            evidenceExcerpt: "The source gives the narrowed range for the measurement.",
+          },
+        ],
       };
     }
     if (schema.includes("draft") || schema.includes("Draft")) {
@@ -355,6 +379,22 @@ export type NewsRigOptions = {
    * Omitted, a working fake stands in for `getContents`.
    */
   articleContent?: ArticleContentPort | null;
+  /**
+   * URLs the corroboration search returns, per search, in order.
+   *
+   * Default: one strong publisher per search, which is what a working Exa
+   * looks like. A scenario that wants unvetted publishers names them.
+   */
+  searchResults?: Array<string[] | "throws">;
+  /**
+   * Makes the first editorial attempt come back under the word floor.
+   *
+   * A floor on its own makes articles shorter, not longer: a refused
+   * enrichment falls back to the baseline, which is shorter than anything the
+   * floor would have rejected. The corrective retry is what makes a floor
+   * usable, so it needs a scenario that can only pass if the retry happens.
+   */
+  shortFirstEnrichment?: boolean;
   /** Answers the feed fetch. Default: 200 with valid RSS. */
   feedResponse?: (xml: string) => Response;
   /**
@@ -473,6 +513,50 @@ export async function withNewsRig(
     options.articleContent === undefined ? defaultContent : options.articleContent;
 
   const factSearches: string[] = [];
+  // The corroboration search port, driven directly rather than through the
+  // provider cascade -- which is how production now reaches Exa, because the
+  // cascade's own searchFact keeps one result per search and only from a
+  // fixed host list.
+  const searchPages =
+    options.searchResults ?? [
+      ["https://www.reuters.com/world/first"],
+      ["https://apnews.com/article/second"],
+      ["https://www.bbc.co.uk/news/third"],
+    ];
+  let searchPage = 0;
+  const factSearch = {
+    async find(request: { query: string }) {
+      factSearches.push(request.query);
+      const page = searchPages[searchPage++] ?? [];
+      // "throws" is how a scenario models Exa being down or over quota. It has
+      // to be injected HERE and not through the AI provider: corroboration
+      // reaches the typed search port directly now, and two scenarios that
+      // injected at the provider went green while testing nothing.
+      if (page === "throws") throw new Error("Exa search unavailable");
+      const urls = page;
+      // Drops a source the policy will not classify, exactly as the real
+      // adapter does (`if (!url || !tier) continue`).
+      //
+      // The first version substituted "other" for an unclassified host, which
+      // made this fake MORE permissive than production: a mutation that
+      // restored the legacy behaviour of discarding unvetted publishers passed
+      // the whole suite, because the fake had already smuggled them through.
+      return {
+        sources: urls.flatMap((url) => {
+          const tier = tierOf(url);
+          return tier
+            ? [{
+                url,
+                title: "Independent report",
+                excerpt: "A second newsroom reported the same result in its own words.",
+                tier,
+              }]
+            : [];
+        }),
+        usageEvents: [],
+      };
+    },
+  };
   const draftEvidence: string[][] = [];
   const draftEvidenceText: number[][] = [];
   const schemaCounters: Record<string, number> = {};
@@ -482,6 +566,7 @@ export async function withNewsRig(
     draftEvidence,
     draftEvidenceText,
     options.ai,
+    options.shortFirstEnrichment ?? false,
   );
 
   let feedRequests = 0;
@@ -584,6 +669,11 @@ export async function withNewsRig(
           factPlan: new FactPlanService(),
           corroboration: new EvidenceCorroborationService(
             DEFAULT_CORROBORATION_OPTIONS,
+          ),
+          factSearch: factSearch as never,
+          enrichment: new EditorialEnrichmentService(
+            LEGACY_EDITORIAL_ENRICHMENT_PORTS,
+            DEFAULT_ENRICHMENT_LIMITS,
           ),
         }) as never,
         publication: publicationGateway as never,

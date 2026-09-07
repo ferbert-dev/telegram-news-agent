@@ -27,6 +27,7 @@ on:
           - stop-integration
           - inspect-integration
           - release-integration-news
+          - run-integration-news
           - clear-integration-excluded-topics
 
 concurrency:
@@ -624,6 +625,27 @@ jobs:
             console.log(`DraftDetail id=${r.id} status=${r.status} body_chars=${r.body_chars} ${enrichment} created=${r.created_at?.toISOString?.() ?? r.created_at}`);
           }
 
+          // The article itself, and the sources it actually rests on.
+          //
+          // `body_chars` says how long it is and nothing about whether the
+          // retrieved details reached it. Answering "did the search help?"
+          // from the stage meant reading a number and guessing.
+          const article = await client.query(
+            `select id, body, reviewer_notes from public.drafts
+              order by created_at desc limit 1`);
+          for (const r of article.rows) {
+            let notes = {};
+            try { notes = JSON.parse(r.reviewer_notes ?? "{}"); } catch {}
+            const e = notes.editorial_enrichment ?? {};
+            const map = e.evidence_map ?? [];
+            const mapped = [...new Set(map.map((m) => m.sourceUrl).filter(Boolean))];
+            const claimed = [...new Set((notes.claims ?? []).map((c) => c.sourceUrl).filter(Boolean))];
+            console.log(`ArticleSources draft=${r.id} claim_urls=${JSON.stringify(claimed)} evidence_map_urls=${JSON.stringify(mapped)} map_entries=${map.length} reader_angle=${JSON.stringify(e.reader_angle ?? null)} similarity=${JSON.stringify(e.similarity ?? null)} attempts=${e.attempts ?? "n/a"}`);
+            for (const line of String(r.body ?? "").split("\n")) {
+              console.log(`ArticleBody | ${line}`);
+            }
+          }
+
           // Which retrieval path actually produced the article text.
           //
           // Added because a live run showed `searchFact provider=exa` in the
@@ -824,6 +846,99 @@ jobs:
           await client.end();
           NODE
           echo "The worker reclaims on its next poll (2s). /news is usable again."
+          REMOTE
+
+
+  # Enqueues a /news run on the integration stage without anyone typing /news.
+  #
+  # Every article on this stage until now needed a person in Telegram, which
+  # made the loop "change the prompt, ask the owner to run it, wait" -- and
+  # three of those rounds were spent on a path that turned out never to
+  # execute. A change nobody can trigger is a change nobody can verify.
+  #
+  # Integration only, by explicit container name, exactly like the operations
+  # beside it. It cannot reach production's bot even by mistake.
+  run-integration-news:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'run-integration-news'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Enqueue a news run on the integration stage
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          container_id="$(docker ps -q --filter 'name=^/telegram-news-agent-int-bot-1$')"
+          test -n "$container_id" || { echo "integration bot is not running" >&2; exit 1; }
+          docker exec -i "$container_id" node --input-type=module <<'NODE'
+          import pg from "pg";
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+
+          // Refuse while a run is in flight. Two research passes on one
+          // channel is what the enqueue's own suppression exists to prevent,
+          // and finding out by reading a suppressed job afterwards wastes the
+          // trip.
+          const live = await client.query(
+            `select id, status from public.telegram_news_jobs
+              where status in ('queued', 'processing', 'delivering') limit 1`);
+          if (live.rows.length) {
+            console.log(`RunNews refused: ${live.rows[0].id} is already ${live.rows[0].status}`);
+            await client.end();
+            process.exit(1);
+          }
+
+          // The channel, chat, actor and settings snapshot are copied from the
+          // last real /news rather than rebuilt here. The snapshot's shape is
+          // the pipeline's contract, and a hand-assembled one would be a
+          // second copy of it that can drift.
+          const { rows: last } = await client.query(
+            `select telegram_channel_id, control_chat_id, requested_by, settings_snapshot
+               from public.telegram_news_jobs order by created_at desc limit 1`);
+          if (!last.length) {
+            console.log("RunNews refused: no previous job to copy channel and settings from");
+            await client.end();
+            process.exit(1);
+          }
+          const seed = last[0];
+
+          const { rows: maxUpdate } = await client.query(
+            "select coalesce(max(update_id), 2100000000) as m from public.telegram_updates");
+          const updateId = Number(maxUpdate[0].m) + 1;
+
+          const { rows: claim } = await client.query(
+            "select * from public.claim_telegram_update($1, $2, $3)",
+            [updateId, "message", 120]);
+          const claimToken = claim[0]?.claim_token;
+          if (!claimToken) {
+            console.log(`RunNews refused: update ${updateId} was not claimable`);
+            await client.end();
+            process.exit(1);
+          }
+
+          const { rows: job } = await client.query(
+            "select * from public.enqueue_telegram_news_job($1, $2, $3, $4, $5, $6)",
+            [updateId, claimToken, seed.telegram_channel_id, seed.control_chat_id,
+             seed.requested_by, seed.settings_snapshot]);
+          console.log(`RunNews enqueued id=${job[0]?.id} outcome=${job[0]?.enqueue_outcome} status=${job[0]?.job_status} update=${updateId} channel=${seed.telegram_channel_id}`);
+          await client.end();
+          NODE
+          echo "The worker claims it on its next poll (2s). Inspect with operation=inspect-integration."
           REMOTE
 
 
