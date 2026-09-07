@@ -9,6 +9,13 @@ export type DailyCallStore = {
   set(key: string, value: { date: string; calls: number }): void;
 };
 
+/**
+ * Long enough for a feature article, short enough that one bad page cannot
+ * dominate a prompt. The pipeline's own extractor returns 12-13k on ordinary
+ * news pages, so this leaves headroom without inviting a book.
+ */
+const MAX_ARTICLE_CHARACTERS = 20_000;
+
 export class ExaDailyContentCapError extends Error {
   readonly code = "exa_daily_content_cap";
   constructor(cap: number) {
@@ -84,7 +91,26 @@ export function exaArticleContentPort(
     ): Promise<ArticleContent | null> {
       reserve();
       const response = await client.getContents([url], {
-        text: true,
+        // `verbosity: "full"` is the option that decides how much of the page
+        // comes back. `maxCharacters` is only a ceiling.
+        //
+        // Two live runs returned exactly 1000 characters from two different
+        // Guardian articles. A round number repeated is a default, not an
+        // article. Raising `maxCharacters` to 20,000 changed nothing, because
+        // nothing was hitting the ceiling: exa-js documents
+        // `verbosity` as defaulting to "compact", with "full" described as
+        // "Complete content including all sections". Read from the installed
+        // SDK's own type declarations, after the first assumption was wrong.
+        //
+        // `maxAgeHours: 0` is not optional here -- the SDK states verbosity
+        // "Requires maxAgeHours: 0" -- and it means a fresh crawl rather than
+        // Exa's cache. That is slower and is the more expensive call, which is
+        // the trade being made: at most one article per run, under the same
+        // daily cap, in exchange for the whole article instead of a summary of
+        // it. For news published hours ago, fresh is also the more correct
+        // read.
+        text: { maxCharacters: MAX_ARTICLE_CHARACTERS, verbosity: "full" },
+        maxAgeHours: 0,
         ...(context.signal ? { signal: context.signal } : {}),
       });
       const result = response?.results?.[0];

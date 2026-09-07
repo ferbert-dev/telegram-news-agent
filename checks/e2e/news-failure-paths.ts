@@ -111,6 +111,130 @@ test(
 );
 
 test(
+  "a thin retrieval loses to the free extractor that found the whole article",
+  { skip },
+  async () => {
+    // The regression this exists to prevent, and it shipped: retrieval was made
+    // the primary path so the model would write from the whole article, and a
+    // live run then had it return 1000 characters of a Guardian piece while the
+    // extractor had returned 12,579 from a comparable page the run before.
+    // "Primary" had quietly traded twelve times the article for a paid summary
+    // of it, and nothing noticed, because both paths simply produce "text".
+    await withNewsRig(
+      {
+        host: "thin-retrieval.example.test",
+        articleContent: {
+          async fetch(url: string) {
+            return { url, text: "A compact summary of the piece. ".repeat(20) };
+          },
+        },
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        assert.equal(
+          job?.outcome_status,
+          "review_ready",
+          `the article must still be written\n  ${rig.diagnosis()}`,
+        );
+        assert.ok(
+          rig.extractorRequests() > 0,
+          `a thin retrieval must not stop the extractor being tried\n  ${rig.diagnosis()}`,
+        );
+
+        const { rows } = await rig.pool.query(
+          `select metadata->>'retrieved_by' as retrieved_by, length(content) as chars
+             from public.raw_contents
+            where metadata->>'source_url' like $1
+            order by created_at desc limit 1`,
+          [`https://${rig.host}/%`],
+        );
+        assert.equal(
+          rows[0]?.retrieved_by,
+          "html-extractor",
+          `the longer text must win; got ${JSON.stringify(rows[0])}`,
+        );
+        assert.ok(
+          Number(rows[0]?.chars) > 1500,
+          `and it must be the whole article, not the summary; got ${JSON.stringify(rows[0])}`,
+        );
+      },
+    );
+  },
+);
+
+test(
+  "editorial enrichment produces the longer article when the model plays by its rules",
+  { skip },
+  async () => {
+    // Enrichment is `enabled` on the integration stage and has fallen back to
+    // the baseline on every run there, reporting `enrichment_failed` with no
+    // message. Nothing in this repository exercised the path, so there was no
+    // way to tell a broken pipeline from a model that had missed one of four
+    // exact-match gates.
+    //
+    // This settles that half: given an enrichment that satisfies the gates, the
+    // pipeline must accept it and select it. A failure here is ours. A failure
+    // on the stage with this passing is the model's output, and the next step
+    // is the prompt, not the plumbing.
+    await withNewsRig(
+      {
+        host: "enrichment.example.test",
+        featureFlags: { editorial_enrichment: "enabled" },
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        assert.equal(
+          job?.error_code,
+          null,
+          `enrichment must not fail the run\n  ${rig.diagnosis()}`,
+        );
+        assert.equal(
+          job?.outcome_status,
+          "review_ready",
+          `the article must be written\n  ${rig.diagnosis()}`,
+        );
+
+        const { rows } = await rig.pool.query(
+          "select reviewer_notes, length(body) as chars from public.drafts where id = $1",
+          [job?.draft_id],
+        );
+        const notes = JSON.parse(String(rows[0]?.reviewer_notes ?? "{}")) as {
+          editorial_enrichment?: {
+            status?: string;
+            selected_version?: string;
+            diagnostic?: string | null;
+            evidence_map?: unknown[];
+          };
+        };
+        const enrichment = notes.editorial_enrichment ?? {};
+        assert.equal(
+          enrichment.status,
+          "completed",
+          `enrichment must complete, not fall back; diagnostic=${enrichment.diagnostic ?? "none"}`,
+        );
+        assert.equal(
+          enrichment.selected_version,
+          "enriched",
+          "and the enriched version must be the one that ships",
+        );
+        assert.ok(
+          (enrichment.evidence_map ?? []).length > 0,
+          "with a source for every claim it makes",
+        );
+      },
+    );
+  },
+);
+
+test(
   "one failed search does not throw away the source another already paid for",
   { skip },
   async () => {
@@ -482,6 +606,28 @@ test(
           rig.deliveries.length,
           0,
           "and no review card may be delivered",
+        );
+
+        // And the operator must be able to find out why.
+        //
+        // This is a genuine throw, unlike the dead feed above, which reaches a
+        // clean `no_candidates`. `news_job_failed` is what the classifier
+        // returns for anything it does not recognise, and on the stage it was
+        // the ENTIRE record of a failed run: no message, no name, nothing in
+        // the log. Diagnosing it meant reading the usage ledger for which AI
+        // calls were missing and reasoning backwards -- and that still did not
+        // identify the throw. The reason has to reach the log.
+        const failures = rig.workerLog.filter((line) =>
+          line.includes("telegram_news_job_execution_failed"),
+        );
+        assert.ok(
+          failures.length > 0,
+          `a failed run must log why\n  worker log: ${JSON.stringify(rig.workerLog)}`,
+        );
+        const reported = JSON.parse(failures[0] ?? "{}") as { error?: string };
+        assert.ok(
+          (reported.error ?? "").length > 0,
+          `and the line must carry the real message, not just a code: ${failures[0]}`,
         );
       },
     );

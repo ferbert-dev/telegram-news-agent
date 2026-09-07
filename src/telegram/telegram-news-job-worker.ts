@@ -260,6 +260,30 @@ export class TelegramNewsJobWorker implements RuntimeWorker {
       if (outcomePersisted) return "advanced";
       if (signal?.aborted) return "stopped";
       const failure = this.options.classifyExecutionError(error);
+      // The error itself, before it is reduced to a code.
+      //
+      // `news_job_failed` is a classification, not a diagnosis: it is what the
+      // classifier returns for everything it does not recognise. A run failed
+      // on the stage and the entire record of it was that word in a database
+      // column -- no message, no name, nothing in the log. Working out what
+      // had happened meant reading the ledger for which AI calls were missing
+      // and reasoning backwards, and it still did not identify the throw.
+      //
+      // One line here is the difference between that and knowing.
+      this.options.log?.error?.(
+        JSON.stringify({
+          event: "telegram_news_job_execution_failed",
+          job_id: job.id,
+          error_code: failure.errorCode,
+          terminal: failure.terminal,
+          error_name: (error as Error)?.name ?? null,
+          error: error instanceof Error ? error.message : String(error),
+          cause:
+            (error as { cause?: unknown })?.cause instanceof Error
+              ? ((error as { cause: Error }).cause).message
+              : null,
+        }),
+      );
       await heartbeat.renew();
       const saved = await this.options.jobs.retryTelegramNewsJob({
         jobId: job.id,
@@ -295,6 +319,14 @@ export class TelegramNewsJobWorker implements RuntimeWorker {
     } catch (error) {
       if (delivered) return "advanced";
       if (signal?.aborted) return "stopped";
+      this.options.log?.error?.(
+        JSON.stringify({
+          event: "telegram_news_job_delivery_failed",
+          job_id: job.id,
+          error_name: (error as Error)?.name ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
       await heartbeat.renew();
       const saved = await this.options.jobs.retryTelegramNewsJobDelivery({
         jobId: job.id,

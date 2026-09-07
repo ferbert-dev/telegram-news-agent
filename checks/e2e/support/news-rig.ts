@@ -11,6 +11,10 @@ import {
   SOURCE_ACQUISITION_DNS,
   SOURCE_ACQUISITION_TRANSPORT,
 } from "../../../src/research/source-acquisition.tokens.js";
+import {
+  CURATION_DNS_LOOKUP,
+  CURATION_HTTP,
+} from "../../../src/research/curation/evidence-curation.tokens.js";
 import { TypedResearchExecutionGatewayModule } from "../../../src/research/typed-research-execution.module.js";
 import { RESEARCH_EXECUTION_GATEWAY } from "../../../src/research/research-gateway.tokens.js";
 import { EditorialApplicationModule } from "../../../src/editorial/editorial-application.module.js";
@@ -163,6 +167,77 @@ function fakeAiProvider(
         ],
       };
     }
+    if (schema.includes("editorial_enrichment")) {
+      // A correct enrichment, written out in full.
+      //
+      // This fixture is the point of the scenario. `validateEditorialStructure`
+      // imposes four separate gates that a generative model has to satisfy
+      // exactly, and until now nothing anywhere stated what satisfying them
+      // looks like -- enrichment simply failed on the stage with no message.
+      //
+      //   1. `hook` must equal the draft's first prose sentence, exactly.
+      //   2. That hook must be less than 0.5 similar to the baseline's
+      //      headline AND to the baseline's own first sentence.
+      //   3. `hookEvidence.evidenceExcerpt` must appear VERBATIM in the text of
+      //      the evidence item it names, and that URL must be in the draft's
+      //      sourceUrls.
+      //   4. Every `causalArc` span must appear VERBATIM in the draft text.
+      //
+      // Then the result is validated again at 90-140 words and at most six
+      // sentences -- a narrower window than the baseline's own 60-100.
+      //
+      // Built from the request, never from constants: the excerpts have to be
+      // slices of the evidence this run actually supplied, which is exactly
+      // the constraint a fixed fixture cannot honour.
+      const input = request.input as {
+        evidence?: Array<{ url?: string; text?: string }>;
+      };
+      const source = input.evidence?.[0];
+      const url = String(source?.url ?? "");
+      const excerpt = String(source?.text ?? "").slice(0, 40).trim();
+      const headline = "Independent accounts converge on one measurement";
+      const hook =
+        "Two newsrooms and a peer-reviewed paper now point the same way.";
+      const change = "the uncertainty band narrowed";
+      const consequence = "fewer competing explanations survive";
+      const significance = "anyone relying on the older figure will see it revised";
+      const prose = [
+        hook,
+        `The reported change is that ${change}, which the supplied evidence sets out in plain terms for a general reader.`,
+        `Because of that, ${consequence}, and the disagreement that remains is far narrower than it was a year ago.`,
+        `For readers following this story, ${significance}, though the work still awaits independent replication elsewhere.`,
+        "That is the whole of what the supplied sources will currently support.",
+      ].join(" ");
+      const telegramText = `${headline}\n\n${prose}\n\nSources:\n${url}`;
+      const claims = [
+        { text: headline, sourceUrl: url },
+        { text: change, sourceUrl: url },
+      ];
+      return {
+        readerAngle: "What the narrowed figure changes for a general reader.",
+        hook,
+        hookEvidence: { sourceUrl: url, evidenceExcerpt: excerpt },
+        causalArc: {
+          change,
+          causeOrEnabler: null,
+          consequence,
+          readerSignificance: significance,
+        },
+        draft: {
+          headline,
+          telegramText,
+          claims,
+          sourceUrls: [url],
+          caveat: "The work still awaits independent replication.",
+        },
+        evidenceMap: claims.map((claim) => ({
+          claim: claim.text,
+          sourceUrl: url,
+          evidenceExcerpt: excerpt,
+        })),
+        factRequest: null,
+      };
+    }
     if (schema.includes("draft") || schema.includes("Draft")) {
       // Built FROM the request, not from a constant.
       //
@@ -282,6 +357,27 @@ export type NewsRigOptions = {
   articleContent?: ArticleContentPort | null;
   /** Answers the feed fetch. Default: 200 with valid RSS. */
   feedResponse?: (xml: string) => Response;
+  /**
+   * The article body the HTML extractor finds, or null to make it fail the way
+   * an unreachable page does.
+   *
+   * The rig used to leave this path on the real network: `fetchArticle` went
+   * through the un-overridden curation transport, every fallback made a real
+   * outbound request, and the scenario that depended on it silently tested a
+   * DNS failure rather than an extractor. "Costs nothing and needs nothing"
+   * was not true of the fallback path until this existed.
+   */
+  extractedHtml?: string | null;
+  /**
+   * Feature flags to switch on for this channel before the run.
+   *
+   * Editorial enrichment is `enabled` on the integration stage and has failed
+   * on every run there, and until this existed the rig could not reach it at
+   * all: the flag defaults to off, so the whole enrichment path -- the one
+   * that produces the longer, source-mapped article -- was unexercised while
+   * being the thing that kept breaking.
+   */
+  featureFlags?: Record<string, "off" | "collect" | "enabled">;
   /** The Telegram send, the one thing between this rig and a real post. */
   publish?: (
     request: Record<string, unknown>,
@@ -316,8 +412,12 @@ export type NewsRig = {
   sentToTelegram: Array<{ method: string; payload: Record<string, unknown> }>;
   /** Real errors, before the worker classifies them into an error_code. */
   workflowErrors: string[];
+  /** What the worker actually wrote to its error log. */
+  workerLog: string[];
   researchErrors: string[];
   feedRequests: () => number;
+  /** How often the HTML extractor was asked for a page. */
+  extractorRequests: () => number;
   enqueue: (updateId?: number) => Promise<{ status: string }>;
   runWorkerOnce: () => Promise<string>;
   jobRow: (updateId?: number) => Promise<Record<string, unknown> | undefined>;
@@ -361,9 +461,12 @@ export async function withNewsRig(
   const defaultContent: ArticleContentPort = {
     async fetch(url: string) {
       contentFetches.push(url);
-      // Long enough to clear the port's own minimum, so the "full text" branch
-      // is genuinely taken rather than silently skipped.
-      return { url, text: "Extracted body. ".repeat(60) };
+      // Long enough to clear the port's own minimum AND the gateway's
+      // thin-article threshold, because the shape being modelled is
+      // `verbosity: "full"` -- a whole article, not the 1000-character compact
+      // summary that made retrieval lose to the free extractor on the stage.
+      // A scenario that wants the thin case asks for it explicitly.
+      return { url, text: "Retrieved article body. ".repeat(200) };
     },
   };
   const articleContent =
@@ -395,6 +498,24 @@ export async function withNewsRig(
       );
     },
   };
+  // The HTML extractor's own transport, faked exactly like the feed's. The
+  // extractor parses real HTML, so this serves real HTML.
+  const extractorBody =
+    options.extractedHtml === undefined
+      ? `<html><body><article>${"The extracted article body continues. ".repeat(80)}</article></body></html>`
+      : options.extractedHtml;
+  let extractorRequests = 0;
+  const curationHttp = {
+    async fetchPinned(_url: URL) {
+      extractorRequests += 1;
+      if (extractorBody === null) throw new Error("page unreachable");
+      return new Response(extractorBody, {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    },
+  };
+
   const dns = {
     async lookup() {
       // A routable public address, and deliberately not a documentation range.
@@ -481,6 +602,10 @@ export async function withNewsRig(
     .useValue(transport)
     .overrideProvider(SOURCE_ACQUISITION_DNS)
     .useValue(dns)
+    .overrideProvider(CURATION_HTTP)
+    .useValue(curationHttp)
+    .overrideProvider(CURATION_DNS_LOOKUP)
+    .useValue(async () => [{ address: "93.184.216.34", family: 4 as const }])
     .compile();
   await moduleRef.init();
   legacyPersistence.bind(
@@ -509,6 +634,15 @@ export async function withNewsRig(
       987_654,
       4242,
     ]);
+    for (const [featureKey, state] of Object.entries(options.featureFlags ?? {})) {
+      await pool.query(
+        `insert into public.news_feature_flags (telegram_channel_id, feature_key, state, updated_by)
+         values ($1, $2, $3, 4242)
+         on conflict (telegram_channel_id, feature_key)
+         do update set state = excluded.state, version = public.news_feature_flags.version + 1`,
+        [channelId, featureKey, state],
+      );
+    }
     await pool.query(
       `insert into public.sources (name, homepage_url, feed_url, source_type, reliability_score, enabled, discovered_by)
        values ($1, $2, $3, 'rss', 90, true, 'seed')
@@ -545,6 +679,7 @@ export async function withNewsRig(
 
     // The worker classifies any error into an error_code and moves on, which is
     // right for production and useless here. Capture the real one.
+    const workerLog: string[] = [];
     const workflowErrors: string[] = [];
     const originalRun = workflow.run.bind(workflow);
     (workflow as unknown as { run: unknown }).run = async (...args: unknown[]) => {
@@ -575,7 +710,14 @@ export async function withNewsRig(
       }) as never,
       newClaimToken: () => randomUUID(),
       maxExecutionAttempts: 1,
-      log: { info() {}, error() {} },
+      // Captured, not discarded. A failed job that logs nothing is the state
+      // that made a stage failure take a whole session to diagnose.
+      log: {
+        info() {},
+        error(message: string) {
+          workerLog.push(message);
+        },
+      },
     });
 
     const rig: NewsRig = {
@@ -592,8 +734,10 @@ export async function withNewsRig(
       deliveries,
       sentToTelegram,
       workflowErrors,
+      workerLog,
       researchErrors,
       feedRequests: () => feedRequests,
+      extractorRequests: () => extractorRequests,
       async enqueue(updateId = firstUpdateId) {
         claimedUpdateIds.add(updateId);
         const claim = await updates.claimTelegramUpdate({
@@ -645,6 +789,7 @@ export async function withNewsRig(
           `draft evidence text lengths: ${JSON.stringify(draftEvidenceText)}`,
           `content fetches: ${contentFetches.length}`,
           `feed requests: ${feedRequests}`,
+          `extractor requests: ${extractorRequests}`,
         ].join("\n  ");
       },
     };

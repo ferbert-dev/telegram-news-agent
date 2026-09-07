@@ -37,6 +37,15 @@ const FEED_CONCURRENCY = 8;
 const MAX_ENTRIES_PER_FEED = 40;
 const MAX_PERSISTED_CANDIDATES = 80;
 const STORY_HISTORY_DAYS = 14;
+/**
+ * Below this, a retrieval result is treated as a summary rather than an
+ * article, and the free HTML extractor is given a chance to do better.
+ *
+ * Not a guess: Exa's compact verbosity returned exactly 1000 characters on two
+ * separate live runs, while the extractor returned 12,579 from a comparable
+ * page. The threshold sits above the first and far below the second.
+ */
+const THIN_ARTICLE_CHARACTERS = 1_500;
 const MAX_STORY_HISTORY = 100;
 // The paid-call ceiling, imported rather than restated. It was a separate
 // literal here, which is why raising either copy alone silently did nothing.
@@ -849,18 +858,37 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
           }
         }
 
-        if (!extracted) {
+        // The extractor also runs when retrieval came back thin, and the
+        // longer text wins.
+        //
+        // Retrieval was made the primary path so the model would write from
+        // the whole article. A live run then had it return 1000 characters of
+        // a Guardian piece while this extractor had returned 12,579 from a
+        // comparable page the run before -- so "primary" had quietly traded
+        // twelve times the article for a paid summary of it, and nothing in
+        // the pipeline noticed, because both paths simply produced "text".
+        //
+        // Preferring the longer result states the actual goal. The extractor
+        // is free and local, so running it when retrieval looks short costs
+        // nothing worth protecting, and retrieval still wins on the pages it
+        // exists for -- paywalls and JavaScript shells, where the extractor
+        // returns little or throws.
+        if (!extracted || extracted.text.length < THIN_ARTICLE_CHARACTERS) {
           try {
             const fetched = await this.curation.withRetry(
               () => this.curation.fetchArticle(candidate.canonicalUrl),
               { attempts: 3, baseDelayMs: 300 },
             );
-            extracted = { ...fetched, retrievedBy: "html-extractor" };
+            if (!extracted || fetched.text.length > extracted.text.length) {
+              extracted = { ...fetched, retrievedBy: "html-extractor" };
+            }
           } catch (error) {
             // The extractor's message is the more useful of the two when both
             // paths fail: it names what the page did, not what a quota said.
-            extractionFailure =
-              error instanceof Error ? error.message : String(error);
+            if (!extracted) {
+              extractionFailure =
+                error instanceof Error ? error.message : String(error);
+            }
           }
         }
 
