@@ -24,10 +24,18 @@ Headline line, then four paragraphs: hook + what happened, detail, why it
 matters, what is unknown. The signature and the source block are appended
 afterwards by the pipeline, not by the model.
 
-Aim: about 185 words. The floor (130) and ceiling (240) are guards, and the
-floor is deliberately well below the aim — a refused enrichment falls back to
-the baseline, which is shorter than anything the floor would have rejected, so
-a strict minimum makes articles shorter rather than longer.
+**185 to 220 words**, aiming for about 200. Never fewer than 185.
+
+A floor on its own would make articles shorter, not longer: a refused
+enrichment falls back to the baseline, which runs to about a hundred words —
+shorter than anything the floor would have rejected. So the floor is paired
+with a corrective retry. A short draft is told its own word count and asked
+again, with the detail and why-it-matters paragraphs named as the ones to
+expand and the caveat named as the one not to pad.
+
+The floor is checked on the **rebuilt** body, not on what the model returned:
+stripping the URLs it wrote into the prose removes words, and the rebuilt body
+is what ships.
 
 ## Why exactly one link
 

@@ -95,7 +95,7 @@ STRUCTURE. The article is a headline line, then exactly four paragraphs separate
 3. Why it matters, for an ordinary reader rather than for politicians. One or two sentences.
 4. What is still unknown. One sentence, and it is not optional. Say plainly what the sources do not settle.
 
-LENGTH. Aim for ${Math.round((limits.minWords + limits.maxWords) / 2)} words. Below ${limits.minWords} the article is refused, above ${limits.maxWords} it is refused, and at most ${limits.maxSentences} sentences excluding source lines. Write to the aim, not to the floor.
+LENGTH. Between ${limits.minWords} and ${limits.maxWords} words, aiming for about ${Math.round((limits.minWords + limits.maxWords) / 2)}. Never fewer than ${limits.minWords}. Both bounds are enforced, along with a ceiling of ${limits.maxSentences} sentences. A short article is the common failure: if you are running short, the paragraphs to expand are the detail and why it matters, never the caveat.
 
 HEADLINE. Concise and factual, no exaggeration or clickbait, no publication name. Return it in draft.headline, begin draft.telegramText with that exact headline on its own first line, and include it as one draft.claims item.
 
@@ -149,11 +149,14 @@ export class EditorialEnrichmentService {
     let lastDiagnostic = "no attempt was made";
     let attempts = 0;
 
-    // Two attempts at most, and the second only for similarity: an article
-    // that merely paraphrases the baseline is the one failure worth paying to
-    // retry, because the model has everything it needs and simply played it
-    // safe. Every other failure repeats.
+    // Two attempts at most, and the second only for the two failures a model
+    // can actually correct from feedback: too close to the baseline, or too
+    // short. Both mean it had everything it needed and played it safe. Every
+    // other failure -- a bad schema, an ungrounded citation -- repeats, and
+    // paying for it twice buys nothing.
+    let retryFeedback = "";
     for (let attempt = 1; attempt <= 2; attempt += 1) {
+      if (attempt === 2 && !retryFeedback) break;
       attempts = attempt;
       let generated;
       try {
@@ -161,7 +164,7 @@ export class EditorialEnrichmentService {
           systemInstruction:
             attempt === 1
               ? prompt(this.limits, languageName(languageCode))
-              : `${prompt(this.limits, languageName(languageCode))}\nThe previous attempt was too close to the baseline. Choose a sharper angle, change the hook and the order of the narrative materially, and do not merely reword it.`,
+              : `${prompt(this.limits, languageName(languageCode))}\n${retryFeedback}`,
           input: {
             task: "Rewrite the grounded Telegram draft as a finished article.",
             languageCode,
@@ -186,12 +189,14 @@ export class EditorialEnrichmentService {
         });
       } catch (error) {
         lastDiagnostic = `provider_failed: ${message(error)}`;
+        retryFeedback = "";
         continue;
       }
 
       const parsed = EnrichmentResponse.safeParse(generated?.value);
       if (!parsed.success) {
         lastDiagnostic = `schema_rejected: ${parsed.error.issues[0]?.message ?? "unknown"}`;
+        retryFeedback = "";
         continue;
       }
 
@@ -208,13 +213,21 @@ export class EditorialEnrichmentService {
           evidence,
           {
             languageCode,
-            minWords: this.limits.minWords,
+            // The floor is deliberately NOT enforced here.
+            //
+            // A short draft would throw inside this validator, arrive as
+            // "not grounded", and be classified as unfixable -- so it would
+            // cost the article its editorial pass instead of a second ask.
+            // The floor is checked below, on the rebuilt body, where it can
+            // be answered with the model's own word count.
+            minWords: 0,
             maxWords: this.limits.maxWords,
             maxSentences: this.limits.maxSentences,
           },
         );
       } catch (error) {
         lastDiagnostic = `not_grounded: ${message(error)}`;
+        retryFeedback = "";
         continue;
       }
 
@@ -225,12 +238,15 @@ export class EditorialEnrichmentService {
       );
       if (mapFailure) {
         lastDiagnostic = mapFailure;
+        retryFeedback = "";
         continue;
       }
 
       const similarity = this.ports.measureSimilarity(baselineDraft, grounded);
       if (similarity.tooSimilar) {
         lastDiagnostic = `too_similar: ${similarity.score} >= ${similarity.threshold}`;
+        retryFeedback =
+          "The previous attempt was too close to the baseline. Choose a sharper angle, change the hook and the order of the narrative materially, and do not merely reword it.";
         continue;
       }
 
@@ -249,6 +265,17 @@ export class EditorialEnrichmentService {
         request.primarySourceUrl,
         languageCode,
       );
+
+      // The floor is checked on the rebuilt body, not on the model's output.
+      // Stripping the URLs the model wrote into the prose removes words, so a
+      // draft that cleared the minimum before the rebuild can fall under it
+      // after -- and the reader gets the rebuilt one.
+      const publishedWords = proseWordCount(published.telegramText, languageCode);
+      if (publishedWords < this.limits.minWords) {
+        lastDiagnostic = `too_short: ${publishedWords} words, minimum ${this.limits.minWords}`;
+        retryFeedback = `The previous attempt was ${publishedWords} words, below the ${this.limits.minWords}-word minimum. Expand the detail paragraph and the why-it-matters paragraph with material already in the evidence. Do not pad the caveat and do not repeat sentences.`;
+        continue;
+      }
 
       return {
         status: "completed",
@@ -362,4 +389,13 @@ function withSingleSource(
     telegramText: `${prose}\n\n${heading}:\n${primarySourceUrl}`,
     sourceUrls: [primarySourceUrl],
   };
+}
+
+/** Words before the source block, which is how the validator counts them. */
+function proseWordCount(telegramText: string, languageCode: string): number {
+  const heading = SOURCE_HEADINGS[languageCode] ?? SOURCE_HEADINGS.en;
+  const prose = telegramText
+    .split(new RegExp(`\\n\\s*(?:${heading}|Sources?|Quellen?|Джерела):?\\s*\\n`, "iu"), 1)[0]
+    .trim();
+  return prose ? prose.split(/\s+/u).length : 0;
 }

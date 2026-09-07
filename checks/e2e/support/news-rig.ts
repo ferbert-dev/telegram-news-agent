@@ -114,7 +114,9 @@ function fakeAiProvider(
   draftEvidence: string[][],
   draftEvidenceText: number[][],
   override?: AiAnswer,
+  shortFirstEnrichment = false,
 ) {
+  let enrichmentCalls = 0;
   const fallback = (request: Record<string, unknown>, schema: string): unknown => {
     // Substring, not equality: the policy runs twice under two schema names --
     // "excluded_topic_classification" during research and
@@ -200,26 +202,34 @@ function fakeAiProvider(
       // primary buried mid-sentence as "Джерело: https://..." and a formal
       // block listing the two corroborating outlets. The pipeline has to strip
       // that and publish one link, so the fixture has to produce it.
+      enrichmentCalls += 1;
       const strayLink = "https://www.dw.com/en/some-other-report";
       const paragraphs = [
         // 1. hook, then what happened
-        "A second newsroom has now described the same result, and the two accounts agree on the part that matters most to readers. "
+        "A second newsroom has now described the same result, and the two accounts agree on the part that matters most to an ordinary reader. "
           + `Taken together they show that ${claim}, which is the whole of what the supplied reporting will currently support. `
           + "That leaves fewer competing explanations standing than there were a year ago.",
         // 2. the detail, with the stray link the pipeline must remove
-        "The narrowed range is the concrete change: where the earlier figure left room for three competing accounts, it now leaves room for one. "
+        "The narrowed range is the concrete change here: where the earlier figure left room for three competing accounts of how the measurement came about, it now leaves room for one. "
+          + "The revision is small in absolute terms and large in what it rules out, which is why the groups involved described it as the most useful result of the year. "
           + `Джерело: ${strayLink}`,
         // 3. why it matters
-        "Anyone who has been relying on the older figure should expect to see it revised over the coming months, in textbooks as well as in press coverage. "
-          + "The practical effect is small today and larger later, once the revised number reaches the material everyone else quotes.",
+        "Anyone who has been relying on the older figure should expect to see it revised over the coming months, in textbooks as well as in ordinary press coverage. "
+          + "The practical effect is small today and larger later, once the revised number reaches the reference material that everyone else quotes without checking.",
         // 4. what is unknown
-        "The underlying analysis has not yet been reproduced by a group with no involvement in either effort, and until it is, none of this is settled.",
+        "The underlying analysis has not yet been reproduced by a group with no involvement in either effort, and neither account says when that work might be finished, so none of this is settled.",
       ].join("\n\n");
+      // Deliberately under the floor on the first call, so the scenario fails
+      // unless the pass asks again with its own word count as feedback.
+      const bodyText =
+        shortFirstEnrichment && enrichmentCalls === 1
+          ? paragraphs.split("\n\n")[0] ?? ""
+          : paragraphs;
       return {
         readerAngle: "What the narrowed figure changes for a general reader.",
         draft: {
           headline,
-          telegramText: `${headline}\n\n${paragraphs}\n\nSources:\n${url}`,
+          telegramText: `${headline}\n\n${bodyText}\n\nSources:\n${url}`,
           claims: [
             { text: headline, sourceUrl: url },
             { text: claim, sourceUrl: url },
@@ -368,6 +378,15 @@ export type NewsRigOptions = {
    * looks like. A scenario that wants unvetted publishers names them.
    */
   searchResults?: Array<string[] | "throws">;
+  /**
+   * Makes the first editorial attempt come back under the word floor.
+   *
+   * A floor on its own makes articles shorter, not longer: a refused
+   * enrichment falls back to the baseline, which is shorter than anything the
+   * floor would have rejected. The corrective retry is what makes a floor
+   * usable, so it needs a scenario that can only pass if the retry happens.
+   */
+  shortFirstEnrichment?: boolean;
   /** Answers the feed fetch. Default: 200 with valid RSS. */
   feedResponse?: (xml: string) => Response;
   /**
@@ -539,6 +558,7 @@ export async function withNewsRig(
     draftEvidence,
     draftEvidenceText,
     options.ai,
+    options.shortFirstEnrichment ?? false,
   );
 
   let feedRequests = 0;

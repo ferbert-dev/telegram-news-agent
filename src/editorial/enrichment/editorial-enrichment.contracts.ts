@@ -32,13 +32,15 @@ export type EnrichmentLimits = {
 };
 
 export const DEFAULT_ENRICHMENT_LIMITS: EnrichmentLimits = {
-  // The floor is a guard against a stub, not the way to get length -- a high
-  // one is self-defeating, because a refused enrichment falls back to the
-  // baseline, which is SHORTER than anything it would have rejected. Length
-  // comes from the prompt's aim, which sits midway between these two.
-  minWords: 130,
-  maxWords: 240,
-  maxSentences: 12,
+  // 185 is a floor the published article must clear, by the owner's decision.
+  //
+  // A floor alone would make articles SHORTER, not longer: a refused
+  // enrichment falls back to the baseline, which runs to about a hundred
+  // words. So the floor is paired with a corrective retry -- a short draft is
+  // told its own word count and asked again, rather than being discarded.
+  minWords: 185,
+  maxWords: 220,
+  maxSentences: 14,
   maxPublishedSources: 1,
 };
 

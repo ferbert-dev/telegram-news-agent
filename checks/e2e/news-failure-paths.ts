@@ -229,9 +229,14 @@ test(
           .split(/\n\s*(?:Sources?|Quellen?|Джерела):\s*\n/iu, 1)[0]
           .trim()
           .split(/\s+/).length;
+        // The published floor, on the published body.
+        //
+        // Not the model's output: stripping the URLs it wrote into the prose
+        // removes words, so a draft can clear the minimum before the rebuild
+        // and fall under it after -- and the rebuilt one is what ships.
         assert.ok(
-          publishedWords > 140,
-          `the article must exceed legacy's 140-word ceiling; got ${publishedWords} words`,
+          publishedWords >= 185 && publishedWords <= 220,
+          `the article must be 185-220 words; got ${publishedWords}`,
         );
 
         // One link, and it is the primary source.
@@ -268,6 +273,62 @@ test(
         assert.ok(
           (enrichment.evidence_map ?? []).length > 0,
           "with a source for every claim it makes",
+        );
+      },
+    );
+  },
+);
+
+test(
+  "a short first attempt is asked again, not thrown away",
+  { skip },
+  async () => {
+    // The mechanism that makes a 185-word floor usable at all.
+    //
+    // A floor on its own makes articles SHORTER: a refused enrichment falls
+    // back to the baseline, which runs to about a hundred words -- shorter
+    // than anything the floor would have rejected. So a short draft is told
+    // its own word count and asked again.
+    await withNewsRig(
+      {
+        host: "short-first.example.test",
+        featureFlags: { editorial_enrichment: "enabled" },
+        shortFirstEnrichment: true,
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        const { rows } = await rig.pool.query(
+          "select reviewer_notes, body from public.drafts where id = $1",
+          [job?.draft_id],
+        );
+        const notes = JSON.parse(String(rows[0]?.reviewer_notes ?? "{}")) as {
+          editorial_enrichment?: {
+            status?: string;
+            attempts?: number;
+            diagnostic?: string | null;
+          };
+        };
+        assert.equal(
+          notes.editorial_enrichment?.status,
+          "completed",
+          `a short first attempt must not cost the article its editorial pass; diagnostic=${notes.editorial_enrichment?.diagnostic ?? "none"}`,
+        );
+        assert.equal(
+          notes.editorial_enrichment?.attempts,
+          2,
+          "and it must have taken the retry to get there",
+        );
+        const words = String(rows[0]?.body ?? "")
+          .split(/\n\s*(?:Sources?|Джерела|Quellen):/iu, 1)[0]
+          .trim()
+          .split(/\s+/u).length;
+        assert.ok(
+          words >= 185,
+          `the published article must clear the floor; got ${words} words`,
         );
       },
     );
