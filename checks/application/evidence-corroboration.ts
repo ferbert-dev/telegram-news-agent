@@ -370,3 +370,77 @@ test("searching stops once two strong publishers agree, not once two are found",
   );
   assert.equal(seen.length, 3, "it kept searching while only weak sources had answered");
 });
+
+test("a source older than the window is discarded, however relevant it is", async () => {
+  // A published article about a typhoon carried a forecast lifted from a press
+  // conference four days earlier -- "residual circulation after 4 September
+  // may bring heavy rain" -- printed on the 7th as though it were ahead of the
+  // reader. The search had found a genuinely relevant document and nothing
+  // anywhere asked when it was written.
+  const now = new Date("2026-09-07T12:00:00Z");
+  const dated = (url: string, publishedAt: string | null) => ({
+    async find() {
+      return {
+        sources: [{
+          url,
+          title: "t",
+          excerpt: "e",
+          tier: tierOf(url) ?? ("other" as const),
+          publishedAt,
+        }],
+      };
+    },
+  });
+
+  const stale = await service().corroborate({
+    evidence: rumour,
+    requests,
+    languageCode: "en",
+    search: dated("https://www.reuters.com/world/a", "2026-09-03T09:00:00Z"),
+    now: () => now,
+  });
+  assert.equal(stale.evidence.length, rumour.length, "four days old is dropped");
+
+  const fresh = await service().corroborate({
+    evidence: rumour,
+    requests,
+    languageCode: "en",
+    search: dated("https://www.reuters.com/world/a", "2026-09-06T09:00:00Z"),
+    now: () => now,
+  });
+  assert.equal(fresh.evidence.length, rumour.length + 1, "yesterday still corroborates");
+});
+
+test("a source with no date is kept, and the pipeline can see it has none", async () => {
+  // Deliberate, and the trade is worth stating: the provider cannot always
+  // estimate a date, and it fails most often on primary documents -- filings,
+  // press releases -- which are the sources most worth having. Dropping every
+  // undated result would cost more than it saves. The hole is real: a stale
+  // source with no date still gets through.
+  const outcome = await service().corroborate({
+    evidence: rumour,
+    requests,
+    languageCode: "en",
+    search: {
+      async find() {
+        return {
+          sources: [{
+            url: "https://storage.courtlistener.com/recap/filing.pdf",
+            title: "t",
+            excerpt: "e",
+            tier: "other" as const,
+            publishedAt: null,
+          }],
+        };
+      },
+    },
+    now: () => new Date("2026-09-07T12:00:00Z"),
+  });
+
+  assert.equal(outcome.evidence.length, rumour.length + 1);
+  assert.equal(
+    outcome.evidence.at(-1)?.publishedAt,
+    null,
+    "and it reaches the model marked as undated, so the date can be judged there too",
+  );
+});

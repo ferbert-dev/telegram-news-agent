@@ -35,6 +35,7 @@ type ExaSearchClient = {
       title?: string;
       text?: string;
       highlights?: string[];
+      publishedDate?: string;
     }>;
   }>;
 };
@@ -130,6 +131,7 @@ export function exaFactSearchPort(
           ...(result.title ? { title: result.title } : {}),
           excerpt,
           tier,
+          publishedAt: result.publishedDate ?? null,
         });
       }
 
