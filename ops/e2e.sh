@@ -67,8 +67,17 @@ case "${1:-run}" in
     echo "Rig removed, volume and generated credentials included."
     ;;
   run)
+    # --concurrency=1, and it is not a speed knob.
+    #
+    # node's runner executes test FILES in parallel by default, and the news
+    # queue is a single global slot: `claim_telegram_news_job` hands out one job
+    # at a time across the whole database. Two files in parallel means one
+    # file's worker claims nothing at all, and every scenario in it fails with
+    # an empty job row and no AI calls -- which reads as "the pipeline is
+    # broken" rather than "the queue did its job". Serial files is what the
+    # product's own concurrency rule requires.
     RUN_DATABASE_INTEGRATION=1 DATABASE_TEST_URL="$(url)" \
-      npx tsx --test checks/e2e/*.ts
+      npx tsx --test --test-concurrency=1 checks/e2e/*.ts
     ;;
   all)
     "$0" up

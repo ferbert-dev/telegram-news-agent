@@ -795,44 +795,55 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
           break;
         }
 
-        // Extract, and ask Exa before giving the candidate up.
+        // Exa first, the HTML extractor second.
         //
-        // Three failed attempts from the HTML extractor means a paywall, a
-        // JavaScript shell or bot protection -- exactly the pages a
-        // purpose-built retrieval service reaches and a plain extractor does
-        // not. Until now such a candidate was simply dropped, so those stories
-        // were lost rather than told.
+        // Going to the source and taking the whole article is the point: the
+        // model writes from the full text rather than an RSS description, and
+        // a retrieval service reaches pages a plain extractor does not --
+        // paywalls, JavaScript shells, bot protection.
+        //
+        // This is `getContents`, not search. It loads the SAME url the
+        // candidate already has, so it adds no source and cannot change the
+        // article's verification class. That distinction matters: the search
+        // path does add sources, which is why it stays gated to non-primary
+        // articles, while this one is safe for every article.
         let extracted:
           | { text: string; contentHash: string; finalUrl: string }
           | null = null;
         let extractionFailure = "article content unavailable";
-        try {
-          extracted = await this.curation.withRetry(
-            () => this.curation.fetchArticle(candidate.canonicalUrl),
-            { attempts: 3, baseDelayMs: 300 },
-          );
-        } catch (error) {
-          extractionFailure =
-            error instanceof Error ? error.message : String(error);
-          if (this.articleContent) {
-            try {
-              const content = await this.articleContent.fetch(
-                candidate.canonicalUrl,
-              );
-              if (content?.text) {
-                extracted = {
-                  text: content.text,
-                  contentHash: hashText(content.text),
-                  finalUrl: content.url,
-                };
-              }
-            } catch (contentError) {
-              // Both paths failed. The original extractor's message is the
-              // more useful of the two, so it is the one kept.
-              void contentError;
+
+        if (this.articleContent) {
+          try {
+            const content = await this.articleContent.fetch(
+              candidate.canonicalUrl,
+            );
+            if (content?.text) {
+              extracted = {
+                text: content.text,
+                contentHash: hashText(content.text),
+                finalUrl: content.url,
+              };
             }
+          } catch (error) {
+            extractionFailure =
+              error instanceof Error ? error.message : String(error);
           }
         }
+
+        if (!extracted) {
+          try {
+            extracted = await this.curation.withRetry(
+              () => this.curation.fetchArticle(candidate.canonicalUrl),
+              { attempts: 3, baseDelayMs: 300 },
+            );
+          } catch (error) {
+            // The extractor's message is the more useful of the two when both
+            // paths fail: it names what the page did, not what a quota said.
+            extractionFailure =
+              error instanceof Error ? error.message : String(error);
+          }
+        }
+
         if (!extracted) {
           extractionErrors.push({
             article_id: candidate.article.id,

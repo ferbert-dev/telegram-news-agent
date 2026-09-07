@@ -85,7 +85,7 @@ export class EvidenceCorroborationService {
     }
 
     const known = new Set(
-      evidence.map((item) => publisherOf(item.sourceUrl)).filter(Boolean),
+      evidence.map((item) => publisherOf(item.url)).filter(Boolean),
     );
     const found = new Map<string, CorroborationEvidence>();
     let searches = 0;
@@ -112,7 +112,7 @@ export class EvidenceCorroborationService {
         if (!publisher || known.has(publisher) || found.has(publisher)) continue;
 
         found.set(publisher, {
-          sourceUrl: source.url,
+          url: source.url,
           title: source.title,
           evidenceText: source.excerpt,
           // web_source, never primary_source: an independent report is not the
