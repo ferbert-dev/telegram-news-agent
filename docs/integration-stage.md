@@ -109,6 +109,11 @@ gh workflow run deploy.yml -f operation=inspect-host-capacity
 # then confirms production is still healthy.
 gh workflow run deploy.yml -f operation=deploy-integration --ref <branch>
 
+# Read the integration bot's own log — the last 200 lines, timestamped.
+# Integration only, by explicit container name: production's log is not this
+# operation's business and must not be reachable by mistake.
+gh workflow run deploy.yml -f operation=integration-logs
+
 # Tear it down and give the host its memory back. Keeps the volume, so the
 # next deploy resumes with its data rather than re-migrating from empty.
 gh workflow run deploy.yml -f operation=stop-integration

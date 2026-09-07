@@ -29,6 +29,7 @@ on:
           - release-integration-news
           - run-integration-news
           - clear-integration-excluded-topics
+          - integration-logs
 
 concurrency:
   group: production-${{ github.ref }}
@@ -1004,6 +1005,45 @@ jobs:
           NODE
           REMOTE
 
+
+
+  integration-logs:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'integration-logs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      # Added after the third time a diagnosis ended in "the hypothesis is
+      # strong but the error text is only in the container".
+      #
+      # ai_provider_attempts records which provider failed and with what code.
+      # It does not record what the application then did with that failure, so
+      # a generic news_job_failed has no explanation anywhere a query can reach.
+      - name: Tail the integration bot's log
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          container_id="$(docker ps -q --filter 'name=^/telegram-news-agent-int-bot-1$')"
+          test -n "$container_id" || { echo "integration bot is not running" >&2; exit 1; }
+          # Integration only, by explicit container name: production's log is
+          # not this operation's business and must not be reachable by mistake.
+          docker logs --tail 200 --timestamps "$container_id" 2>&1 | tail -200
+          REMOTE
 
   inspect-host-capacity:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect-host-capacity'
