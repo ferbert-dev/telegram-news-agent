@@ -159,6 +159,21 @@ test(
         "the full article must be retrieved through the content port",
       );
 
+      // Every evidence item the model was handed must carry readable text.
+      //
+      // The corroboration module put its excerpt in `evidenceText` while the
+      // whole editorial pipeline reads `text`. Grounding only looks at `url`,
+      // so nothing failed -- but the appended source reached the model as a
+      // bare link, and editorial-enrichment.js, which reads
+      // `item.text ?? item.excerpt`, threw on every run. Four runs on the
+      // stage reported `enrichment_failed` with no message.
+      const handed = rig.draftEvidenceText.at(-1) ?? [];
+      assert.ok(handed.length > 1, `corroboration must have appended a source; ${rig.diagnosis()}`);
+      assert.ok(
+        handed.every((chars) => chars > 0),
+        `every evidence item must carry readable text; lengths ${JSON.stringify(handed)}`,
+      );
+
       // And the database has to say so afterwards.
       //
       // Both retrieval paths used to write the same `extractor`, so once a run

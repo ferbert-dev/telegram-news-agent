@@ -102,6 +102,7 @@ function fakeAiProvider(
   counters: Record<string, number>,
   factSearches: string[],
   draftEvidence: string[][],
+  draftEvidenceText: number[][],
   override?: AiAnswer,
 ) {
   const fallback = (request: Record<string, unknown>, schema: string): unknown => {
@@ -173,7 +174,7 @@ function fakeAiProvider(
       // fail as soon as the rig had state from a previous run.
       const requestInput = request.input as {
         article?: { title?: string; url?: string };
-        evidence?: Array<{ url?: string }>;
+        evidence?: Array<{ url?: string; text?: string }>;
       };
       const url = requestInput.evidence?.[0]?.url ?? requestInput.article?.url ?? "";
       // Cite the LAST evidence item too -- the one corroboration appended.
@@ -188,6 +189,9 @@ function fakeAiProvider(
       // and is worth real money: the gateway's outer catch throws away every
       // source the earlier searches already paid for.
       draftEvidence.push(evidenceItems.map((item) => String(item?.url ?? "")));
+      draftEvidenceText.push(
+        evidenceItems.map((item) => String(item?.text ?? "").length),
+      );
       const corroboratedUrl =
         evidenceItems.length > 1
           ? evidenceItems[evidenceItems.length - 1]?.url
@@ -295,6 +299,14 @@ export type NewsRig = {
   factSearches: string[];
   /** The evidence URLs handed to each draft request, in order. */
   draftEvidence: string[][];
+  /**
+   * How many characters of `text` each of those items carried.
+   *
+   * A zero here is the defect that cost four runs: an appended source whose
+   * text sat under a field name nothing reads arrives at the model, and at
+   * editorial enrichment, as a bare URL.
+   */
+  draftEvidenceText: number[][];
   /** URLs the content port was asked to load. */
   contentFetches: string[];
   /** What reached the channel. Empty is the safe state, not the broken one. */
@@ -359,11 +371,13 @@ export async function withNewsRig(
 
   const factSearches: string[] = [];
   const draftEvidence: string[][] = [];
+  const draftEvidenceText: number[][] = [];
   const schemaCounters: Record<string, number> = {};
   const aiProvider = fakeAiProvider(
     schemaCounters,
     factSearches,
     draftEvidence,
+    draftEvidenceText,
     options.ai,
   );
 
@@ -572,6 +586,7 @@ export async function withNewsRig(
       schemaCounters,
       factSearches,
       draftEvidence,
+      draftEvidenceText,
       contentFetches,
       published,
       deliveries,
@@ -627,6 +642,7 @@ export async function withNewsRig(
           `AI schemas: ${JSON.stringify(schemaCounters)}`,
           `fact searches: ${JSON.stringify(factSearches)}`,
           `draft evidence: ${JSON.stringify(draftEvidence)}`,
+          `draft evidence text lengths: ${JSON.stringify(draftEvidenceText)}`,
           `content fetches: ${contentFetches.length}`,
           `feed requests: ${feedRequests}`,
         ].join("\n  ");

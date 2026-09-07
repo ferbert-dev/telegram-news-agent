@@ -1,28 +1,36 @@
+import type { EditorialEvidence } from "../editorial-application.contracts.js";
+
 export type EvidenceVerificationStatus =
   | "primary_source"
   | "web_source"
   | "web_search_summary"
   | "unverified_community";
 
-export type CorroborationEvidence = {
-  /**
-   * `url`, not `sourceUrl`.
-   *
-   * draft.js:199 builds its allowed-source set with
-   * `evidence.map((item) => item.url)`. An evidence item carrying any other
-   * field name is invisible to the grounding validator: the model cites a
-   * source it was given, the validator cannot find it, and the draft is
-   * rejected as citing an unsupported source.
-   *
-   * This module was written against `sourceUrl` and every appended source was
-   * therefore unusable. The name is load-bearing.
-   */
-  url: string;
-  verificationStatus?: EvidenceVerificationStatus;
-  primary?: boolean;
-  title?: string;
-  evidenceText?: string;
-};
+/**
+ * An alias, deliberately, and not a parallel shape.
+ *
+ * This module has now shipped the same defect twice. First the appended items
+ * carried `sourceUrl` while draft.js:199 builds its allowed set from
+ * `item.url`, so every corroborating source was invisible to the grounding
+ * validator. That was fixed, a comment was written warning that the name is
+ * load-bearing -- and one field further down the same declaration still said
+ * `evidenceText` where the pipeline says `text`.
+ *
+ * The consequence of the second one was quieter and worse. Grounding accepted
+ * the source, so nothing failed; but editorial-enrichment.js reads
+ * `item.text ?? item.excerpt`, found neither, and threw "Editorial hook
+ * evidence is not present in its source" -- surfacing on the stage as
+ * `enrichment_failed` with no message, on four consecutive runs. A corroborating
+ * source reached the model as a bare URL with no readable content, which is
+ * also why an article that had been corroborated looked exactly like one that
+ * had not.
+ *
+ * A comment asking the next person to remember a field name is not a control.
+ * The type is: corroboration produces the same evidence the rest of the
+ * editorial pipeline consumes, so a divergence is a compile error rather than
+ * a silent one.
+ */
+export type CorroborationEvidence = EditorialEvidence;
 
 /**
  * What the MODEL asks to look up. Mirrors the shape editorial-enrichment.js

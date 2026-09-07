@@ -113,11 +113,15 @@ export class EvidenceCorroborationService {
 
         found.set(publisher, {
           url: source.url,
-          title: source.title,
-          evidenceText: source.excerpt,
-          // web_source, never primary_source: an independent report is not the
-          // same thing as the subject's own announcement, and draft.js ranks
-          // those differently on purpose.
+          title: source.title ?? null,
+          // `text`, the field name the rest of the pipeline uses. The excerpt
+          // is what the search actually read; the title is a poor substitute
+          // and is used only so an item is never added with nothing readable
+          // in it, which is the state that broke enrichment.
+          text: source.excerpt?.trim() || source.title?.trim() || "",
+          // Never primary: an independent report is not the subject's own
+          // announcement, and draft.js ranks those differently on purpose.
+          primary: false,
           verificationStatus: "web_source",
         });
       }
