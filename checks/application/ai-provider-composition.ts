@@ -278,8 +278,15 @@ test("a long operation gets its own deadline, not the default one", async () => 
       return { value: {}, usageEvents: [] };
     },
   };
+  // A frozen clock, because the value under test is arithmetic between two
+  // readings of it: the deadline is `now() + budget`, and the timer is set to
+  // `deadline - now()`. With the real clock those two readings can differ by a
+  // millisecond, and this asserted exact equality -- so it passed locally and
+  // on the branch, then failed on a slower runner with `29999 !== 30000` and
+  // turned main red. An exact assertion needs a clock that does not move.
   const composed = createFallbackAiProvider([provider as never], {
     log: { warn() {}, error() {}, info() {} } as never,
+    now: () => new Date(1_700_000_000_000),
     setTimeoutImpl: (_callback: () => void, delayMs: number) => {
       deadlines.push(delayMs);
       return 0;
