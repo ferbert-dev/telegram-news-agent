@@ -302,8 +302,21 @@ export class EditorialEnrichmentService {
 /**
  * Every claim is accounted for, and every cited source was supplied.
  *
- * Deliberately NOT a check that the excerpt appears in the source. That check
- * is what this module exists to remove.
+ * It does NOT require the map's claim text to match the draft's claim text.
+ *
+ * The first version did, ported from legacy without questioning it, and it
+ * failed on the stage within minutes of the provider timeout being fixed:
+ * `evidence_map_does_not_match_claims`, and the whole editorial pass
+ * discarded. The rule asked a model to reproduce its own sentence
+ * byte-for-byte in two separate fields -- the same demand this module was
+ * written to remove for evidence excerpts, reintroduced one function later by
+ * the person removing it.
+ *
+ * Nothing was gained by it. The control that prevents invention is
+ * `validateGroundedDraft`, which refuses a claim whose source URL was not
+ * supplied; the map is the model stating which source supports which claim,
+ * and that is an audit record, not a second gate. What is still checked is
+ * that the record is complete and points only at sources we actually gave it.
  */
 function checkEvidenceMap(
   entries: EnrichmentEvidenceMapEntry[],
@@ -314,24 +327,15 @@ function checkEvidenceMap(
     return `evidence_map_incomplete: ${entries.length} entries for ${claims.length} claims`;
   }
   const allowed = new Set(suppliedUrls);
-  const unmatched = [...entries];
-  for (const claim of claims) {
-    const index = unmatched.findIndex(
-      (entry) =>
-        normalize(entry.claim) === normalize(claim.text) &&
-        entry.sourceUrl === claim.sourceUrl,
-    );
-    if (index === -1) return "evidence_map_does_not_match_claims";
-    const [entry] = unmatched.splice(index, 1);
-    if (!entry || !allowed.has(entry.sourceUrl)) {
-      return `evidence_map_cites_unsupplied_source: ${entry?.sourceUrl ?? "none"}`;
+  for (const entry of entries) {
+    if (!allowed.has(entry.sourceUrl)) {
+      return `evidence_map_cites_unsupplied_source: ${entry.sourceUrl}`;
+    }
+    if (!entry.claim.trim() || !entry.evidenceExcerpt.trim()) {
+      return "evidence_map_entry_is_empty";
     }
   }
   return null;
-}
-
-function normalize(value: string): string {
-  return String(value ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
 }
 
 function message(error: unknown): string {

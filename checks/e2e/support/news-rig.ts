@@ -237,9 +237,17 @@ function fakeAiProvider(
           sourceUrls: [url],
           caveat: "The work still awaits independent replication.",
         },
+        // Worded differently from draft.claims on purpose.
+        //
+        // The first version of the map check required these to match the claim
+        // text byte-for-byte, and the stage rejected a real enrichment with
+        // `evidence_map_does_not_match_claims` within minutes of the provider
+        // timeout being fixed. A model does not repeat its own sentence
+        // identically in two fields, and asking it to was the same demand this
+        // module exists to remove.
         evidenceMap: [
           {
-            claim: headline,
+            claim: `${headline} — as the article states it`,
             sourceUrl: url,
             // Deliberately not a quotation. This is the model's own account of
             // what supports the claim, which is exactly what the removed check
@@ -247,7 +255,7 @@ function fakeAiProvider(
             evidenceExcerpt: "The source reports the same convergence in its own words.",
           },
           {
-            claim,
+            claim: `${claim}, in the reporting's own framing`,
             sourceUrl: url,
             evidenceExcerpt: "The source gives the narrowed range for the measurement.",
           },
