@@ -18,6 +18,7 @@ import type {
 import type { EvidenceCorroborationService } from "./corroboration/evidence-corroboration.service.js";
 import type { FactPlanService } from "./corroboration/fact-plan.service.js";
 import { factSearchCorroborationPort } from "./corroboration/fact-search.adapter.js";
+import type { CorroborationSearchPort } from "./corroboration/evidence-corroboration.contracts.js";
 import type {
   EditorialEnrichmentService,
 } from "./enrichment/editorial-enrichment.service.js";
@@ -299,6 +300,12 @@ export type LegacyEditorialDraftGatewayDependencies = {
    * gateway behaves as it did before a typed editorial pass existed.
    */
   enrichment?: EditorialEnrichmentService;
+  /**
+   * Where corroboration looks. Absent, it goes through the provider cascade's
+   * `searchFact`, which reaches the frozen Exa provider -- and that one keeps
+   * at most one result per search and only from a fixed list of hosts.
+   */
+  factSearch?: CorroborationSearchPort;
 };
 
 /** Any unverified item makes the whole set unverified, as draft.js decides it. */
@@ -507,9 +514,9 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
             evidence: input.evidence,
             requests,
             languageCode: input.languageCode,
-            search: factSearchCorroborationPort(
-              this.dependencies.aiProvider as never,
-            ),
+            search:
+              this.dependencies.factSearch
+              ?? factSearchCorroborationPort(this.dependencies.aiProvider as never),
           });
           // Always take the outcome's evidence now.
           //
@@ -519,6 +526,10 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
           // before. What it does take, on every article, are the extra sources
           // the searches found, which is the point of searching every article
           // rather than only the doubtful ones.
+          // Paid searches, accounted for. Without this the ledger shows
+          // nothing for a corroboration round, which is the state content
+          // retrieval was in when "did Exa run?" could not be answered.
+          usageEvents.push(...(outcome.usageEvents as RecordAiUsageInput[]));
           if (outcome.status !== "not_needed") {
             corroborationAddedSources =
               outcome.evidence.length > input.evidence.length;

@@ -39,6 +39,7 @@ import {
 } from "../../../src/editorial/corroboration/evidence-corroboration.service.js";
 import type { ArticleContentPort } from "../../../src/research/content/article-content.contracts.js";
 import { getNewsEditor } from "../../../src/editor.js";
+import { tierOf } from "../../../src/editorial/corroboration/source-policy.js";
 import { LEGACY_PERSISTENCE } from "../../../src/persistence/legacy-persistence.tokens.js";
 import { TelegramPersistenceModule } from "../../../src/telegram/telegram-persistence.module.js";
 import {
@@ -352,6 +353,13 @@ export type NewsRigOptions = {
    * Omitted, a working fake stands in for `getContents`.
    */
   articleContent?: ArticleContentPort | null;
+  /**
+   * URLs the corroboration search returns, per search, in order.
+   *
+   * Default: one strong publisher per search, which is what a working Exa
+   * looks like. A scenario that wants unvetted publishers names them.
+   */
+  searchResults?: Array<string[] | "throws">;
   /** Answers the feed fetch. Default: 200 with valid RSS. */
   feedResponse?: (xml: string) => Response;
   /**
@@ -470,6 +478,50 @@ export async function withNewsRig(
     options.articleContent === undefined ? defaultContent : options.articleContent;
 
   const factSearches: string[] = [];
+  // The corroboration search port, driven directly rather than through the
+  // provider cascade -- which is how production now reaches Exa, because the
+  // cascade's own searchFact keeps one result per search and only from a
+  // fixed host list.
+  const searchPages =
+    options.searchResults ?? [
+      ["https://www.reuters.com/world/first"],
+      ["https://apnews.com/article/second"],
+      ["https://www.bbc.co.uk/news/third"],
+    ];
+  let searchPage = 0;
+  const factSearch = {
+    async find(request: { query: string }) {
+      factSearches.push(request.query);
+      const page = searchPages[searchPage++] ?? [];
+      // "throws" is how a scenario models Exa being down or over quota. It has
+      // to be injected HERE and not through the AI provider: corroboration
+      // reaches the typed search port directly now, and two scenarios that
+      // injected at the provider went green while testing nothing.
+      if (page === "throws") throw new Error("Exa search unavailable");
+      const urls = page;
+      // Drops a source the policy will not classify, exactly as the real
+      // adapter does (`if (!url || !tier) continue`).
+      //
+      // The first version substituted "other" for an unclassified host, which
+      // made this fake MORE permissive than production: a mutation that
+      // restored the legacy behaviour of discarding unvetted publishers passed
+      // the whole suite, because the fake had already smuggled them through.
+      return {
+        sources: urls.flatMap((url) => {
+          const tier = tierOf(url);
+          return tier
+            ? [{
+                url,
+                title: "Independent report",
+                excerpt: "A second newsroom reported the same result in its own words.",
+                tier,
+              }]
+            : [];
+        }),
+        usageEvents: [],
+      };
+    },
+  };
   const draftEvidence: string[][] = [];
   const draftEvidenceText: number[][] = [];
   const schemaCounters: Record<string, number> = {};
@@ -582,6 +634,7 @@ export async function withNewsRig(
           corroboration: new EvidenceCorroborationService(
             DEFAULT_CORROBORATION_OPTIONS,
           ),
+          factSearch: factSearch as never,
           enrichment: new EditorialEnrichmentService(
             LEGACY_EDITORIAL_ENRICHMENT_PORTS,
             DEFAULT_ENRICHMENT_LIMITS,

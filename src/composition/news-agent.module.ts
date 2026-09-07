@@ -19,6 +19,7 @@ import {
 } from "../editorial/corroboration/evidence-corroboration.service.js";
 import { FactPlanService } from "../editorial/corroboration/fact-plan.service.js";
 import { buildArticleContentPort } from "../research/content/article-content.factory.js";
+import { buildCorroborationSearchPort } from "../editorial/corroboration/fact-search.factory.js";
 import { PersistenceFacadeModule } from "../persistence/persistence-facade.module.js";
 import { LEGACY_PERSISTENCE } from "../persistence/legacy-persistence.tokens.js";
 import type { LegacyPersistence } from "../persistence/legacy-persistence.contracts.js";
@@ -347,6 +348,14 @@ export class NewsAgentModule {
             // gateway: its structure validation required the model to
             // reproduce source text verbatim, which discarded the whole pass
             // whenever the model wrote rather than copied.
+            // Corroboration searches through the typed Exa adapter when Exa
+            // is configured. The cascade's own searchFact reaches the frozen
+            // provider, which returns one result per search and only from a
+            // fixed host list -- fifteen paid candidates became one cited
+            // source on the integration stage.
+            ...(buildCorroborationSearchPort(env)
+              ? { factSearch: buildCorroborationSearchPort(env)! }
+              : {}),
             enrichment: new EditorialEnrichmentService(
               LEGACY_EDITORIAL_ENRICHMENT_PORTS,
               DEFAULT_ENRICHMENT_LIMITS,

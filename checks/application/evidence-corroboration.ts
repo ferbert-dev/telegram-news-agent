@@ -10,6 +10,7 @@ import type {
   CorroborationEvidence,
   FactRequest,
 } from "../../src/editorial/corroboration/evidence-corroboration.contracts.js";
+import { tierOf } from "../../src/editorial/corroboration/source-policy.js";
 
 const service = () =>
   new EvidenceCorroborationService(DEFAULT_CORROBORATION_OPTIONS);
@@ -38,7 +39,9 @@ function factSearch(urls: Array<string | null>, seen: string[] = []) {
     async find(request: FactRequest) {
       seen.push(request.query);
       const url = urls[i++] ?? null;
-      return url ? [{ url, title: "t", excerpt: "e" }] : [];
+      return {
+        sources: url ? [{ url, title: "t", excerpt: "e", tier: tierOf(url) ?? "other" }] : [],
+      };
     },
   };
 }
@@ -50,7 +53,14 @@ function listSearch(pages: string[][], seen: string[] = []) {
     seen,
     async find(request: FactRequest) {
       seen.push(request.query);
-      return (pages[i++] ?? []).map((url) => ({ url, title: "t", excerpt: "e" }));
+      return {
+        sources: (pages[i++] ?? []).map((url) => ({
+          url,
+          title: "t",
+          excerpt: "e",
+          tier: tierOf(url) ?? "other",
+        })),
+      };
     },
   };
 }
@@ -91,7 +101,7 @@ test("a primary-source article is searched too, and keeps its status", async () 
     evidence: primary,
     requests,
     languageCode: "en",
-    search: factSearch(["https://reuters.example/a", "https://apnews.example/b"]),
+    search: factSearch(["https://www.reuters.com/world/a", "https://apnews.com/article/b"]),
   });
 
   assert.equal(outcome.status, "corroborated");
@@ -119,8 +129,8 @@ test("the model's own queries are used, in its order, and only up to the budget"
 
 test("two independent publishers clear the story, and searching stops there", async () => {
   const search = factSearch([
-    "https://reuters.example/a",
-    "https://apnews.example/b",
+    "https://www.reuters.com/world/a",
+    "https://apnews.com/article/b",
     "https://third.example/c",
   ]);
   const outcome = await service().corroborate({
@@ -133,7 +143,7 @@ test("two independent publishers clear the story, and searching stops there", as
   assert.equal(outcome.status, "corroborated");
   // Stopped at two: the threshold is a stopping condition, not a quota to burn.
   assert.equal(outcome.searches, 2);
-  assert.deepEqual(outcome.publishers, ["reuters.example", "apnews.example"]);
+  assert.deepEqual(outcome.publishers, ["reuters.com", "apnews.com"]);
 
   if (outcome.status !== "corroborated") return;
   // Every original must leave unverified_community behind: draft.js takes the
@@ -223,7 +233,7 @@ test("a search that throws spends its budget and does not retry the same questio
 
 test("a provider that returns a list can clear a story in one search", async () => {
   const search = listSearch([
-    ["https://reuters.example/a", "https://apnews.example/b"],
+    ["https://www.reuters.com/world/a", "https://apnews.com/article/b"],
   ]);
   const outcome = await service().corroborate({
     evidence: rumour,
@@ -273,4 +283,90 @@ test("a deduplication failure costs one candidate, not the whole run", async () 
     handler.includes("deduplicationRejectedArticleIds"),
     "a candidate whose duplicate check failed must not be treated as new",
   );
+});
+
+test("an unvetted publisher contributes detail without clearing the story", async () => {
+  // The change this module exists for, stated as behaviour.
+  //
+  // The frozen `normalizeFactResult` discarded every result outside about
+  // forty domains, so a Miami runway crash covered by the Miami Herald, CNN
+  // and local broadcasters produced fifteen paid candidates and an article
+  // citing one source -- the one it started with.
+  //
+  // Those publishers now reach the evidence, so the article can use and
+  // attribute what they reported. They do not clear the story: the caveat is
+  // still earned by two STRONG publishers and by nothing else.
+  const outcome = await service().corroborate({
+    evidence: rumour,
+    requests,
+    languageCode: "en",
+    search: listSearch([
+      ["https://www.miamiherald.com/news/a", "https://www.cnn.com/2026/09/b"],
+    ]),
+  });
+
+  assert.equal(outcome.status, "uncorroborated");
+  assert.deepEqual(
+    outcome.status === "uncorroborated" ? outcome.strongPublishers : null,
+    [],
+    "neither is a vetted publisher",
+  );
+  assert.deepEqual(outcome.publishers, ["miamiherald.com", "cnn.com"]);
+
+  const urls = outcome.evidence.map((item) => item.url);
+  assert.ok(
+    urls.includes("https://www.miamiherald.com/news/a")
+      && urls.includes("https://www.cnn.com/2026/09/b"),
+    `both must reach the article as material to write from; got ${JSON.stringify(urls)}`,
+  );
+  assert.ok(
+    outcome.evidence.every((item) => (item.text ?? "").length > 0),
+    "and each with readable text, not as a bare link",
+  );
+});
+
+test("one strong publisher is not two, and the story stays uncleared", async () => {
+  // The threshold is unchanged by the tiers. Mixing an unvetted publisher in
+  // must not become a way to reach two.
+  const outcome = await service().corroborate({
+    evidence: rumour,
+    requests,
+    languageCode: "en",
+    search: listSearch([
+      ["https://www.reuters.com/world/a", "https://www.miamiherald.com/news/b"],
+    ]),
+  });
+
+  assert.equal(outcome.status, "uncorroborated");
+  assert.deepEqual(
+    outcome.status === "uncorroborated" ? outcome.strongPublishers : null,
+    ["reuters.com"],
+  );
+  assert.equal(outcome.evidence.length, rumour.length + 2, "both still supply detail");
+});
+
+test("searching stops once two strong publishers agree, not once two are found", async () => {
+  // The budget guard follows the tier that matters. Stopping on any two would
+  // spend the story's whole budget on publishers that cannot clear it.
+  const seen: string[] = [];
+  const outcome = await service().corroborate({
+    evidence: rumour,
+    requests,
+    languageCode: "en",
+    search: listSearch(
+      [
+        ["https://www.miamiherald.com/news/a"],
+        ["https://www.cnn.com/2026/09/b"],
+        ["https://www.reuters.com/world/c", "https://apnews.com/article/d"],
+      ],
+      seen,
+    ),
+  });
+
+  assert.equal(outcome.status, "corroborated");
+  assert.deepEqual(
+    outcome.status === "corroborated" ? outcome.strongPublishers : null,
+    ["reuters.com", "apnews.com"],
+  );
+  assert.equal(seen.length, 3, "it kept searching while only weak sources had answered");
 });

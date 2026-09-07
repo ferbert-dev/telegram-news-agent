@@ -248,6 +248,57 @@ test(
 );
 
 test(
+  "an unvetted publisher reaches the article without clearing the story",
+  { skip },
+  async () => {
+    // The blocker the whole Exa search half was losing to, end to end.
+    //
+    // On the stage, three paid searches for a Miami runway crash returned
+    // fifteen candidates and the published article cited one source -- the one
+    // it started with. The story was covered by the Miami Herald, CNN and local
+    // broadcasters, and the frozen provider discards every host outside about
+    // forty domains, keeping at most one result per search anyway.
+    //
+    // Both now reach the article as material to write from. Neither clears it:
+    // that still takes two vetted publishers.
+    await withNewsRig(
+      {
+        host: "weak-sources.example.test",
+        searchResults: [
+          ["https://www.miamiherald.com/news/a", "https://www.cnn.com/2026/09/b"],
+          [],
+          [],
+        ],
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        assert.equal(
+          job?.outcome_status,
+          "review_ready",
+          `the article must be written\n  ${rig.diagnosis()}`,
+        );
+
+        const handed = rig.draftEvidence.at(-1) ?? [];
+        assert.ok(
+          handed.some((url) => url.includes("miamiherald.com"))
+            && handed.some((url) => url.includes("cnn.com")),
+          `both unvetted publishers must reach the model; got ${JSON.stringify(handed)}`,
+        );
+        const lengths = rig.draftEvidenceText.at(-1) ?? [];
+        assert.ok(
+          lengths.every((chars) => chars > 0),
+          `each with readable text, not a bare link; lengths ${JSON.stringify(lengths)}`,
+        );
+      },
+    );
+  },
+);
+
+test(
   "one failed search does not throw away the source another already paid for",
   { skip },
   async () => {
@@ -260,17 +311,10 @@ test(
     //
     // So the scenario has to distinguish them: the first search succeeds, the
     // second throws, and the source from the first must still reach the draft.
-    let searches = 0;
     await withNewsRig(
       {
         host: "search-partial.example.test",
-        ai(request) {
-          if (request.expectedClaim && request.query) {
-            searches += 1;
-            if (searches > 1) throw new Error("Exa search unavailable");
-          }
-          return undefined;
-        },
+        searchResults: [["https://www.reuters.com/world/first"], "throws", "throws"],
       },
       async (rig) => {
         assert.equal((await rig.enqueue()).status, "research_queued");
@@ -288,14 +332,9 @@ test(
           "review_ready",
           `the article must still be written\n  ${rig.diagnosis()}`,
         );
-        assert.equal(
-          rig.factSearches.length,
-          1,
-          `exactly one search may be recorded as successful\n  ${rig.diagnosis()}`,
-        );
         const evidence = rig.draftEvidence.at(-1) ?? [];
         assert.ok(
-          evidence.some((url) => url.startsWith("https://corroborator-")),
+          evidence.some((url) => url.includes("reuters.com")),
           `the source the successful search found must survive the failed one\n  ${rig.diagnosis()}`,
         );
       },
@@ -314,12 +353,7 @@ test(
     await withNewsRig(
       {
         host: "search-down.example.test",
-        ai(request) {
-          if (request.expectedClaim && request.query) {
-            throw new Error("Exa search unavailable");
-          }
-          return undefined;
-        },
+        searchResults: ["throws", "throws", "throws"],
       },
       async (rig) => {
         assert.equal((await rig.enqueue()).status, "research_queued");
@@ -337,10 +371,11 @@ test(
           "review_ready",
           `the article must still be written\n  ${rig.diagnosis()}`,
         );
+        const evidence = rig.draftEvidence.at(-1) ?? [];
         assert.equal(
-          rig.factSearches.length,
-          0,
-          "no search may be recorded as successful when every one threw",
+          evidence.length,
+          1,
+          `no source may be appended when every search threw; got ${JSON.stringify(evidence)}`,
         );
         assert.ok(
           (rig.schemaCounters.fact_plan ?? 0) > 0,

@@ -3,10 +3,11 @@ import { Inject, Injectable } from "@nestjs/common";
 import type {
   CorroborationEvidence,
   CorroborationOutcome,
-  CorroborationSource,
+  CorroborationSearchResult,
   FactRequest,
   CorroborationSearchPort,
 } from "./evidence-corroboration.contracts.js";
+import { publisherOf, type SourceTier } from "./source-policy.js";
 import { EVIDENCE_CORROBORATION_OPTIONS } from "./evidence-corroboration.tokens.js";
 
 export type EvidenceCorroborationOptions = {
@@ -27,17 +28,6 @@ export const DEFAULT_CORROBORATION_OPTIONS: EvidenceCorroborationOptions = {
   // not by the model. A search is only ever spent on an article that needs one.
   maxSearches: 3,
 };
-
-function publisherOf(url: string): string | null {
-  try {
-    // The registrable host, lowercased, with a leading www. dropped: three
-    // links from one newsroom are one source, not three, and
-    // www.example.com and example.com are the same publisher.
-    return new URL(url).hostname.toLowerCase().replace(/^www\./, "") || null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Earns the right to drop the "unverified" caveat, rather than deleting it.
@@ -81,22 +71,28 @@ export class EvidenceCorroborationService {
     // Searches run for every article now, so `not_needed` no longer means
     // "primary source". It means there was nothing to ask.
     if (!requests.length) {
-      return { status: "not_needed", evidence, searches: 0 };
+      return { status: "not_needed", evidence, searches: 0, usageEvents: [] };
     }
 
     const known = new Set(
       evidence.map((item) => publisherOf(item.url)).filter(Boolean),
     );
     const found = new Map<string, CorroborationEvidence>();
+    // Only strong publishers count towards the threshold. Everything else is
+    // detail: the article may use it and attribute it, and it does not decide
+    // whether the story is verified.
+    const strong = new Set<string>();
+    const usageEvents: unknown[] = [];
     let searches = 0;
 
     for (const request of requests) {
       if (searches >= this.options.maxSearches) break;
-      if (found.size >= this.options.requiredPublishers) break;
+      if (strong.size >= this.options.requiredPublishers) break;
       searches += 1;
-      let sources: readonly CorroborationSource[];
+      let result: CorroborationSearchResult;
       try {
-        sources = await search.find(request, { languageCode, signal });
+        result = await search.find(request, { languageCode, signal });
+        usageEvents.push(...(result.usageEvents ?? []));
       } catch {
         // A failed search spends its budget and stops nothing else. Retrying
         // the same question against the same provider would spend the rest of
@@ -104,12 +100,13 @@ export class EvidenceCorroborationService {
         continue;
       }
 
-      for (const source of sources) {
-        if (found.size >= this.options.requiredPublishers) break;
+      for (const source of result.sources) {
+        if (strong.size >= this.options.requiredPublishers) break;
         const publisher = publisherOf(source.url);
         // Independent means a DIFFERENT publisher. A second page from the
         // newsroom that published the rumour corroborates nothing.
         if (!publisher || known.has(publisher) || found.has(publisher)) continue;
+        if ((source.tier ?? "other") === "strong") strong.add(publisher);
 
         found.set(publisher, {
           url: source.url,
@@ -128,6 +125,7 @@ export class EvidenceCorroborationService {
     }
 
     const publishers = [...found.keys()];
+    const strongPublishers = [...strong];
 
     // draft.js takes the WEAKEST status in the set, so an original left as
     // `unverified_community` keeps the UNVERIFIED TREND headline and the "could
@@ -141,7 +139,7 @@ export class EvidenceCorroborationService {
         : item,
     );
 
-    if (found.size < this.options.requiredPublishers) {
+    if (strong.size < this.options.requiredPublishers) {
       // An explicit operator decision, recorded here rather than buried: a
       // story that could not be corroborated is published with a short tag
       // instead of the legacy caveat block, and instead of being suppressed.
@@ -161,8 +159,10 @@ export class EvidenceCorroborationService {
         evidence: [...evidence, ...found.values()],
         searches,
         publishers,
+        strongPublishers,
+        usageEvents,
         tag: RUMOUR_TAG,
-        reason: `Found ${found.size} independent publisher(s); ${this.options.requiredPublishers} required`,
+        reason: `Found ${strong.size} strong and ${found.size - strong.size} other publisher(s); ${this.options.requiredPublishers} strong required`,
       };
     }
 
@@ -171,6 +171,8 @@ export class EvidenceCorroborationService {
       evidence: [...cleared, ...found.values()],
       searches,
       publishers,
+      strongPublishers,
+      usageEvents,
     };
   }
 }

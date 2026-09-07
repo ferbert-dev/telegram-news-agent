@@ -1,4 +1,5 @@
 import type { EditorialEvidence } from "../editorial-application.contracts.js";
+import type { SourceTier } from "./source-policy.js";
 
 export type EvidenceVerificationStatus =
   | "primary_source"
@@ -49,6 +50,7 @@ export type CorroborationOutcome =
       status: "not_needed";
       evidence: readonly CorroborationEvidence[];
       searches: 0;
+      usageEvents: readonly unknown[];
     }
   | {
       status: "corroborated";
@@ -56,6 +58,9 @@ export type CorroborationOutcome =
       evidence: readonly CorroborationEvidence[];
       searches: number;
       publishers: readonly string[];
+      /** Publishers whose agreement counted towards the threshold. */
+      strongPublishers: readonly string[];
+      usageEvents: readonly unknown[];
     }
   | {
       /**
@@ -66,6 +71,8 @@ export type CorroborationOutcome =
       evidence: readonly CorroborationEvidence[];
       searches: number;
       publishers: readonly string[];
+      strongPublishers: readonly string[];
+      usageEvents: readonly unknown[];
       /** Rendered into the post, e.g. "#rumor". */
       tag: string;
       reason: string;
@@ -76,6 +83,27 @@ export type CorroborationSource = {
   url: string;
   title?: string;
   excerpt?: string;
+  /**
+   * How much this publisher's agreement is worth. Set by the adapter, because
+   * only it knows the URL before the service sees it.
+   *
+   * Absent is treated as `other`: a source of unknown standing contributes
+   * detail and does not lift a caveat, which is the safe reading.
+   */
+  tier?: SourceTier;
+};
+
+export type CorroborationSearchResult = {
+  sources: readonly CorroborationSource[];
+  /**
+   * Provider accounting, carried the same way `ArticleContentPort` carries it.
+   *
+   * A search that spends metered budget and leaves no trace in the ledger is
+   * indistinguishable from one that never ran, which is the state content
+   * retrieval was in until a live run had to be diagnosed backwards from which
+   * calls were missing.
+   */
+  usageEvents?: readonly unknown[];
 };
 
 /**
@@ -98,5 +126,5 @@ export type CorroborationSearchPort = {
   find(
     request: FactRequest,
     context: { languageCode: string; signal?: AbortSignal },
-  ): Promise<readonly CorroborationSource[]>;
+  ): Promise<CorroborationSearchResult>;
 };
