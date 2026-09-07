@@ -346,6 +346,54 @@ test(
 );
 
 test(
+  "the topics the model assigned survive as far as the article",
+  { skip },
+  async () => {
+    // Tagging was switched on, the catalogue held fifteen taggable topics, and
+    // `article_topics` was empty for every article on the stage.
+    //
+    // The cause was a seam, not the feature: the gateway's repository proxy
+    // answers `createReviewDraft` with a synthetic row, and that row omitted
+    // the topic fields -- so everything legacy had just worked out about
+    // tagging died there, and the caller wrote an empty array.
+    //
+    // This runs against the real facade and the real tables, which is the only
+    // place that seam exists.
+    await withNewsRig(
+      {
+        host: "tagged.example.test",
+        featureFlags: { article_tags: "enabled" },
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        assert.equal(
+          job?.outcome_status,
+          "review_ready",
+          `the article must be written\n  ${rig.diagnosis()}`,
+        );
+
+        const { rows } = await rig.pool.query(
+          `select coalesce(array_agg(t.name) filter (where t.name is not null), '{}') as codes
+             from public.drafts d
+             join public.article_topics at on at.article_id = d.article_id
+             join public.topics t on t.id = at.topic_id
+            where d.id = $1`,
+          [job?.draft_id],
+        );
+        assert.ok(
+          (rows[0]?.codes ?? []).length > 0,
+          `the assigned topics must reach article_topics; got ${JSON.stringify(rows[0]?.codes)}`,
+        );
+      },
+    );
+  },
+);
+
+test(
   "an unvetted publisher reaches the article without clearing the story",
   { skip },
   async () => {

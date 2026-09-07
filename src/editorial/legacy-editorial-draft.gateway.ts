@@ -137,6 +137,23 @@ function buildGenerationRepositoryFacade(
             model: draft.model ?? null,
             prompt_version: draft.prompt_version ?? null,
             reviewer_notes: draft.reviewer_notes ?? null,
+            // The topic fields are passed through, not dropped.
+            //
+            // This proxy answers `createReviewDraft` with a synthetic row --
+            // legacy composes the draft and this gateway returns it to be
+            // saved, so nothing is persisted here. The first version of that
+            // row omitted the topic fields, so everything legacy had just
+            // worked out about tagging died at the seam: the caller read
+            // `saved.topic_assignments`, found undefined, and wrote an empty
+            // array. On the stage that showed as article tagging switched on,
+            // a full catalogue of 15 taggable topics, and `article_topics`
+            // empty for every article.
+            //
+            // A seam that answers with a fixed shape silently drops whatever
+            // the shape forgot.
+            topic_assignments: draft.topic_assignments ?? null,
+            topic_assignment_source: draft.topic_assignment_source ?? null,
+            topic_assigned_model: draft.topic_assigned_model ?? null,
             approved_at: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
