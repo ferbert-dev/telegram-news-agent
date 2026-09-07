@@ -193,25 +193,33 @@ function fakeAiProvider(
       const url = String(input.evidence?.[0]?.url ?? "");
       const headline = "Independent accounts converge on one measurement";
       const claim = "the reported uncertainty band narrowed";
-      // Deliberately longer than 140 words, the ceiling legacy enforced.
-      // An article this length is refused outright by the old limits, so the
-      // scenario fails if the raised, injected limits are not actually in use.
-      const prose = [
-        "A second newsroom has now described the same result, and the two accounts agree on the part that matters most to readers.",
-        `Taken together they show that ${claim}, which is the whole of what the supplied reporting will currently support.`,
-        "That leaves fewer competing explanations standing than there were a year ago, and the disagreement that remains is a great deal narrower than it was.",
-        "Anyone who has been relying on the older figure should expect to see it revised over the coming months, in textbooks as well as in press coverage.",
-        "The practical effect for a general reader is small today and larger later, once the revised number works its way into the material everyone else quotes.",
-        "It is worth saying plainly that none of this overturns the earlier work, which was correct within the uncertainty it declared at the time.",
-        "What has changed is the size of that uncertainty, and therefore how much room is left for the competing accounts that depend on it.",
-        "Both newsrooms note that the underlying analysis has not yet been reproduced by a group with no involvement in either effort.",
-        "The work still awaits that independent replication before any of it can be treated as settled.",
-      ].join(" ");
+      // The template, written out: four paragraphs, each with its one job,
+      // and a URL glued into the prose the way the model actually did it.
+      //
+      // The stray link is deliberate. A published post carried three -- the
+      // primary buried mid-sentence as "Джерело: https://..." and a formal
+      // block listing the two corroborating outlets. The pipeline has to strip
+      // that and publish one link, so the fixture has to produce it.
+      const strayLink = "https://www.dw.com/en/some-other-report";
+      const paragraphs = [
+        // 1. hook, then what happened
+        "A second newsroom has now described the same result, and the two accounts agree on the part that matters most to readers. "
+          + `Taken together they show that ${claim}, which is the whole of what the supplied reporting will currently support. `
+          + "That leaves fewer competing explanations standing than there were a year ago.",
+        // 2. the detail, with the stray link the pipeline must remove
+        "The narrowed range is the concrete change: where the earlier figure left room for three competing accounts, it now leaves room for one. "
+          + `Джерело: ${strayLink}`,
+        // 3. why it matters
+        "Anyone who has been relying on the older figure should expect to see it revised over the coming months, in textbooks as well as in press coverage. "
+          + "The practical effect is small today and larger later, once the revised number reaches the material everyone else quotes.",
+        // 4. what is unknown
+        "The underlying analysis has not yet been reproduced by a group with no involvement in either effort, and until it is, none of this is settled.",
+      ].join("\n\n");
       return {
         readerAngle: "What the narrowed figure changes for a general reader.",
         draft: {
           headline,
-          telegramText: `${headline}\n\n${prose}\n\nSources:\n${url}`,
+          telegramText: `${headline}\n\n${paragraphs}\n\nSources:\n${url}`,
           claims: [
             { text: headline, sourceUrl: url },
             { text: claim, sourceUrl: url },

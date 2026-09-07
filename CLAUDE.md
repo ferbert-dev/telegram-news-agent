@@ -193,6 +193,20 @@ unauthenticated live calls that cost nothing.
 
 `graph.json`, `GRAPH_REPORT.md`, `manifest.json`, and `.graphify_analysis.json` are generated and gitignored, so a rebuild produces no diff and a fresh clone has no graph until someone runs the extract. The curated `graphify-out/memory/` and `reflections/` files stay tracked — those are saved query outcomes, not regenerated output. (`AGENTS.md` still says dirty graph files are expected; that line predates this change.)
 
+## The article template
+
+`docs/article-template.md` is the checked-in source for the shape every
+published post takes: headline, then four paragraphs — hook and what happened,
+the detail, why it matters, what is unknown — a signature the pipeline appends,
+and **exactly one** source link, never in the prose. Other outlets supply detail
+and are never named or linked; their per-claim attribution stays in
+`reviewer_notes.editorial_enrichment.evidence_map`, which is recorded and not
+published.
+
+`src/editorial/enrichment/editorial-enrichment.service.ts` asks the model for
+that shape. If the two disagree, the document is the intent and the prompt is
+the bug.
+
 ## README synchronization
 
 Update `README.md` in the same change when verified work materially changes capabilities, architecture, setup, operation, deployment, safety boundaries, or the contributor workflow. Skip it for internal refactors with no externally visible effect.

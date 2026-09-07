@@ -408,6 +408,9 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
 
     const outcome = await this.dependencies.enrichment.enrich({
       article: request.article,
+      // The first evidence item is the article this run went to; corroborating
+      // sources are appended after it.
+      primarySourceUrl: request.evidence[0]?.url ?? "",
       baselineDraft: request.baseline,
       evidence: request.evidence,
       languageCode: request.languageCode,

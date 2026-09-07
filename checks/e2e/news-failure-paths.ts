@@ -233,6 +233,33 @@ test(
           publishedWords > 140,
           `the article must exceed legacy's 140-word ceiling; got ${publishedWords} words`,
         );
+
+        // One link, and it is the primary source.
+        //
+        // A published post carried three: the primary glued mid-sentence as
+        // "Джерело: https://..." and a formal block listing the two
+        // corroborating outlets -- the two the reader had no reason to visit.
+        // The fixture reproduces that stray link on purpose.
+        const body = String(rows[0]?.body ?? "");
+        const links = body.match(/https?:\/\/\S+/gu) ?? [];
+        assert.equal(
+          links.length,
+          1,
+          `the article must publish exactly one link; got ${JSON.stringify(links)}`,
+        );
+        assert.ok(
+          links[0]?.includes(rig.host),
+          `and it must be the source the run went to; got ${links[0]}`,
+        );
+        assert.ok(
+          !body.includes("dw.com"),
+          "a link the model wrote into the prose must not survive",
+        );
+        const proseBeforeSources = body.split(/\n\s*(?:Sources?|Джерела|Quellen):/iu, 1)[0] ?? "";
+        assert.ok(
+          !/https?:\/\//u.test(proseBeforeSources),
+          `no URL may appear in the prose; got ${JSON.stringify(proseBeforeSources.slice(-120))}`,
+        );
         assert.equal(
           enrichment.selected_version,
           "enriched",

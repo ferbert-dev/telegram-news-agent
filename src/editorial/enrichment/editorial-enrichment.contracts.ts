@@ -13,12 +13,33 @@ export type EnrichmentLimits = {
   minWords: number;
   maxWords: number;
   maxSentences: number;
+  /**
+   * How many source links the published article carries.
+   *
+   * One, by the repository owner's decision, and the reasoning is worth
+   * recording because it is not obvious: the corroborating publishers are
+   * themselves newsrooms that took the story from somewhere else, so a list of
+   * four links is not four independent authorities -- it is an invitation to
+   * go and read the article elsewhere. What they are worth is their DETAIL.
+   *
+   * So they stay in the evidence the model writes from and are attributed by
+   * name in the prose, and the reader gets one link: the article this run
+   * actually went to. The per-claim attribution is unchanged and still
+   * recorded in reviewer_notes, so the audit trail keeps every source even
+   * though the published text shows one.
+   */
+  maxPublishedSources: number;
 };
 
 export const DEFAULT_ENRICHMENT_LIMITS: EnrichmentLimits = {
-  minWords: 90,
-  maxWords: 220,
-  maxSentences: 10,
+  // The floor is a guard against a stub, not the way to get length -- a high
+  // one is self-defeating, because a refused enrichment falls back to the
+  // baseline, which is SHORTER than anything it would have rejected. Length
+  // comes from the prompt's aim, which sits midway between these two.
+  minWords: 130,
+  maxWords: 240,
+  maxSentences: 12,
+  maxPublishedSources: 1,
 };
 
 /** One claim in the article, and the supplied source that supports it. */
@@ -92,6 +113,8 @@ export type EnrichmentGenerationPort = {
 
 export type EditorialEnrichmentRequest = {
   article: { title?: string | null; canonical_url?: string | null };
+  /** The one link the article publishes: the source this run went to. */
+  primarySourceUrl: string;
   baselineDraft: EnrichedArticle;
   evidence: readonly EditorialEvidence[];
   languageCode: string;
