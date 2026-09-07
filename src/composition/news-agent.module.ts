@@ -26,7 +26,12 @@ import type { LegacyPersistence } from "../persistence/legacy-persistence.contra
 import { EditorialApplicationModule } from "../editorial/editorial-application.module.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../editorial/editorial-application.tokens.js";
 import type { EditorialWorkflowApplicationPort } from "../editorial/editorial-application.contracts.js";
-import { LegacyEditorialDraftGateway } from "../editorial/legacy-editorial-draft.gateway.js";
+import {
+  LegacyEditorialDraftGateway,
+  LEGACY_EDITORIAL_ENRICHMENT_PORTS,
+} from "../editorial/legacy-editorial-draft.gateway.js";
+import { EditorialEnrichmentService } from "../editorial/enrichment/editorial-enrichment.service.js";
+import { DEFAULT_ENRICHMENT_LIMITS } from "../editorial/enrichment/editorial-enrichment.contracts.js";
 import { LegacyEditorialPublicationGateway } from "../editorial/legacy-editorial-publication.gateway.js";
 import { LegacyEditorialPublicationPolicyGateway } from "../editorial/legacy-editorial-publication-policy.gateway.js";
 
@@ -338,6 +343,14 @@ export class NewsAgentModule {
             model: draftModel,
             repository: legacyPersistence.port as never,
             editor: getNewsEditor(env),
+            // The editorial pass, ours. Legacy's is switched off inside the
+            // gateway: its structure validation required the model to
+            // reproduce source text verbatim, which discarded the whole pass
+            // whenever the model wrote rather than copied.
+            enrichment: new EditorialEnrichmentService(
+              LEGACY_EDITORIAL_ENRICHMENT_PORTS,
+              DEFAULT_ENRICHMENT_LIMITS,
+            ),
             // Corroboration runs before drafting: the unverified caveat is
             // derived from the evidence, so this is the only point that can
             // affect it without editing the frozen legacy draft module.

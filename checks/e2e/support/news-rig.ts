@@ -20,7 +20,12 @@ import { RESEARCH_EXECUTION_GATEWAY } from "../../../src/research/research-gatew
 import { EditorialApplicationModule } from "../../../src/editorial/editorial-application.module.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../../../src/editorial/editorial-application.tokens.js";
 import { EDITORIAL_PERSISTENCE } from "../../../src/editorial/editorial-persistence.tokens.js";
-import { LegacyEditorialDraftGateway } from "../../../src/editorial/legacy-editorial-draft.gateway.js";
+import {
+  LegacyEditorialDraftGateway,
+  LEGACY_EDITORIAL_ENRICHMENT_PORTS,
+} from "../../../src/editorial/legacy-editorial-draft.gateway.js";
+import { EditorialEnrichmentService } from "../../../src/editorial/enrichment/editorial-enrichment.service.js";
+import { DEFAULT_ENRICHMENT_LIMITS } from "../../../src/editorial/enrichment/editorial-enrichment.contracts.js";
 import { LegacyEditorialPublicationPolicyGateway } from "../../../src/editorial/legacy-editorial-publication-policy.gateway.js";
 import { OperationsApplicationModule } from "../../../src/operations/operations-application.module.js";
 import { PIPELINE_LEASE_APPLICATION } from "../../../src/operations/operations-application.tokens.js";
@@ -168,74 +173,66 @@ function fakeAiProvider(
       };
     }
     if (schema.includes("editorial_enrichment")) {
-      // A correct enrichment, written out in full.
+      // An enrichment that PARAPHRASES its evidence instead of quoting it.
       //
-      // This fixture is the point of the scenario. `validateEditorialStructure`
-      // imposes four separate gates that a generative model has to satisfy
-      // exactly, and until now nothing anywhere stated what satisfying them
-      // looks like -- enrichment simply failed on the stage with no message.
+      // That is the point of the scenario. The legacy pass required
+      // `evidenceExcerpt` to appear as an exact substring of the source and
+      // threw when it did not, so this fixture would have failed there -- and
+      // did, when it was written that way: the paraphrase mutation reproduced
+      // the stage's `enrichment_failed` exactly. The requirement is gone at the
+      // owner's direction, because retrieving details is worth nothing if the
+      // model is then forbidden to write from them.
       //
-      //   1. `hook` must equal the draft's first prose sentence, exactly.
-      //   2. That hook must be less than 0.5 similar to the baseline's
-      //      headline AND to the baseline's own first sentence.
-      //   3. `hookEvidence.evidenceExcerpt` must appear VERBATIM in the text of
-      //      the evidence item it names, and that URL must be in the draft's
-      //      sourceUrls.
-      //   4. Every `causalArc` span must appear VERBATIM in the draft text.
-      //
-      // Then the result is validated again at 90-140 words and at most six
-      // sentences -- a narrower window than the baseline's own 60-100.
-      //
-      // Built from the request, never from constants: the excerpts have to be
-      // slices of the evidence this run actually supplied, which is exactly
-      // the constraint a fixed fixture cannot honour.
+      // What must still hold is grounding: every claim cites a URL that was
+      // actually supplied. A separate scenario proves an invented URL is still
+      // refused.
       const input = request.input as {
         evidence?: Array<{ url?: string; text?: string }>;
       };
-      const source = input.evidence?.[0];
-      const url = String(source?.url ?? "");
-      const excerpt = String(source?.text ?? "").slice(0, 40).trim();
+      const url = String(input.evidence?.[0]?.url ?? "");
       const headline = "Independent accounts converge on one measurement";
-      const hook =
-        "Two newsrooms and a peer-reviewed paper now point the same way.";
-      const change = "the uncertainty band narrowed";
-      const consequence = "fewer competing explanations survive";
-      const significance = "anyone relying on the older figure will see it revised";
+      const claim = "the reported uncertainty band narrowed";
+      // Deliberately longer than 140 words, the ceiling legacy enforced.
+      // An article this length is refused outright by the old limits, so the
+      // scenario fails if the raised, injected limits are not actually in use.
       const prose = [
-        hook,
-        `The reported change is that ${change}, which the supplied evidence sets out in plain terms for a general reader.`,
-        `Because of that, ${consequence}, and the disagreement that remains is far narrower than it was a year ago.`,
-        `For readers following this story, ${significance}, though the work still awaits independent replication elsewhere.`,
-        "That is the whole of what the supplied sources will currently support.",
+        "A second newsroom has now described the same result, and the two accounts agree on the part that matters most to readers.",
+        `Taken together they show that ${claim}, which is the whole of what the supplied reporting will currently support.`,
+        "That leaves fewer competing explanations standing than there were a year ago, and the disagreement that remains is a great deal narrower than it was.",
+        "Anyone who has been relying on the older figure should expect to see it revised over the coming months, in textbooks as well as in press coverage.",
+        "The practical effect for a general reader is small today and larger later, once the revised number works its way into the material everyone else quotes.",
+        "It is worth saying plainly that none of this overturns the earlier work, which was correct within the uncertainty it declared at the time.",
+        "What has changed is the size of that uncertainty, and therefore how much room is left for the competing accounts that depend on it.",
+        "Both newsrooms note that the underlying analysis has not yet been reproduced by a group with no involvement in either effort.",
+        "The work still awaits that independent replication before any of it can be treated as settled.",
       ].join(" ");
-      const telegramText = `${headline}\n\n${prose}\n\nSources:\n${url}`;
-      const claims = [
-        { text: headline, sourceUrl: url },
-        { text: change, sourceUrl: url },
-      ];
       return {
         readerAngle: "What the narrowed figure changes for a general reader.",
-        hook,
-        hookEvidence: { sourceUrl: url, evidenceExcerpt: excerpt },
-        causalArc: {
-          change,
-          causeOrEnabler: null,
-          consequence,
-          readerSignificance: significance,
-        },
         draft: {
           headline,
-          telegramText,
-          claims,
+          telegramText: `${headline}\n\n${prose}\n\nSources:\n${url}`,
+          claims: [
+            { text: headline, sourceUrl: url },
+            { text: claim, sourceUrl: url },
+          ],
           sourceUrls: [url],
           caveat: "The work still awaits independent replication.",
         },
-        evidenceMap: claims.map((claim) => ({
-          claim: claim.text,
-          sourceUrl: url,
-          evidenceExcerpt: excerpt,
-        })),
-        factRequest: null,
+        evidenceMap: [
+          {
+            claim: headline,
+            sourceUrl: url,
+            // Deliberately not a quotation. This is the model's own account of
+            // what supports the claim, which is exactly what the removed check
+            // would have rejected.
+            evidenceExcerpt: "The source reports the same convergence in its own words.",
+          },
+          {
+            claim,
+            sourceUrl: url,
+            evidenceExcerpt: "The source gives the narrowed range for the measurement.",
+          },
+        ],
       };
     }
     if (schema.includes("draft") || schema.includes("Draft")) {
@@ -584,6 +581,10 @@ export async function withNewsRig(
           factPlan: new FactPlanService(),
           corroboration: new EvidenceCorroborationService(
             DEFAULT_CORROBORATION_OPTIONS,
+          ),
+          enrichment: new EditorialEnrichmentService(
+            LEGACY_EDITORIAL_ENRICHMENT_PORTS,
+            DEFAULT_ENRICHMENT_LIMITS,
           ),
         }) as never,
         publication: publicationGateway as never,

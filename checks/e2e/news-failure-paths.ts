@@ -176,10 +176,9 @@ test(
     // way to tell a broken pipeline from a model that had missed one of four
     // exact-match gates.
     //
-    // This settles that half: given an enrichment that satisfies the gates, the
-    // pipeline must accept it and select it. A failure here is ours. A failure
-    // on the stage with this passing is the model's output, and the next step
-    // is the prompt, not the plumbing.
+    // The fixture PARAPHRASES its evidence rather than quoting it, which is the
+    // case legacy rejected outright and the case the owner asked for: the point
+    // of retrieving details is that the model writes from them.
     await withNewsRig(
       {
         host: "enrichment.example.test",
@@ -203,7 +202,7 @@ test(
         );
 
         const { rows } = await rig.pool.query(
-          "select reviewer_notes, length(body) as chars from public.drafts where id = $1",
+          "select reviewer_notes, body, length(body) as chars from public.drafts where id = $1",
           [job?.draft_id],
         );
         const notes = JSON.parse(String(rows[0]?.reviewer_notes ?? "{}")) as {
@@ -219,6 +218,20 @@ test(
           enrichment.status,
           "completed",
           `enrichment must complete, not fall back; diagnostic=${enrichment.diagnostic ?? "none"}`,
+        );
+        // Longer than legacy could ever produce.
+        //
+        // `validateGroundedDraft` defaults to 120 words and the legacy
+        // editorial pass raised that only to 140. An article above that ceiling
+        // proves the injected limits are the ones in force, not the compiled-in
+        // ones -- which is the whole reason length became a parameter.
+        const publishedWords = String(rows[0]?.body ?? "")
+          .split(/\n\s*(?:Sources?|Quellen?|Джерела):\s*\n/iu, 1)[0]
+          .trim()
+          .split(/\s+/).length;
+        assert.ok(
+          publishedWords > 140,
+          `the article must exceed legacy's 140-word ceiling; got ${publishedWords} words`,
         );
         assert.equal(
           enrichment.selected_version,
@@ -561,6 +574,76 @@ test(
       );
       assert.equal(rows[0]?.n, 1, "exactly one job may be live for a channel");
     });
+  },
+);
+
+test(
+  "an enriched article citing a source it was never given is still refused",
+  { skip },
+  async () => {
+    // The control that survives removing the excerpt check, stated on its own.
+    //
+    // Dropping the verbatim requirement means the model may describe its
+    // sources in its own words. It does not mean it may invent one. This is
+    // the same grounding validator the baseline goes through, reused rather
+    // than reimplemented so there is one rule and not two.
+    await withNewsRig(
+      {
+        host: "enrichment-ungrounded.example.test",
+        featureFlags: { editorial_enrichment: "enabled" },
+        ai(request, schema) {
+          if (!schema.includes("editorial_enrichment")) return undefined;
+          const invented = "https://never-supplied.example/exclusive";
+          const headline = "An exclusive nobody supplied";
+          return {
+            readerAngle: "An angle built on a source that was never given.",
+            draft: {
+              headline,
+              telegramText: `${headline}\n\nThe claim rests entirely on a report this pipeline never retrieved, and it should not survive.\n\nSources:\n${invented}`,
+              claims: [{ text: headline, sourceUrl: invented }],
+              sourceUrls: [invented],
+              caveat: "None.",
+            },
+            evidenceMap: [
+              { claim: headline, sourceUrl: invented, evidenceExcerpt: "As reported." },
+            ],
+          };
+        },
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        assert.equal(
+          job?.outcome_status,
+          "review_ready",
+          `the baseline must still ship\n  ${rig.diagnosis()}`,
+        );
+        const { rows } = await rig.pool.query(
+          "select reviewer_notes, body from public.drafts where id = $1",
+          [job?.draft_id],
+        );
+        const notes = JSON.parse(String(rows[0]?.reviewer_notes ?? "{}")) as {
+          editorial_enrichment?: { status?: string; diagnostic?: string | null };
+        };
+        assert.equal(
+          notes.editorial_enrichment?.status,
+          "fallback_to_baseline",
+          "an ungrounded enrichment must be discarded",
+        );
+        assert.match(
+          String(notes.editorial_enrichment?.diagnostic ?? ""),
+          /not_grounded/,
+          `and the reason must say so; got ${notes.editorial_enrichment?.diagnostic}`,
+        );
+        assert.ok(
+          !String(rows[0]?.body ?? "").includes("never-supplied.example"),
+          "and the invented source must not reach the article",
+        );
+      },
+    );
   },
 );
 
