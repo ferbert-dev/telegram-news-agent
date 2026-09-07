@@ -84,6 +84,16 @@ export type CorroborationSource = {
   title?: string;
   excerpt?: string;
   /**
+   * When the source says it was written, as the search provider reports it.
+   *
+   * Null when the provider could not estimate one. That is common for primary
+   * documents -- court filings, press releases -- which are exactly the
+   * sources worth having, so an undated source is kept rather than dropped.
+   * The consequence is stated plainly because it is a real hole: a stale
+   * source with no date still gets through.
+   */
+  publishedAt?: string | null;
+  /**
    * How much this publisher's agreement is worth. Set by the adapter, because
    * only it knows the URL before the service sees it.
    *

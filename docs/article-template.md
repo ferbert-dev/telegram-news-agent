@@ -46,6 +46,25 @@ The floor is checked on the **rebuilt** body, not on what the model returned:
 stripping the URLs it wrote into the prose removes words, and the rebuilt body
 is what ships.
 
+## Sources have to be recent
+
+A corroborating source older than 72 hours is discarded before the model ever
+sees it. A published article about a typhoon carried a forecast lifted from a
+press conference four days earlier — "residual circulation after 4 September
+may bring heavy rain" — printed on the 7th as though it were ahead of the
+reader. The search had found a genuinely relevant document and nothing
+anywhere asked when it was written.
+
+The window is wider than the research window on purpose: a story published
+today can be legitimately corroborated by yesterday's reporting.
+
+A source the provider could not date is **kept**, and reaches the model marked
+as undated so the date can be judged there too. That is a deliberate trade,
+and the hole it leaves is real: a stale source with no date still gets
+through. Dropping every undated result would cost more, because the provider
+fails to date primary documents most often — filings and press releases, the
+sources most worth having.
+
 ## Why exactly one link
 
 The corroborating publishers are newsrooms that took the story from somewhere

@@ -15,6 +15,20 @@ export type EvidenceCorroborationOptions = {
   requiredPublishers: number;
   /** Hard ceiling on paid searches per article. */
   maxSearches: number;
+  /**
+   * How old a corroborating source may be before it is discarded.
+   *
+   * A published article about a typhoon carried a forecast lifted from a
+   * press conference four days earlier -- "residual circulation after 4
+   * September may bring heavy rain" -- printed on the 7th as though it were
+   * ahead of the reader. The search had found a genuinely relevant document
+   * and nothing anywhere asked when it was written.
+   *
+   * Wider than the research window on purpose: a story published today can be
+   * legitimately corroborated by yesterday's reporting, and a threshold tight
+   * enough to exclude that would throw away most real corroboration.
+   */
+  maxSourceAgeHours: number;
 };
 
 export const RUMOUR_TAG = "#rumor";
@@ -27,6 +41,7 @@ export const DEFAULT_CORROBORATION_OPTIONS: EvidenceCorroborationOptions = {
   // Exa is metered against a $10/month budget, so the ceiling is held here and
   // not by the model. A search is only ever spent on an article that needs one.
   maxSearches: 3,
+  maxSourceAgeHours: 72,
 };
 
 /**
@@ -65,8 +80,11 @@ export class EvidenceCorroborationService {
     languageCode: string;
     search: CorroborationSearchPort;
     signal?: AbortSignal;
+    /** Injected so the age rule is testable without waiting for time to pass. */
+    now?: () => Date;
   }): Promise<CorroborationOutcome> {
     const { evidence, requests, languageCode, search, signal } = input;
+    const now = input.now ?? (() => new Date());
 
     // Searches run for every article now, so `not_needed` no longer means
     // "primary source". It means there was nothing to ask.
@@ -106,6 +124,8 @@ export class EvidenceCorroborationService {
         // Independent means a DIFFERENT publisher. A second page from the
         // newsroom that published the rumour corroborates nothing.
         if (!publisher || known.has(publisher) || found.has(publisher)) continue;
+        // Old enough that its "what happens next" is already in the past.
+        if (isStale(source.publishedAt, now(), this.options.maxSourceAgeHours)) continue;
         if ((source.tier ?? "other") === "strong") strong.add(publisher);
 
         found.set(publisher, {
@@ -116,6 +136,9 @@ export class EvidenceCorroborationService {
           // and is used only so an item is never added with nothing readable
           // in it, which is the state that broke enrichment.
           text: source.excerpt?.trim() || source.title?.trim() || "",
+          // Handed to the model as well as used here, so it can see how old a
+          // detail is before repeating it as current.
+          publishedAt: source.publishedAt ?? null,
           // Never primary: an independent report is not the subject's own
           // announcement, and draft.js ranks those differently on purpose.
           primary: false,
@@ -175,4 +198,24 @@ export class EvidenceCorroborationService {
       usageEvents,
     };
   }
+}
+
+/**
+ * Older than the window, by the source's own account.
+ *
+ * An undated source is NOT stale. The provider cannot always estimate a date,
+ * and it fails most often on primary documents -- filings, press releases --
+ * which are the sources most worth keeping. Dropping every undated result
+ * would cost more than it saves, and the hole it leaves is real and worth
+ * naming: a stale source with no date still gets through.
+ */
+function isStale(
+  publishedAt: string | null | undefined,
+  now: Date,
+  maxAgeHours: number,
+): boolean {
+  if (!publishedAt) return false;
+  const published = Date.parse(publishedAt);
+  if (Number.isNaN(published)) return false;
+  return now.getTime() - published > maxAgeHours * 60 * 60 * 1000;
 }
