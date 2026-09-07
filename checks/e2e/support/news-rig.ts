@@ -326,7 +326,13 @@ function fakeAiProvider(
         ],
         sourceUrls: corroboratedUrl ? [url, corroboratedUrl] : [url],
         caveat: "The result awaits independent replication.",
-        topicTags: [],
+        // Tags when a catalogue was supplied, which is what a model does.
+        // Returning an empty list unconditionally made every tagging path in
+        // the rig indistinguishable from tagging being switched off.
+        topicTags: ((request.input as { articleTagging?: { catalog?: Array<{ code: string }> } })
+          .articleTagging?.catalog ?? [])
+          .slice(0, 1)
+          .map(({ code }) => ({ code, confidence: 0.9 })),
       };
     }
     return {};
