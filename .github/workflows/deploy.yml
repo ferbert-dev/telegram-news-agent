@@ -612,6 +612,20 @@ jobs:
           for (const r of srcTopics.rows) {
             console.log(`SourceTopics topic=${r.code} topic_enabled=${r.enabled} enabled_sources=${r.sources}`);
           }
+          // The tag catalogue is an INNER JOIN on topic_translations for the
+          // channel's exact language. No translation in that language means an
+          // empty catalogue, which means no tag can ever be assigned however
+          // the feature flag is set.
+          const tagCatalog = await client.query(
+            `select tr.language_code, count(*)::int as topics
+               from public.topics t
+               join public.topic_translations tr on tr.topic_id = t.id
+              where t.enabled group by tr.language_code order by topics desc`);
+          if (!tagCatalog.rows.length) console.log("TagCatalog (no translations at all)");
+          for (const r of tagCatalog.rows) {
+            console.log(`TagCatalog language=${r.language_code} taggable_topics=${r.topics}`);
+          }
+
           const untagged = await client.query(
             `select count(*)::int as n from public.sources s
               where s.enabled and not exists (
