@@ -624,6 +624,27 @@ jobs:
             console.log(`DraftDetail id=${r.id} status=${r.status} body_chars=${r.body_chars} ${enrichment} created=${r.created_at?.toISOString?.() ?? r.created_at}`);
           }
 
+          // The article itself, and the sources it actually rests on.
+          //
+          // `body_chars` says how long it is and nothing about whether the
+          // retrieved details reached it. Answering "did the search help?"
+          // from the stage meant reading a number and guessing.
+          const article = await client.query(
+            `select id, body, reviewer_notes from public.drafts
+              order by created_at desc limit 1`);
+          for (const r of article.rows) {
+            let notes = {};
+            try { notes = JSON.parse(r.reviewer_notes ?? "{}"); } catch {}
+            const e = notes.editorial_enrichment ?? {};
+            const map = e.evidence_map ?? [];
+            const mapped = [...new Set(map.map((m) => m.sourceUrl).filter(Boolean))];
+            const claimed = [...new Set((notes.claims ?? []).map((c) => c.sourceUrl).filter(Boolean))];
+            console.log(`ArticleSources draft=${r.id} claim_urls=${JSON.stringify(claimed)} evidence_map_urls=${JSON.stringify(mapped)} map_entries=${map.length} reader_angle=${JSON.stringify(e.reader_angle ?? null)} similarity=${JSON.stringify(e.similarity ?? null)} attempts=${e.attempts ?? "n/a"}`);
+            for (const line of String(r.body ?? "").split("\n")) {
+              console.log(`ArticleBody | ${line}`);
+            }
+          }
+
           // Which retrieval path actually produced the article text.
           //
           // Added because a live run showed `searchFact provider=exa` in the
