@@ -90,6 +90,21 @@ test(
           `the article must still be written from what is available\n  ${rig.diagnosis()}`,
         );
         assert.ok(job?.draft_id, "a draft must still exist");
+
+        // And nothing may be recorded as having come from the content service,
+        // because it threw on every call. A run that reports a source it never
+        // used is worse than one that reports nothing.
+        const { rows } = await rig.pool.query(
+          `select count(*)::int as n from public.raw_contents
+            where metadata->>'source_url' like $1
+              and metadata->>'retrieved_by' = 'content-service'`,
+          [`https://${rig.host}/%`],
+        );
+        assert.equal(
+          rows[0]?.n,
+          0,
+          "a provider that threw must not be credited with the text",
+        );
       },
     );
   },
