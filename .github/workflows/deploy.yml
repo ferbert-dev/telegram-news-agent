@@ -422,9 +422,9 @@ jobs:
           await client.connect();
           const result = await client.query(`select provider, status, error_code, operation, started_at, completed_at, latency_ms, correlation_id from public.ai_provider_attempts order by started_at desc limit 10`);
           for (const row of result.rows) console.log(`AiProviderAttempt provider=${row.provider} status=${row.status} error_code=${row.error_code ?? 'none'} operation=${row.operation} started_at=${row.started_at?.toISOString?.() ?? row.started_at} completed_at=${row.completed_at?.toISOString?.() ?? row.completed_at} latency_ms=${row.latency_ms ?? 'none'} trace_id=${row.correlation_id}`);
-          const settings = await client.query(`select telegram_channel_id, excluded_topic_codes, coalesce(array_length(topic_codes, 1), 0) as topic_count, language_code, approval_policy, schedule_interval_minutes from public.news_bot_settings order by telegram_channel_id`);
+          const settings = await client.query(`select telegram_channel_id, excluded_topic_codes, topic_codes, custom_topics, language_code, approval_policy, schedule_interval_minutes from public.news_bot_settings order by telegram_channel_id`);
           if (!settings.rows.length) console.log("Settings (no rows)");
-          for (const r of settings.rows) console.log(`Settings channel=${r.telegram_channel_id} excluded_topic_codes=[${(r.excluded_topic_codes ?? []).join(",")}] topic_count=${r.topic_count} language=${r.language_code} approval=${r.approval_policy} interval_minutes=${r.schedule_interval_minutes ?? "none"}`);
+          for (const r of settings.rows) console.log(`Settings channel=${r.telegram_channel_id} topics=[${(r.topic_codes ?? []).join(",")}] custom_topics=[${(r.custom_topics ?? []).join("|")}] excluded=[${(r.excluded_topic_codes ?? []).join(",")}] language=${r.language_code} approval=${r.approval_policy} interval_minutes=${r.schedule_interval_minutes ?? "none"}`);
           const perOp = await client.query(`select operation, count(*)::int as n from public.ai_provider_attempts where started_at > now() - interval '24 hours' group by operation order by n desc`);
           if (!perOp.rows.length) console.log("AiCalls24h (none)");
           for (const r of perOp.rows) console.log(`AiCalls24h operation=${r.operation} count=${r.n}`);
@@ -591,9 +591,41 @@ jobs:
           import pg from "pg";
           const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
           await client.connect();
-          const settings = await client.query(`select telegram_channel_id, excluded_topic_codes, coalesce(array_length(topic_codes, 1), 0) as topic_count, language_code, approval_policy, schedule_interval_minutes from public.news_bot_settings order by telegram_channel_id`);
+          const settings = await client.query(`select telegram_channel_id, excluded_topic_codes, topic_codes, custom_topics, language_code, approval_policy, schedule_interval_minutes from public.news_bot_settings order by telegram_channel_id`);
           if (!settings.rows.length) console.log("Settings (no rows)");
-          for (const r of settings.rows) console.log(`Settings channel=${r.telegram_channel_id} excluded_topic_codes=[${(r.excluded_topic_codes ?? []).join(",")}] topic_count=${r.topic_count} language=${r.language_code} approval=${r.approval_policy} interval_minutes=${r.schedule_interval_minutes ?? "none"}`);
+          for (const r of settings.rows) console.log(`Settings channel=${r.telegram_channel_id} topics=[${(r.topic_codes ?? []).join(",")}] custom_topics=[${(r.custom_topics ?? []).join("|")}] excluded=[${(r.excluded_topic_codes ?? []).join(",")}] language=${r.language_code} approval=${r.approval_policy} interval_minutes=${r.schedule_interval_minutes ?? "none"}`);
+          // Whether the channel's topic selection can reach any source at all.
+          //
+          // sourceMatchesSettings admits an UNTAGGED source only when "ai" is
+          // among the selected topics, so a channel narrowed to anything else
+          // depends entirely on sources carrying topic codes. Counting them is
+          // the difference between "the filter does nothing" and "the filter
+          // has nothing to work with".
+          const srcTopics = await client.query(
+            `select s.source_type, count(*)::int as total,
+                    count(*) filter (where t.code_count > 0)::int as tagged
+               from public.sources s
+               left join lateral (
+                 select count(*)::int as code_count
+                   from public.source_topics st where st.source_id = s.id
+               ) t on true
+              where s.enabled group by s.source_type order by total desc`);
+          if (!srcTopics.rows.length) console.log("SourceTopics (no enabled sources)");
+          for (const r of srcTopics.rows) {
+            console.log(`SourceTopics type=${r.source_type} enabled=${r.total} with_topic_codes=${r.tagged}`);
+          }
+
+          // What article tagging actually produced on the newest articles.
+          const assigned = await client.query(
+            `select a.canonical_url,
+                    coalesce(array_agg(at.topic_code) filter (where at.topic_code is not null), '{}') as codes
+               from public.articles a
+               left join public.article_topics at on at.article_id = a.id
+              group by a.id, a.canonical_url order by a.created_at desc limit 3`);
+          for (const r of assigned.rows) {
+            console.log(`ArticleTopics codes=[${(r.codes ?? []).join(",")}] url=${r.canonical_url}`);
+          }
+
           const perOp = await client.query(`select operation, count(*)::int as n from public.ai_provider_attempts where started_at > now() - interval '24 hours' group by operation order by n desc`);
           if (!perOp.rows.length) console.log("AiCalls24h (none)");
           for (const r of perOp.rows) console.log(`AiCalls24h operation=${r.operation} count=${r.n}`);
