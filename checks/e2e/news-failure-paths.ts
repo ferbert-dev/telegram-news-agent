@@ -260,6 +260,16 @@ test(
           !body.includes("dw.com"),
           "a link the model wrote into the prose must not survive",
         );
+
+        // No editor signature on the enriched article.
+        //
+        // "Знайшов і підготував для вас: …" was appended to every post, which
+        // is why it stopped carrying information. The baseline path keeps its
+        // own; this is the path that ships.
+        assert.ok(
+          !/Знайшов і підготував|Найшов і підготував/u.test(body),
+          `the enriched article must carry no editor credit; got ${JSON.stringify(body.slice(-160))}`,
+        );
         const proseBeforeSources = body.split(/\n\s*(?:Sources?|Джерела|Quellen):/iu, 1)[0] ?? "";
         assert.ok(
           !/https?:\/\//u.test(proseBeforeSources),

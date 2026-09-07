@@ -63,6 +63,28 @@ export type FallbackAiProvider = {
 };
 
 const FALLBACK_PROVIDER_DEADLINE_MS = 30_000;
+
+/**
+ * How long an operation is allowed, when the work itself is slower than the
+ * default assumes.
+ *
+ * Keyed by `usageOperation`, the semantic name, not by the port method: every
+ * one of these is `generateStructured`, and what differs is how much writing
+ * the model is being asked to do.
+ *
+ * These two exist because of a measurement, not a guess. Editorial enrichment
+ * took 23 seconds on Gemini when it succeeded; against a 30-second ceiling that
+ * is not a margin, it is a coin toss. On the integration stage Gemini then hit
+ * its quota and every enrichment fell to OpenAI, which recorded seven timeouts
+ * at exactly the deadline -- so the editorial pass never ran, and three
+ * published articles were the untouched baseline while the prompt driving them
+ * was being rewritten.
+ */
+export const DEFAULT_OPERATION_DEADLINES_MS: Readonly<Record<string, number>> = {
+  editorial_enrichment: 90_000,
+  editorial_enrichment_retry: 90_000,
+  editorial_draft: 60_000,
+};
 const FALLBACK_PROVIDER_ATTEMPTS = 3;
 
 /**
@@ -166,6 +188,7 @@ export function createFallbackAiProvider(
     now = () => new Date(),
     sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
     providerDeadlineMs = FALLBACK_PROVIDER_DEADLINE_MS,
+    operationDeadlineMs = DEFAULT_OPERATION_DEADLINES_MS,
     random = Math.random,
     setTimeoutImpl = (callback: () => void, delayMs: number) => setTimeout(callback, delayMs),
     clearTimeoutImpl = (timeoutId: unknown) => clearTimeout(timeoutId as ReturnType<typeof setTimeout>),
@@ -176,6 +199,7 @@ export function createFallbackAiProvider(
     now?: () => Date;
     sleep?: (ms: number) => Promise<void>;
     providerDeadlineMs?: number;
+    operationDeadlineMs?: Readonly<Record<string, number>>;
     random?: () => number;
     setTimeoutImpl?: (callback: () => void, delayMs: number) => unknown;
     clearTimeoutImpl?: (timeoutId: unknown) => void;
@@ -236,6 +260,11 @@ export function createFallbackAiProvider(
     if (state.consecutive >= THROTTLE_BREAKER_THRESHOLD) {
       state.openUntilMs = now().getTime() + THROTTLE_BREAKER_COOLDOWN_MS;
     }
+  };
+
+  const deadlineForOperation = (input: Record<string, unknown>): number | undefined => {
+    const semantic = typeof input.usageOperation === "string" ? input.usageOperation : null;
+    return semantic ? operationDeadlineMs[semantic] : undefined;
   };
 
   const runAttempt = async (
@@ -381,10 +410,14 @@ export function createFallbackAiProvider(
         continue;
       }
       throwIfAborted(parentSignal);
-      // Per-provider, because the default is tuned for a paid API answering
-      // in seconds and a free queued endpoint does not.
+      // Per-operation first, then per-provider. The operation wins because it
+      // describes the work: a long piece of writing takes the same time
+      // whichever provider is asked for it, while the provider trait exists
+      // for endpoints that are slow for their own reasons.
       const deadlineForProviderMs =
-        traitsOf(provider.name, descriptors).deadlineMs ?? providerDeadlineMs;
+        deadlineForOperation(input)
+        ?? traitsOf(provider.name, descriptors).deadlineMs
+        ?? providerDeadlineMs;
       const deadlineAtMs = now().getTime() + deadlineForProviderMs;
       const controller = new AbortController();
       let providerAttempt = 0;
@@ -457,7 +490,18 @@ export function createFallbackAiProvider(
     }
     const controller = new AbortController();
     try {
-      const result = await runAttempt(operation, input, provider, correlationId, 1, now().getTime() + (traitsOf(provider.name, descriptors).deadlineMs ?? providerDeadlineMs), controller);
+      const result = await runAttempt(
+        operation,
+        input,
+        provider,
+        correlationId,
+        1,
+        now().getTime()
+          + (deadlineForOperation(input)
+            ?? traitsOf(provider.name, descriptors).deadlineMs
+            ?? providerDeadlineMs),
+        controller,
+      );
       recordThrottleOutcome(provider.name, null);
       return result;
     } catch (error) {

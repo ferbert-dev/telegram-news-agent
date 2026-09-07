@@ -36,7 +36,6 @@ export const LEGACY_EDITORIAL_ENRICHMENT_PORTS: EditorialEnrichmentPorts = {
   measureSimilarity:
     legacyMeasureEditorialSimilarity as EditorialEnrichmentPorts["measureSimilarity"],
 };
-import { appendEditorCredit } from "../editor.js";
 import { appendTopicHashtags } from "../article-tags.js";
 import { validateMessage } from "../telegram.js";
 
@@ -423,14 +422,18 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
 
     let body: string;
     try {
-      const credited = appendEditorCredit(
+      // No editor credit.
+      //
+      // "Знайшов і підготував для вас: <name>" was appended to every article,
+      // which is exactly why it stopped carrying information: a line that is
+      // identical on every post is furniture. Removed at the owner's request.
+      // The baseline path keeps its own credit; legacy appends that one.
+      body = appendTopicHashtags(
         outcome.draft.telegramText,
-        request.editor,
-        request.languageCode,
+        [],
+        request.tagging,
+        { languageCode: request.languageCode },
       ) as string;
-      body = appendTopicHashtags(credited, [], request.tagging, {
-        languageCode: request.languageCode,
-      }) as string;
       validateMessage(body);
     } catch (error) {
       return baselineOnly(

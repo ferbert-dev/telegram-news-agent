@@ -262,3 +262,34 @@ test("a rejected credential takes a provider out of rotation instead of being re
     `a rejected credential must stop being asked; it was attempted ${openaiCalls} times across 8 calls`,
   );
 });
+
+test("a long operation gets its own deadline, not the default one", async () => {
+  // Editorial enrichment took 23 seconds on Gemini when it succeeded. Against
+  // a 30-second ceiling that is not a margin. On the integration stage Gemini
+  // then hit its quota, every enrichment fell to OpenAI, and the ledger
+  // recorded seven timeouts at exactly the deadline -- so the editorial pass
+  // never ran, and three published articles were the untouched baseline while
+  // the prompt driving them was being rewritten.
+  const deadlines: number[] = [];
+  const provider = {
+    name: "slow",
+    model: "m",
+    async generateStructured() {
+      return { value: {}, usageEvents: [] };
+    },
+  };
+  const composed = createFallbackAiProvider([provider as never], {
+    log: { warn() {}, error() {}, info() {} } as never,
+    setTimeoutImpl: (_callback: () => void, delayMs: number) => {
+      deadlines.push(delayMs);
+      return 0;
+    },
+    clearTimeoutImpl: () => undefined,
+  });
+
+  await composed.generateStructured({ usageOperation: "editorial_enrichment" });
+  await composed.generateStructured({ usageOperation: "feed_candidate_curation" });
+
+  assert.equal(deadlines[0], 90_000, "enrichment gets the long deadline");
+  assert.equal(deadlines[1], 30_000, "everything else keeps the default");
+});

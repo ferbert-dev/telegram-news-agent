@@ -16,13 +16,22 @@ in the same way, and nothing in the repository said what right looked like.
 | What happened | Facts with their numbers: who, what, how many | One or two sentences. No opinion. |
 | Detail | The concrete thing only a full read gives you — a quote, a circumstance, a figure | One or two sentences. **This is where material from the other sources goes.** |
 | Why it matters | The consequence for an ordinary reader, not for politicians | One or two sentences. No forecasts the sources do not make. |
-| What is unknown | What the sources do not settle | One sentence. **Not optional.** |
-| Signature | Added by the system | Never written by the model. |
+| What next | What happens next, and what the people involved say about it | One or two sentences. Quote a person where the evidence gives you one. |
 | Source | The one link, to the article this run actually read | **Exactly one. Never in the prose. Never another outlet.** |
 
-Headline line, then four paragraphs: hook + what happened, detail, why it
-matters, what is unknown. The signature and the source block are appended
-afterwards by the pipeline, not by the model.
+Headline line, then four paragraphs: hook + what happened, the detail, why it
+matters, what happens next. The source block is appended afterwards by the
+pipeline; the model never writes it.
+
+**No editor signature.** "Знайшов і підготував для вас: …" was appended to
+every post, which is precisely why it stopped carrying information — a line
+identical on every article is furniture.
+
+**Never write about the material.** No "this is a report about preliminary
+results", no "the figures may still change", no sentence whose subject is the
+sourcing rather than the news. It reads as a warning that the article might not
+be true. Where something genuinely is not settled, say it as a fact of the
+story — "the final tally is due on Tuesday" — not as a disclaimer.
 
 **185 to 220 words**, aiming for about 200. Never fewer than 185.
 
