@@ -629,3 +629,106 @@ test("LegacyEditorialDraftGateway isolates concurrent calls so usage/drafts don'
   assert.deepEqual(captured.get("article-1")?.created, ["Generated body article-1"]);
   assert.deepEqual(captured.get("article-2")?.created, ["Generated body article-2"]);
 });
+
+test("an enriched article carries the topic hashtags legacy assigned to it", async () => {
+  // The first version of the typed editorial pass passed an empty assignment
+  // list to appendTopicHashtags, so an enriched article carried no hashtags
+  // however the feature was configured. The tags were assigned by the model,
+  // stored on the draft row, and then dropped on the one path that ships --
+  // so turning article tagging on appeared to do nothing at all.
+  //
+  // A setting that saves and then has no effect is the worst kind of broken:
+  // there is nothing to notice.
+  const assignments = [{ code: "tech", confidence: 0.9 }];
+  const taggedCatalog = [{ code: "tech", label: "Tech", hashtag: "#tech" }];
+  const result = await new LegacyEditorialDraftGateway(
+    {
+      model: "m",
+      aiProvider: {
+        async generateStructured() {
+          return {
+            value: {
+              readerAngle: "Why this matters to a general reader right now.",
+              draft: {
+                headline: "A headline that is also a claim",
+                telegramText: "A headline that is also a claim\n\nThe enriched body says something specific and grounded.",
+                claims: [{ text: "A headline that is also a claim", sourceUrl: "https://acme.example/pr" }],
+                sourceUrls: ["https://acme.example/pr"],
+                caveat: "Nothing further is settled.",
+              },
+              evidenceMap: [
+                {
+                  claim: "The headline, in the article's own framing",
+                  sourceUrl: "https://acme.example/pr",
+                  evidenceExcerpt: "The source supports it.",
+                },
+              ],
+            },
+            provider: "fake",
+            model: "fake",
+          };
+        },
+      },
+      repository: {
+        async getNewsFeatureFlags() {
+          return [
+            { feature_key: "article_tags", state: "enabled" },
+            { feature_key: "editorial_enrichment", state: "enabled" },
+          ];
+        },
+        async listEnabledArticleTags() {
+          return taggedCatalog;
+        },
+        createReviewDraft: async () => ({}),
+      } as never,
+      enrichment: {
+        async enrich() {
+          return {
+            status: "completed" as const,
+            draft: {
+              headline: "A headline that is also a claim",
+              telegramText: "A headline that is also a claim\n\nThe enriched body says something specific and grounded.",
+              claims: [{ text: "A headline that is also a claim", sourceUrl: "https://acme.example/pr" }],
+              sourceUrls: ["https://acme.example/pr"],
+              caveat: "Nothing further is settled.",
+            },
+            readerAngle: "angle",
+            evidenceMap: [],
+            similarity: { metric: "m", score: 0.1, threshold: 0.68 },
+            provider: "fake",
+            model: "fake",
+            attempts: 1,
+          };
+        },
+      } as never,
+    },
+    (async () => ({
+      draft: { telegramText: "baseline" },
+      baselineDraft: {
+        headline: "Baseline",
+        telegramText: "Baseline\n\nBaseline body.",
+        claims: [],
+        sourceUrls: [],
+        caveat: "c",
+      },
+      enrichedDraft: null,
+      editorialEnrichment: { state: "enabled" },
+      saved: {
+        article_id: ARTICLE.id,
+        body: "Baseline body",
+        model: "m",
+        prompt_version: "v",
+        reviewer_notes: "{}",
+        topic_assignments: assignments,
+      },
+      provider: "fake",
+      model: "fake",
+    })) as never,
+  ).generate(fixtureInput(ARTICLE));
+
+  assert.match(
+    String(result.draft.body),
+    /#/u,
+    `the enriched body must carry the hashtags; got ${JSON.stringify(result.draft.body)} summary=${JSON.stringify((result.output as { editorialEnrichment?: unknown }).editorialEnrichment)}`,
+  );
+});

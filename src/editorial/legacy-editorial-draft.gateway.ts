@@ -375,6 +375,16 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
     languageCode: string;
     editor: unknown;
     tagging: { state: string } & Record<string, unknown>;
+    /**
+     * The topics legacy assigned to this article.
+     *
+     * Threading these through is not optional decoration. The first version
+     * passed an empty list, so an enriched article carried no hashtags however
+     * the feature was configured -- the tags were assigned, stored, and then
+     * dropped on the one path that ships. Turning the feature on appeared to
+     * do nothing, which is the worst kind of broken: a setting that saves.
+     */
+    topicAssignments: readonly unknown[];
     unverified: boolean;
   }): Promise<EditorialPassResult> {
     const baselineOnly = (
@@ -430,7 +440,7 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
       // The baseline path keeps its own credit; legacy appends that one.
       body = appendTopicHashtags(
         outcome.draft.telegramText,
-        [],
+        request.topicAssignments,
         request.tagging,
         { languageCode: request.languageCode },
       ) as string;
@@ -605,6 +615,7 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
       languageCode: input.languageCode,
       editor: this.dependencies.editor,
       tagging: articleTagging,
+      topicAssignments: generated.saved.topic_assignments ?? [],
       unverified: isUnverified(input.evidence),
     });
 
