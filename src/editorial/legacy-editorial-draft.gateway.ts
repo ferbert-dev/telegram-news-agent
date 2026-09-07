@@ -344,6 +344,41 @@ type EditorialPassResult = {
  * Legacy was told the pass was off, so its own block says "disabled" -- which
  * would be a false record of a run where the pass ran here and succeeded.
  */
+const SOURCE_HEADING_BY_LANGUAGE: Record<string, string> = {
+  en: "Sources",
+  uk: "Джерела",
+  de: "Quellen",
+};
+
+/**
+ * The editor credit and every source but the first, removed from a baseline
+ * article.
+ *
+ * Deliberately narrow. The credit is a whole line with a known prefix per
+ * language, and the source block is a trailing list -- both are structural.
+ * The disclaimer sentence legacy's prompt produces ("Важливо: це матеріал…")
+ * sits inside the prose, and cutting sentences out of prose is a different and
+ * riskier kind of edit; the way to be rid of that one is for the editorial
+ * pass to succeed, which is what the retries are for.
+ */
+function stripPublishingFurniture(
+  body: string,
+  primarySourceUrl: string,
+  languageCode: string,
+): string {
+  if (typeof body !== "string" || !body) return body;
+  const heading = SOURCE_HEADING_BY_LANGUAGE[languageCode] ?? SOURCE_HEADING_BY_LANGUAGE.en;
+  const headingPattern = /\n\s*(?:Sources?|Quellen?|Джерела|Джерело):?\s*\n[\s\S]*$/iu;
+  const creditPattern =
+    /\n\s*(?:Знайшов і підготував для вас:|Found and prepared for you by|Für Sie gefunden und aufbereitet von)[^\n]*/giu;
+  const prose = body
+    .replace(headingPattern, "")
+    .replace(creditPattern, "")
+    .trimEnd();
+  if (!primarySourceUrl) return prose;
+  return `${prose}\n\n${heading}:\n${primarySourceUrl}`;
+}
+
 function withEnrichmentNotes(
   notes: string | null | undefined,
   pass: EditorialPassResult,
@@ -647,7 +682,21 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
     return {
       draft: {
         article_id: generated.saved.article_id,
-        body: enrichment.body ?? generated.saved.body,
+        // The baseline gets the publishing rules applied too.
+        //
+        // When the editorial pass falls back, the reader gets legacy's
+        // article -- and legacy's article carries the editor credit and lists
+        // every cited URL, which are the two things the owner asked to remove.
+        // A run that failed for an internal reason then looks like the whole
+        // change was reverted, and that is exactly how it was reported.
+        //
+        // The pass's own structure cannot be recovered without the model. The
+        // furniture can, and it is line-level rather than prose surgery.
+        body: enrichment.body ?? stripPublishingFurniture(
+          generated.saved.body,
+          input.evidence[0]?.url ?? "",
+          input.languageCode,
+        ),
         model: generated.saved.model,
         prompt_version: enrichment.draft
           ? `${generated.saved.prompt_version}+typed-editorial-pass-v1`

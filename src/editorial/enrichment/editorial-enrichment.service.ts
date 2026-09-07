@@ -157,6 +157,14 @@ export class EditorialEnrichmentService {
     // other failure -- a bad schema, an ungrounded citation -- repeats, and
     // paying for it twice buys nothing.
     let retryFeedback = "";
+    // The previous attempt, handed back for editing.
+    //
+    // The first version discarded it and asked for a fresh article, which
+    // threw away work that was already grounded, already the right shape and
+    // already carried the detail the searches had paid for -- over a word
+    // count. Editing what exists is both cheaper and likelier to land: the
+    // model is told what to cut rather than asked to try again and hope.
+    let previousAttempt: EnrichedArticle | null = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       if (attempt === 2 && !retryFeedback) break;
       attempts = attempt;
@@ -175,6 +183,9 @@ export class EditorialEnrichmentService {
               url: request.article.canonical_url ?? null,
             },
             baselineDraft,
+            ...(previousAttempt
+              ? { previousAttempt, task: "Revise your previous attempt. Keep what works." }
+              : {}),
             evidence: evidence.map((item) => ({
               url: item.url,
               title: item.title ?? null,
@@ -216,16 +227,22 @@ export class EditorialEnrichmentService {
           evidence,
           {
             languageCode,
-            // The floor is deliberately NOT enforced here.
+            // Length is NOT judged here, in either direction.
             //
-            // A short draft would throw inside this validator, arrive as
-            // "not grounded", and be classified as unfixable -- so it would
-            // cost the article its editorial pass instead of a second ask.
-            // The floor is checked below, on the rebuilt body, where it can
-            // be answered with the model's own word count.
+            // Grounding is this validator's job; length is ours. Anything it
+            // throws arrives as "not grounded" and is classified as unfixable,
+            // so a draft that missed a word count by a few words cost the
+            // article its whole editorial pass instead of a second ask. The
+            // floor was moved out for that reason and the ceiling was left
+            // behind -- and the ceiling is what the next run hit:
+            // `not_grounded: Draft exceeds the 220-word safety limit`, and
+            // straight back to the baseline.
+            //
+            // Both bounds are checked below, on the rebuilt body, where a miss
+            // can be answered with the model's own count.
             minWords: 0,
-            maxWords: this.limits.maxWords,
-            maxSentences: this.limits.maxSentences,
+            maxWords: Number.MAX_SAFE_INTEGER,
+            maxSentences: Number.MAX_SAFE_INTEGER,
           },
         );
       } catch (error) {
@@ -248,6 +265,7 @@ export class EditorialEnrichmentService {
       const similarity = this.ports.measureSimilarity(baselineDraft, grounded);
       if (similarity.tooSimilar) {
         lastDiagnostic = `too_similar: ${similarity.score} >= ${similarity.threshold}`;
+        previousAttempt = null; // the one case where rewriting IS the point
         retryFeedback =
           "The previous attempt was too close to the baseline. Choose a sharper angle, change the hook and the order of the narrative materially, and do not merely reword it.";
         continue;
@@ -274,9 +292,23 @@ export class EditorialEnrichmentService {
       // draft that cleared the minimum before the rebuild can fall under it
       // after -- and the reader gets the rebuilt one.
       const publishedWords = proseWordCount(published.telegramText, languageCode);
+      const publishedSentences = proseSentenceCount(published.telegramText, languageCode);
       if (publishedWords < this.limits.minWords) {
         lastDiagnostic = `too_short: ${publishedWords} words, minimum ${this.limits.minWords}`;
-        retryFeedback = `The previous attempt was ${publishedWords} words, below the ${this.limits.minWords}-word minimum. Expand the detail paragraph and the why-it-matters paragraph with material already in the evidence. Do not pad the caveat and do not repeat sentences.`;
+        previousAttempt = published;
+        retryFeedback = `Your previous attempt is supplied as previousAttempt. It is ${publishedWords} words, below the ${this.limits.minWords}-word minimum. Return it edited, not rewritten: keep its angle, its headline and its paragraphs, and expand the detail paragraph and the why-it-matters paragraph with material already in the evidence. Do not pad the caveat and do not repeat sentences.`;
+        continue;
+      }
+      if (publishedWords > this.limits.maxWords) {
+        lastDiagnostic = `too_long: ${publishedWords} words, maximum ${this.limits.maxWords}`;
+        previousAttempt = published;
+        retryFeedback = `Your previous attempt is supplied as previousAttempt. It is ${publishedWords} words, ${publishedWords - this.limits.maxWords} over the ${this.limits.maxWords}-word maximum. Return it edited, not rewritten: keep its angle, its headline and its four paragraphs, and cut roughly ${publishedWords - this.limits.maxWords} words by tightening sentences and dropping the least load-bearing detail — the last sentence of the final paragraph first. Keep every claim's source.`;
+        continue;
+      }
+      if (publishedSentences > this.limits.maxSentences) {
+        lastDiagnostic = `too_many_sentences: ${publishedSentences}, maximum ${this.limits.maxSentences}`;
+        previousAttempt = published;
+        retryFeedback = `Your previous attempt is supplied as previousAttempt. It uses ${publishedSentences} sentences, above the ${this.limits.maxSentences} allowed. Return it edited, not rewritten: combine or cut sentences, keep all four paragraphs.`;
         continue;
       }
 
@@ -398,11 +430,21 @@ function withSingleSource(
   };
 }
 
-/** Words before the source block, which is how the validator counts them. */
-function proseWordCount(telegramText: string, languageCode: string): number {
+/** Sentences before the source block, counted the way proseMetrics does. */
+function proseSentenceCount(telegramText: string, languageCode: string): number {
+  const prose = proseOf(telegramText, languageCode);
+  return prose ? (prose.match(/[.!?]+(?=\s|$)/gu) ?? []).length : 0;
+}
+
+function proseOf(telegramText: string, languageCode: string): string {
   const heading = SOURCE_HEADINGS[languageCode] ?? SOURCE_HEADINGS.en;
-  const prose = telegramText
+  return telegramText
     .split(new RegExp(`\\n\\s*(?:${heading}|Sources?|Quellen?|Джерела):?\\s*\\n`, "iu"), 1)[0]
     .trim();
+}
+
+/** Words before the source block, which is how the validator counts them. */
+function proseWordCount(telegramText: string, languageCode: string): number {
+  const prose = proseOf(telegramText, languageCode);
   return prose ? prose.split(/\s+/u).length : 0;
 }
