@@ -602,25 +602,29 @@ jobs:
           // the difference between "the filter does nothing" and "the filter
           // has nothing to work with".
           const srcTopics = await client.query(
-            `select s.source_type, count(*)::int as total,
-                    count(*) filter (where t.code_count > 0)::int as tagged
+            `select t.name as code, t.enabled, count(distinct s.id)::int as sources
                from public.sources s
-               left join lateral (
-                 select count(*)::int as code_count
-                   from public.source_topics st where st.source_id = s.id
-               ) t on true
-              where s.enabled group by s.source_type order by total desc`);
-          if (!srcTopics.rows.length) console.log("SourceTopics (no enabled sources)");
+               join public.source_topics st on st.source_id = s.id
+               join public.topics t on t.id = st.topic_id
+              where s.enabled
+              group by t.name, t.enabled order by sources desc`);
+          if (!srcTopics.rows.length) console.log("SourceTopics (no enabled source carries a topic)");
           for (const r of srcTopics.rows) {
-            console.log(`SourceTopics type=${r.source_type} enabled=${r.total} with_topic_codes=${r.tagged}`);
+            console.log(`SourceTopics topic=${r.code} topic_enabled=${r.enabled} enabled_sources=${r.sources}`);
           }
+          const untagged = await client.query(
+            `select count(*)::int as n from public.sources s
+              where s.enabled and not exists (
+                select 1 from public.source_topics st where st.source_id = s.id)`);
+          console.log(`SourceTopics untagged_enabled_sources=${untagged.rows[0]?.n ?? 0}`);
 
           // What article tagging actually produced on the newest articles.
           const assigned = await client.query(
             `select a.canonical_url,
-                    coalesce(array_agg(at.topic_code) filter (where at.topic_code is not null), '{}') as codes
+                    coalesce(array_agg(t.name) filter (where t.name is not null), '{}') as codes
                from public.articles a
                left join public.article_topics at on at.article_id = a.id
+               left join public.topics t on t.id = at.topic_id
               group by a.id, a.canonical_url order by a.created_at desc limit 3`);
           for (const r of assigned.rows) {
             console.log(`ArticleTopics codes=[${(r.codes ?? []).join(",")}] url=${r.canonical_url}`);
