@@ -111,7 +111,11 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 90s
+      # 120s, not 90s. The runtime cannot report healthy before its first
+      # completed poll, and that is up to 70s of lease acquisition plus a 25s
+      # long poll. A start period shorter than the runtime's own start makes
+      # every deploy look like a failure.
+      start_period: 120s
     depends_on:
       db:
         condition: service_healthy
