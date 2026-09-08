@@ -394,6 +394,112 @@ test(
 );
 
 test(
+  "a fallback article still carries no signature and one link",
+  { skip },
+  async () => {
+    // The report that prompted this: "why is the signature back, did you
+    // revert everything?" Nothing had been reverted. The editorial pass had
+    // fallen back that run, and the fallback is legacy's article -- with the
+    // editor credit and every cited URL listed.
+    //
+    // A run that fails for an internal reason should not look like the whole
+    // change was undone. The pass's structure cannot be recovered without the
+    // model; the furniture can.
+    await withNewsRig(
+      {
+        host: "fallback-furniture.example.test",
+        featureFlags: { editorial_enrichment: "enabled" },
+        ai(_request, schema) {
+          // Refuse to enrich at all, so the baseline is what ships.
+          if (schema.includes("editorial_enrichment")) {
+            throw new Error("no provider completed editorial_enrichment");
+          }
+          return undefined;
+        },
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        const { rows } = await rig.pool.query(
+          "select reviewer_notes, body from public.drafts where id = $1",
+          [job?.draft_id],
+        );
+        const notes = JSON.parse(String(rows[0]?.reviewer_notes ?? "{}")) as {
+          editorial_enrichment?: { status?: string };
+        };
+        assert.equal(
+          notes.editorial_enrichment?.status,
+          "fallback_to_baseline",
+          "this scenario is about the fallback, so it has to be one",
+        );
+
+        const body = String(rows[0]?.body ?? "");
+        assert.ok(
+          !/Знайшов і підготував|Found and prepared for you by|Für Sie gefunden/u.test(body),
+          `a fallback article must carry no editor credit; got ${JSON.stringify(body.slice(-160))}`,
+        );
+        const links = body.match(/https?:\/\/\S+/gu) ?? [];
+        assert.equal(
+          links.length,
+          1,
+          `and exactly one link; got ${JSON.stringify(links)}`,
+        );
+      },
+    );
+  },
+);
+
+test(
+  "an over-long first attempt is asked again, exactly like a short one",
+  { skip },
+  async () => {
+    // The floor was made correctable and the ceiling was left behind. The next
+    // live run hit `not_grounded: Draft exceeds the 220-word safety limit` and
+    // fell straight back to the baseline -- an article lost to a few words
+    // over, with the same feedback available that fixes a few words under.
+    await withNewsRig(
+      {
+        host: "long-first.example.test",
+        featureFlags: { editorial_enrichment: "enabled" },
+        longFirstEnrichment: true,
+      },
+      async (rig) => {
+        assert.equal((await rig.enqueue()).status, "research_queued");
+        await rig.runWorkerOnce();
+        assertPipelineRan(rig);
+
+        const job = await rig.jobRow();
+        const { rows } = await rig.pool.query(
+          "select reviewer_notes, body from public.drafts where id = $1",
+          [job?.draft_id],
+        );
+        const notes = JSON.parse(String(rows[0]?.reviewer_notes ?? "{}")) as {
+          editorial_enrichment?: { status?: string; attempts?: number; diagnostic?: string | null };
+        };
+        assert.equal(
+          notes.editorial_enrichment?.status,
+          "completed",
+          `an over-long attempt must not cost the article its editorial pass; diagnostic=${notes.editorial_enrichment?.diagnostic ?? "none"}`,
+        );
+        assert.equal(notes.editorial_enrichment?.attempts, 2, "and it must have taken the retry");
+
+        const words = String(rows[0]?.body ?? "")
+          .split(/\n\s*(?:Sources?|Джерела|Quellen):/iu, 1)[0]
+          .trim()
+          .split(/\s+/u).length;
+        assert.ok(
+          words >= 185 && words <= 220,
+          `the published article must land inside the range; got ${words}`,
+        );
+      },
+    );
+  },
+);
+
+test(
   "an unvetted publisher reaches the article without clearing the story",
   { skip },
   async () => {

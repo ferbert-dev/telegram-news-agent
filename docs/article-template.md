@@ -23,6 +23,12 @@ Headline line, then four paragraphs: hook + what happened, the detail, why it
 matters, what happens next. The source block is appended afterwards by the
 pipeline; the model never writes it.
 
+**The fallback obeys these rules too.** When the editorial pass does not
+produce an article, legacy's baseline ships — and the publishing rules are
+applied to it as well: no editor credit, exactly one source link. A run that
+failed for an internal reason should not look like the whole format was
+reverted, which is exactly how it was reported when it did.
+
 **No editor signature.** "Знайшов і підготував для вас: …" was appended to
 every post, which is precisely why it stopped carrying information — a line
 identical on every article is furniture.
@@ -35,12 +41,22 @@ story — "the final tally is due on Tuesday" — not as a disclaimer.
 
 **185 to 220 words**, aiming for about 200. Never fewer than 185.
 
-A floor on its own would make articles shorter, not longer: a refused
+Both bounds are corrective, not fatal. A draft outside the range is **handed
+back to the model with its own word count** and asked to edit — keep the angle,
+the headline and the paragraphs, and change only what the feedback names. Over
+the ceiling, the instruction says how many words to cut and where to start: the
+last sentence of the final paragraph. Under the floor, it names the detail and
+why-it-matters paragraphs as the ones to expand and the caveat as the one not
+to pad.
+
+Discarding the draft and asking for a fresh one throws away work that is
+already grounded, already the right shape, and already carries the detail the
+searches paid for — over a word count. Only one failure is worth rewriting from
+scratch: a draft too close to the baseline, where rewriting is the point.
+
+A floor on its own would also make articles shorter, not longer: a refused
 enrichment falls back to the baseline, which runs to about a hundred words —
-shorter than anything the floor would have rejected. So the floor is paired
-with a corrective retry. A short draft is told its own word count and asked
-again, with the detail and why-it-matters paragraphs named as the ones to
-expand and the caveat named as the one not to pad.
+shorter than anything the floor would have rejected.
 
 The floor is checked on the **rebuilt** body, not on what the model returned:
 stripping the URLs it wrote into the prose removes words, and the rebuilt body

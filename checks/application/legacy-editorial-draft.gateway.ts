@@ -198,7 +198,10 @@ test("LegacyEditorialDraftGateway preserves dependency values and identity, uses
   assert.deepEqual(result, {
     draft: {
       article_id: ARTICLE.id,
-      body: "Generated body",
+      // The baseline now ends with exactly one source block: the publishing
+      // rules apply to it too, so a fallback run does not look like the whole
+      // change was reverted.
+      body: "Generated body\n\nSources:\nhttps://example.test/article",
       model: "provider-model",
       prompt_version: "telegram-grounded-v2",
       reviewer_notes: "{}",

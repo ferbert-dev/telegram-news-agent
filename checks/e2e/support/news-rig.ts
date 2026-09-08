@@ -115,6 +115,7 @@ function fakeAiProvider(
   draftEvidenceText: number[][],
   override?: AiAnswer,
   shortFirstEnrichment = false,
+  longFirstEnrichment = false,
 ) {
   let enrichmentCalls = 0;
   const fallback = (request: Record<string, unknown>, schema: string): unknown => {
@@ -221,10 +222,42 @@ function fakeAiProvider(
       ].join("\n\n");
       // Deliberately under the floor on the first call, so the scenario fails
       // unless the pass asks again with its own word count as feedback.
-      const bodyText =
-        shortFirstEnrichment && enrichmentCalls === 1
-          ? paragraphs.split("\n\n")[0] ?? ""
-          : paragraphs;
+      // On a retry the model is handed its own previous attempt and asked to
+      // edit it. The fake honours that: it trims the padding it added rather
+      // than producing something new, which is what makes the scenario prove
+      // the hand-back rather than just prove a second call happened.
+      const previous = (request.input as { previousAttempt?: { telegramText?: string } })
+        .previousAttempt?.telegramText;
+      // What a model that followed the feedback does: take its own draft,
+      // drop the headline line the wrapper re-adds, remove the padding it was
+      // told to cut, and restore the full body when it was told to expand.
+      const edited = previous
+        ? (() => {
+            const prose = previous
+              .split(/\n\s*(?:Sources?|Джерела|Quellen):?\s*\n/iu, 1)[0]
+              .split("\n\n")
+              .slice(1)
+              .join("\n\n")
+              .replace(/(?:The account adds one more supported observation\. )+/gu, "")
+              .trim();
+            return prose.split(/\s+/u).length < 185 ? paragraphs : prose;
+          })()
+        : null;
+      // Without the previous attempt the fake CANNOT comply, and that is the
+      // point: a model asked to "try again, shorter" with no draft in front of
+      // it has nothing to cut. Modelling that is what makes the scenario prove
+      // the hand-back rather than merely prove a second call happened -- the
+      // first version passed with the hand-back removed.
+      const padded = `${paragraphs} ${"The account adds one more supported observation. ".repeat(12)}`;
+      const stub = paragraphs.split("\n\n")[0] ?? "";
+      const bodyText = edited
+        ?? (enrichmentCalls > 1
+          ? (longFirstEnrichment ? padded : shortFirstEnrichment ? stub : paragraphs)
+          : shortFirstEnrichment && enrichmentCalls === 1
+            ? stub
+            : longFirstEnrichment && enrichmentCalls === 1
+              ? padded
+              : paragraphs);
       return {
         readerAngle: "What the narrowed figure changes for a general reader.",
         draft: {
@@ -401,6 +434,15 @@ export type NewsRigOptions = {
    * usable, so it needs a scenario that can only pass if the retry happens.
    */
   shortFirstEnrichment?: boolean;
+  /**
+   * Makes the first editorial attempt come back over the word ceiling.
+   *
+   * The floor was made correctable and the ceiling was left behind, so the
+   * next live run hit `not_grounded: Draft exceeds the 220-word safety limit`
+   * and fell straight back to the baseline. A miss in either direction is the
+   * same kind of miss.
+   */
+  longFirstEnrichment?: boolean;
   /** Answers the feed fetch. Default: 200 with valid RSS. */
   feedResponse?: (xml: string) => Response;
   /**
@@ -573,6 +615,7 @@ export async function withNewsRig(
     draftEvidenceText,
     options.ai,
     options.shortFirstEnrichment ?? false,
+    options.longFirstEnrichment ?? false,
   );
 
   let feedRequests = 0;
