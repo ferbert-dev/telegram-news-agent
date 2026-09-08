@@ -537,6 +537,15 @@ export class NewsAgentModule {
                 ),
               }),
               newClaimToken: () => randomUUID(),
+              // Without this the worker's error logging is a no-op.
+              //
+              // `log` is optional on the worker and nothing supplied one, so
+              // every `this.options.log?.error?.()` did nothing -- including
+              // the line added specifically so a failed run would say why. A
+              // job failed on the stage with `draft_validation_failed` and the
+              // bot's log had nothing at all, which is the exact state that
+              // logging was written to end.
+              log: console,
               // Legacy reads these from the environment
               // (getTelegramNewsJobsConfig in src/telegram-news-jobs.js); this
               // runtime was taking the worker's own defaults and ignoring them,

@@ -134,6 +134,32 @@ test("the poller and the readiness probe share one poll recorder", async () => {
   }
 });
 
+test("every worker that can report a failure is given somewhere to report it", async () => {
+  // `log` is optional on these workers, and optional dependencies are the ones
+  // that get forgotten. The news-job worker was constructed without one, so
+  // every `this.options.log?.error?.()` did nothing -- including the line added
+  // specifically so a failed run would say why. A job failed on the stage with
+  // `draft_validation_failed` and the bot's log had nothing at all.
+  //
+  // Asserting the option is present, not that a message was emitted: the
+  // emitting is covered where the failure paths are, and what was missing here
+  // was the wiring.
+  const moduleRef = await compileRuntime();
+  try {
+    const worker = moduleRef.get(TELEGRAM_NEWS_JOB_WORKER, { strict: false }) as unknown as {
+      options: { log?: { error?: unknown } };
+    };
+    assert.ok(worker.options.log, "the news-job worker must be given a logger");
+    assert.equal(
+      typeof worker.options.log?.error,
+      "function",
+      "and one that can actually record an error",
+    );
+  } finally {
+    await moduleRef.close();
+  }
+});
+
 test("neither worker implements a Nest lifecycle hook, so the coordinator stays sole owner", async () => {
   // RuntimeModule documents this rule: a token-resolved worker is a
   // container-managed provider, so app.close() would reach its hooks after the
