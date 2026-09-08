@@ -88,14 +88,20 @@ that must be closed before any cutover attempt.
 
 1. A test bot and channel, and a full manual pass on the new runtime: `/news`,
    draft preview, approve, publish, a scheduled run, and quiet-hours deferral.
-2. Teaching `ops/deploy.sh` to gate on `.State.Health` rather than
-   `.State.Running` and `.State.RestartCount`. Until then the healthcheck is
-   visible in `docker ps` but gates nothing.
-3. Folding `compose.nest.yaml` into `compose.yaml`, or adding it to the
-   deployment bundle and to every `docker compose` invocation in
-   `ops/deploy.sh`. It is currently not shipped to the server at all.
-4. A rollback plan that is just the previous image plus the previous compose
-   file, since both runtimes live in the same image.
+2. ~~Teaching `ops/deploy.sh` to gate on `.State.Health`.~~ **Done.** The gate
+   lives in `ops/lib/deploy-gate.sh` and requires the container to be running,
+   never restarted, and healthy. `compose.yaml` now declares an
+   entrypoint-aware healthcheck for the bot: the typed runtime runs the real
+   probe, the legacy runtime exits 0 because it is the frozen rollback and has
+   no readiness contract. A container reporting no healthcheck at all is
+   refused, since the definition being lost is the regression that would
+   otherwise silently restore the old behaviour.
+3. ~~Folding `compose.nest.yaml` into `compose.yaml` or shipping it.~~ **Not
+   needed.** The runtime is chosen by `BOT_ENTRYPOINT` in `.env.production`,
+   which `compose.yaml` already reads and `ops/deploy.sh` already rolls back.
+4. ~~A rollback plan.~~ **Already the case**, for the same reason: both
+   runtimes live in one image and the entrypoint is an environment value that
+   rollback restores.
 
 Only after that does removing `src/*.js` become a separate question. The legacy
 modules are still imported by the NestJS layer through the sanctioned

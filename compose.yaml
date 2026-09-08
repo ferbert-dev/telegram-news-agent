@@ -87,6 +87,31 @@ services:
     # not restore it. Nothing in the ssh deploy path exports it, and nothing
     # should start.
     command: ["node", "${BOT_ENTRYPOINT:-src/telegram-bot.js}"]
+    # Decided inside the container, by the same variable that chose the
+    # entrypoint. `$$` survives compose interpolation, so the shell that runs
+    # in the container expands it from the container's own environment -- one
+    # definition that is correct for whichever runtime this deployment starts.
+    #
+    # The typed runtime publishes a readiness snapshot and confirms its poller
+    # lease against PostgreSQL, so an "up" container that owns no lease, or one
+    # whose poller has stopped answering, reports unhealthy. The legacy runtime
+    # publishes nothing: it is the frozen rollback and has no readiness
+    # contract, so the probe exits 0 rather than inventing one for it. That
+    # branch is not a check -- it is the honest statement that there is nothing
+    # here to check -- and it leaves legacy gated exactly as it was, on
+    # Running and RestartCount.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'case "$${BOT_ENTRYPOINT:-src/telegram-bot.js}" in dist/*) node dist/composition/health-cli.js ;; *) exit 0 ;; esac'
+      # Longer than the 45s stale-heartbeat threshold would let a wedged
+      # runtime linger; shorter than the poller's 70s lease-acquire timeout
+      # would fail a runtime still legitimately waiting, which start_period
+      # covers.
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     depends_on:
       db:
         condition: service_healthy

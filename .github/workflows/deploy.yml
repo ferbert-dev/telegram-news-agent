@@ -95,12 +95,13 @@ jobs:
           POSTGRES_APP_PASSWORD: ci-application-password
           POSTGRES_SSH_TUNNEL_PORT: "55433"
         run: |
-          bash -n ops/deploy.sh ops/configure-db-observer.sh ops/notify-deployment.sh \
-            ops/deploy-integration.sh
+          bash -n ops/deploy.sh ops/lib/deploy-gate.sh ops/configure-db-observer.sh \
+            ops/notify-deployment.sh ops/deploy-integration.sh
           # The guards that keep the integration stage from starving or
           # overwriting production. Every one is a refusal, and the suite drives
           # each into refusing rather than trusting that it would.
           ./checks/ops/deploy-integration-guards.sh
+          ./checks/ops/deploy-gate.sh
           docker compose \
             -f compose.yaml \
             -f compose.ssh-access.yaml \
@@ -1700,9 +1701,14 @@ jobs:
         run: |
           umask 077
           install -d -m 700 deployment/ops/postgres/init
+          install -d -m 700 deployment/ops/lib
           install -m 644 compose.yaml deployment/compose.yaml
           install -m 644 compose.ssh-access.yaml deployment/compose.ssh-access.yaml
           install -m 755 ops/deploy.sh deployment/ops/deploy.sh
+          # deploy.sh sources this. The bundle names every file explicitly, so
+          # a script it reads but nobody installs fails on the server and
+          # nowhere else.
+          install -m 644 ops/lib/deploy-gate.sh deployment/ops/lib/deploy-gate.sh
           install -m 755 ops/configure-db-observer.sh deployment/ops/configure-db-observer.sh
           install -m 755 ops/validate-production-env.sh deployment/ops/validate-production-env.sh
           install -m 755 ops/verify-production-runtime.sh deployment/ops/verify-production-runtime.sh

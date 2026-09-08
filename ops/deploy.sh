@@ -5,6 +5,10 @@ image="${1:?Usage: deploy.sh <container-image>}"
 deploy_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$deploy_dir"
 
+# The release gate, in its own file so it can be driven into every refusal.
+# shellcheck source=ops/lib/deploy-gate.sh
+. "$deploy_dir/ops/lib/deploy-gate.sh"
+
 active_env=".env.production"
 candidate_env=".env.production.incoming"
 rollback_env=".env.production.rollback"
@@ -195,9 +199,7 @@ healthy_checks=0
 for _ in {1..6}; do
   sleep 5
   container="$("${compose[@]}" ps -q bot 2>/dev/null || true)"
-  if [[ -n "$container" ]] \
-    && [[ "$(docker inspect --format '{{.State.Running}}' "$container")" == "true" ]] \
-    && [[ "$(docker inspect --format '{{.RestartCount}}' "$container")" == "0" ]]; then
+  if container_is_deployable "$container"; then
     healthy_checks=$((healthy_checks + 1))
     if [[ "$healthy_checks" -ge 3 ]]; then
       if ! ops/verify-production-runtime.sh "$container"; then

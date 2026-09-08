@@ -62,6 +62,7 @@ function runDeployment({
   failRollbackInstall = false,
   botRunning = false,
   runtimePlaceholder = false,
+  botHealth = "healthy",
   notificationFails = false,
 }) {
   const fixture = mkdtempSync(path.join(tmpdir(), "deploy-rollback-"));
@@ -71,6 +72,11 @@ function runDeployment({
   mkdirSync(bin, { recursive: true });
 
   cpSync("ops/deploy.sh", path.join(ops, "deploy.sh"));
+  // deploy.sh sources this. Staging it here is not incidental: this harness is
+  // a miniature of the deployment bundle, which also names every file
+  // explicitly, and it caught the extraction of the gate the moment it landed.
+  mkdirSync(path.join(ops, "lib"), { recursive: true });
+  cpSync("ops/lib/deploy-gate.sh", path.join(ops, "lib", "deploy-gate.sh"));
   cpSync("ops/validate-production-env.sh", path.join(ops, "validate-production-env.sh"));
   cpSync("ops/verify-production-runtime.sh", path.join(ops, "verify-production-runtime.sh"));
   const notificationLog = path.join(fixture, "notification.log");
@@ -115,6 +121,8 @@ elif [[ "$1" == "inspect" && "$*" == *"{{.State.Running}}"* ]]; then
   printf '%s\\n' "\${MOCK_BOT_RUNNING:-false}"
 elif [[ "$1" == "inspect" && "$*" == *"{{.RestartCount}}"* ]]; then
   printf '0\n'
+elif [[ "$1" == "inspect" && "$*" == *"State.Health"* ]]; then
+  printf '%s\n' "\${MOCK_BOT_HEALTH:-healthy}"
 elif [[ "$1" == "exec" ]]; then
   cat >/dev/null
 elif [[ "$1" == "compose" && "$*" == *" ps -q bot"* ]]; then
@@ -158,6 +166,7 @@ exec /usr/bin/install "$@"
       MOCK_DOCKER_LOG: dockerLog,
       MOCK_INSTALL_FAIL_ROLLBACK: String(failRollbackInstall),
       MOCK_BOT_RUNNING: String(botRunning),
+      MOCK_BOT_HEALTH: botHealth,
       MOCK_RUNTIME_CHANNEL_ID: runtimePlaceholder ? "placeholder" : "@channel",
       MOCK_NOTIFICATION_LOG: notificationLog,
     },
@@ -184,6 +193,46 @@ test("first SOPS deploy accepts legacy active env and restores it after health f
   assert.match(log, /old-image\|compose .* up -d db/);
   assert.match(log, /old-image\|compose .* exec -T db \/docker-entrypoint-initdb\.d\/00-create-app-role\.sh/);
   assert.match(log, /old-image\|compose .* up -d --force-recreate --no-deps bot/);
+});
+
+test("a running container that is unhealthy is rolled back, not accepted", () => {
+  // The gate this test exists for. Until it read health, the release condition
+  // was three consecutive passes of "the process exists" -- which the typed
+  // runtime satisfies while holding no poller lease and serving nothing. The
+  // container here is running and has never restarted; only the probe says no.
+  const oldEnvironment = legacyEnvironment("old-app-secret");
+  const newEnvironment = completeEnvironment("new-app-secret");
+  const { dockerLog, fixture, result } = runDeployment({
+    active: oldEnvironment,
+    incoming: newEnvironment,
+    botRunning: true,
+    botHealth: "unhealthy",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /New bot container failed its health gate/);
+  assert.equal(readFileSync(path.join(fixture, ".env.production"), "utf8"), oldEnvironment);
+
+  const log = readFileSync(dockerLog, "utf8");
+  assert.match(log, /old-image\|compose .* up -d --force-recreate --no-deps bot/);
+});
+
+test("a container whose healthcheck was lost is refused rather than waved through", () => {
+  // compose.yaml declares a healthcheck for the bot on both runtimes, so a
+  // container reporting none means the definition was lost -- and accepting it
+  // would silently return the gate to what it was.
+  const oldEnvironment = legacyEnvironment("old-app-secret");
+  const newEnvironment = completeEnvironment("new-app-secret");
+  const { fixture, result } = runDeployment({
+    active: oldEnvironment,
+    incoming: newEnvironment,
+    botRunning: true,
+    botHealth: "none",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /New bot container failed its health gate/);
+  assert.equal(readFileSync(path.join(fixture, ".env.production"), "utf8"), oldEnvironment);
 });
 
 test("equal hashes do not rewrite active env or rollback backup", () => {
