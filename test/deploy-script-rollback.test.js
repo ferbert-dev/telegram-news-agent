@@ -63,6 +63,9 @@ function runDeployment({
   botRunning = false,
   runtimePlaceholder = false,
   botHealth = "healthy",
+  healthAfterStarting = null,
+  startingChecks = 0,
+  healthTimeoutSeconds = 5,
   notificationFails = false,
 }) {
   const fixture = mkdtempSync(path.join(tmpdir(), "deploy-rollback-"));
@@ -122,7 +125,19 @@ elif [[ "$1" == "inspect" && "$*" == *"{{.State.Running}}"* ]]; then
 elif [[ "$1" == "inspect" && "$*" == *"{{.RestartCount}}"* ]]; then
   printf '0\n'
 elif [[ "$1" == "inspect" && "$*" == *"State.Health"* ]]; then
-  printf '%s\n' "\${MOCK_BOT_HEALTH:-healthy}"
+  if [[ -n "\${MOCK_BOT_HEALTH_AFTER:-}" ]]; then
+    count=0
+    [[ -f "\$MOCK_HEALTH_COUNTER" ]] && count="\$(cat "\$MOCK_HEALTH_COUNTER")"
+    count=\$((count + 1))
+    printf '%s' "\$count" > "\$MOCK_HEALTH_COUNTER"
+    if (( count > \${MOCK_BOT_HEALTH_STARTING_FOR:-0} )); then
+      printf '%s\n' "\$MOCK_BOT_HEALTH_AFTER"
+    else
+      printf 'starting\n'
+    fi
+  else
+    printf '%s\n' "\${MOCK_BOT_HEALTH:-healthy}"
+  fi
 elif [[ "$1" == "exec" ]]; then
   cat >/dev/null
 elif [[ "$1" == "compose" && "$*" == *" ps -q bot"* ]]; then
@@ -167,6 +182,13 @@ exec /usr/bin/install "$@"
       MOCK_INSTALL_FAIL_ROLLBACK: String(failRollbackInstall),
       MOCK_BOT_RUNNING: String(botRunning),
       MOCK_BOT_HEALTH: botHealth,
+      MOCK_BOT_HEALTH_AFTER: healthAfterStarting ?? "",
+      MOCK_BOT_HEALTH_STARTING_FOR: String(startingChecks),
+      MOCK_HEALTH_COUNTER: path.join(fixture, "health-counter"),
+      // Production waits up to five minutes for a runtime that needs two to
+      // become healthy. The test does not need to.
+      DEPLOY_HEALTH_POLL_SECONDS: "0",
+      DEPLOY_HEALTH_TIMEOUT_SECONDS: String(healthTimeoutSeconds),
       MOCK_RUNTIME_CHANNEL_ID: runtimePlaceholder ? "placeholder" : "@channel",
       MOCK_NOTIFICATION_LOG: notificationLog,
     },
@@ -215,6 +237,56 @@ test("a running container that is unhealthy is rolled back, not accepted", () =>
 
   const log = readFileSync(dockerLog, "utf8");
   assert.match(log, /old-image\|compose .* up -d --force-recreate --no-deps bot/);
+});
+
+test("a container that is still starting is waited out, not refused", () => {
+  // The regression this test exists for, and it was merged before it was
+  // caught. The old loop gave 30 seconds, which was fine when the gate asked
+  // only whether the process existed. Asking about health, 30 seconds is less
+  // than the healthcheck's own start period -- so the gate could never see
+  // "healthy", and every production deploy would have failed and rolled back.
+  //
+  // The container here reports "starting" for the first three checks, exactly
+  // as docker does before a start period elapses, and healthy after.
+  const oldEnvironment = completeEnvironment("old-app-secret");
+  const newEnvironment = completeEnvironment("new-app-secret");
+  const { result } = runDeployment({
+    active: oldEnvironment,
+    incoming: newEnvironment,
+    botRunning: true,
+    healthAfterStarting: "healthy",
+    startingChecks: 3,
+    healthTimeoutSeconds: 30,
+  });
+
+  assert.equal(
+    result.status,
+    0,
+    `status=${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+  );
+  // Only the two facts this test is about. Whether the environment file is
+  // promoted is a different rule with its own tests, and asserting it here
+  // would tie a timing test to semantics it does not exercise.
+  assert.match(result.stdout, /Deployment healthy/);
+});
+
+test("a container that never leaves starting is rolled back, with the reason", () => {
+  // The other side of the same rule: waiting is bounded. A runtime that never
+  // becomes healthy must still be rolled back, and the message has to say what
+  // the gate was looking at rather than "failed its health gate".
+  const oldEnvironment = legacyEnvironment("old-app-secret");
+  const newEnvironment = completeEnvironment("new-app-secret");
+  const { fixture, result } = runDeployment({
+    active: oldEnvironment,
+    incoming: newEnvironment,
+    botRunning: true,
+    botHealth: "starting",
+    healthTimeoutSeconds: 2,
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /failed its health gate: .*health is starting/);
+  assert.equal(readFileSync(path.join(fixture, ".env.production"), "utf8"), oldEnvironment);
 });
 
 test("a container whose healthcheck was lost is refused rather than waved through", () => {

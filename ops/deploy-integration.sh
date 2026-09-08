@@ -293,8 +293,26 @@ fi
 
 # The readiness probe is the point of the typed runtime, so run it rather than
 # trusting liveness. Integration is where a broken probe should be discovered.
-if ! "${compose[@]}" exec -T bot node dist/composition/health-cli.js; then
-  echo "integration runtime is live but reports unhealthy" >&2
+#
+# Retried rather than asked once. The probe now requires a completed poll, and
+# the runtime needs up to 70s to acquire its poller lease plus a 25s long poll
+# before it has one -- the first deploy after that rule landed failed 26
+# seconds in with "the poller has not completed a poll yet", which was the
+# probe being right and the caller being impatient.
+probe_deadline=$(( SECONDS + ${INTEGRATION_HEALTH_TIMEOUT_SECONDS:-180} ))
+probe_reason="the runtime never reported healthy"
+probe_ok=false
+while (( SECONDS < probe_deadline )); do
+  if probe_reason="$("${compose[@]}" exec -T bot node dist/composition/health-cli.js 2>&1)"; then
+    probe_ok=true
+    break
+  fi
+  sleep 10
+done
+
+if [[ "$probe_ok" != "true" ]]; then
+  echo "integration runtime is live but reports unhealthy: ${probe_reason}" >&2
+  "${compose[@]}" logs --tail=40 bot >&2 || true
   exit 1
 fi
 

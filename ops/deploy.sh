@@ -195,11 +195,27 @@ APP_IMAGE="$image" "${compose[@]}" exec -T db \
 APP_IMAGE="$image" "${compose[@]}" run --rm migrate
 APP_IMAGE="$image" APP_VERSION="$app_version" "${compose[@]}" up -d --no-deps bot
 
+# Long enough for the runtime to be able to answer.
+#
+# The old loop gave 30 seconds, which was fine when the gate asked only whether
+# the process existed. It asks about health now, and health cannot be true yet:
+# the container healthcheck has a 120s start period, the poller may spend up to
+# 70s acquiring its lease, and its first getUpdates long-polls for 25 more. A
+# gate that gives up before the runtime can possibly be healthy does not refuse
+# bad releases -- it refuses every release.
+#
+# Both are overridable so the rollback tests can run in seconds without
+# pretending production is faster than it is.
+poll_seconds="${DEPLOY_HEALTH_POLL_SECONDS:-5}"
+health_timeout_seconds="${DEPLOY_HEALTH_TIMEOUT_SECONDS:-300}"
+health_deadline=$(( SECONDS + health_timeout_seconds ))
+gate_reason="the container never became healthy within ${health_timeout_seconds}s"
+
 healthy_checks=0
-for _ in {1..6}; do
-  sleep 5
+while (( SECONDS < health_deadline )); do
+  sleep "$poll_seconds"
   container="$("${compose[@]}" ps -q bot 2>/dev/null || true)"
-  if container_is_deployable "$container"; then
+  if gate_reason="$(container_is_deployable "$container" 2>&1)"; then
     healthy_checks=$((healthy_checks + 1))
     if [[ "$healthy_checks" -ge 3 ]]; then
       if ! ops/verify-production-runtime.sh "$container"; then
@@ -221,5 +237,5 @@ for _ in {1..6}; do
 done
 
 "${compose[@]}" logs --tail=80 bot >&2 || true
-echo "New bot container failed its health gate." >&2
+echo "New bot container failed its health gate: ${gate_reason}" >&2
 false

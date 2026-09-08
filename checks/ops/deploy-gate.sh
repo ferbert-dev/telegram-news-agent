@@ -79,6 +79,23 @@ else
   fail "an empty container id is refused"
 fi
 
+# The gate must wait longer than the runtime takes to become healthy.
+#
+# These two numbers live in different files and mean nothing apart. The gate
+# was merged with a 30-second window against a 90-second start period, so it
+# could never see "healthy" and would have failed and rolled back every
+# production release. The rollback tests did not catch it because they set the
+# window explicitly; only the default ships.
+start_period="$(sed -nE 's/^[[:space:]]*start_period:[[:space:]]*([0-9]+)s[[:space:]]*$/\1/p' "$repo/compose.yaml" | tail -n 1)"
+gate_window="$(sed -nE 's/^health_timeout_seconds="\$\{DEPLOY_HEALTH_TIMEOUT_SECONDS:-([0-9]+)\}"$/\1/p' "$repo/ops/deploy.sh")"
+if [[ -z "$start_period" || -z "$gate_window" ]]; then
+  fail "could not read the start period (${start_period:-?}) or the gate window (${gate_window:-?})"
+elif (( gate_window > start_period + 60 )); then
+  pass "the gate waits ${gate_window}s, past the ${start_period}s start period"
+else
+  fail "the gate waits ${gate_window}s but the healthcheck needs ${start_period}s to settle — it would refuse every release"
+fi
+
 # Every file deploy.sh sources must be in the deployment bundle.
 #
 # The bundle names each script explicitly, so a file the script reads but
