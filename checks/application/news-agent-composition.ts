@@ -101,6 +101,39 @@ test("every worker resolves from its token as a real worker instance", async () 
   }
 });
 
+test("the poller and the readiness probe share one poll recorder", async () => {
+  // A wiring assertion, and the one with the worst failure mode of the three.
+  //
+  // The probe now refuses a runtime whose poller has not completed a poll
+  // recently, which is what separates "up" from "serving". If the recorder
+  // reaches the health worker but not the poller, nothing ever writes to it:
+  // the snapshot reports a null poll time forever, and once the deploy gate
+  // reads health, every deployment is permanently unhealthy.
+  //
+  // A mutation deleting it from the poller's construction passed every other
+  // check in the repository. Identity is what has to be asserted -- two
+  // separate recorders would satisfy any weaker test and still be broken.
+  const moduleRef = await compileRuntime();
+  try {
+    const poller = moduleRef.get(TELEGRAM_POLLING_WORKER, { strict: false }) as unknown as {
+      options: { pollActivity?: unknown };
+    };
+    const health = moduleRef.get(RUNTIME_HEALTH_WORKER, { strict: false }) as unknown as {
+      options: { pollActivity?: unknown };
+    };
+
+    assert.ok(poller.options.pollActivity, "the poller must be given a recorder to write to");
+    assert.ok(health.options.pollActivity, "the probe must be given a recorder to read from");
+    assert.equal(
+      poller.options.pollActivity,
+      health.options.pollActivity,
+      "and it must be the same one, or the probe reads a recorder nobody writes",
+    );
+  } finally {
+    await moduleRef.close();
+  }
+});
+
 test("neither worker implements a Nest lifecycle hook, so the coordinator stays sole owner", async () => {
   // RuntimeModule documents this rule: a token-resolved worker is a
   // container-managed provider, so app.close() would reach its hooks after the
