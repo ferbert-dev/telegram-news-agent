@@ -10,7 +10,11 @@ const health = await import("../dist/runtime/runtime-health.js");
 assert.equal(typeof cli.runHealthCli, "function");
 assert.equal(typeof check.checkRuntimeHealth, "function");
 assert.equal(typeof health.RuntimeHealthWorker, "function");
-assert.equal(health.RUNTIME_HEALTH_SCHEMA_VERSION, 2);
+// Pinned deliberately: the probe and the runtime must agree on the schema, and
+// a version this check does not know about is a snapshot it cannot judge. It
+// is meant to be updated by hand whenever the snapshot changes shape, which is
+// exactly what caught the last change one commit too late.
+assert.equal(health.RUNTIME_HEALTH_SCHEMA_VERSION, 3);
 
 // No readiness file, no database contact: the check must decide "unhealthy"
 // rather than throw, because a probe that throws is indistinguishable from a
