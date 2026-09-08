@@ -49,6 +49,10 @@ test(
       pollerLeaseOwnerId: ownerId,
       updateMode: "polling",
       startedWorkers: ["telegram-polling", "news-scheduler"],
+      // A poller that has just polled. Readiness now separates "the process is
+      // alive" from "Telegram is answering", and these steps are about the
+      // lease, not about the poll -- so the poll is satisfied and left alone.
+      pollActivity: { mark() {}, lastPolledAt: () => new Date().toISOString() },
       filePath,
       // Long enough that no heartbeat can fire inside the clock-skew window
       // below. A tick landing there would write a heartbeatAt ten minutes ahead
@@ -135,6 +139,7 @@ test(
         pollerLeaseOwnerId: randomUUID(),
         updateMode: "polling",
         startedWorkers: ["telegram-polling", "news-scheduler"],
+        pollActivity: { mark() {}, lastPolledAt: () => new Date().toISOString() },
         filePath: duplicatePath,
       });
       await duplicate.start(new AbortController().signal);
