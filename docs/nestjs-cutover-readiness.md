@@ -30,6 +30,10 @@ would run it instead.
 | `dist/` imports and the health probe fails closed, without devDependencies | `.github/workflows/deploy.yml` — run inside the built image |
 | SIGTERM drains workers in reverse order and exits cleanly | `checks/emitted-runtime-signals.mjs` — a real signal to a real process running the compiled output, not an injected fake signal source |
 | The image still starts the legacy entrypoint | Same step — `CMD` asserted byte-for-byte |
+| Typed publication behaves as legacy publication, not merely as something correct | `checks/application/publish-differential.ts` — five irreversible branches driven through both implementations on one fixture, comparing the result, every Telegram call and every repository write, key presence included |
+| The one component that wraps legacy rather than reimplementing it does not change what crosses the seam | `checks/application/draft-generation-differential.ts` — both directions of the gateway, mutation-proven |
+| A news job that fails has somewhere to report it | `checks/application/news-agent-composition.ts` — the worker is constructed with a logger, so the failure logging is not a no-op |
+| The release gate cannot be shorter than the container's own start period | `checks/ops/deploy-gate.sh` — a cross-file check against `compose.yaml` |
 
 ## Rehearsed by hand, not regression-protected
 
@@ -58,10 +62,16 @@ hundred automated checks had not:
   them 429s, in 358 seconds. Per-call retry was bounded; nothing was bounded
   across calls. Fixed by a per-provider circuit breaker.
 
-What is still untested against a live bot: a Publish tap, a Reject, a scheduled
-run, a quiet-hours deferral, and the automatic-approval publish path. The
-`/news` path itself has only been exercised end to end since the worker landed
-in fakes and in PostgreSQL, not yet against the live bot.
+The `/news` path has since been exercised repeatedly against the live stage
+bot with real providers, through to a published article of the intended shape,
+including the provider-fallback branch: a run whose enrichment failed on one
+provider (`upstream_unavailable`) completed on the next and shipped.
+
+What is still untested against a live bot, and is behavioural rather than
+code: a **scheduled** run started by the scheduler rather than by `/news`, the
+**automatic-approval** publish path, and a **quiet-hours** deferral across the
+22:00–08:00 `Europe/Madrid` boundary. Each needs the stage left running rather
+than another change.
 
 **Research does not respond to the abort signal.** Both live runs needed
 SIGKILL. The coordinator bounds shutdown with its own deadline, so the process
@@ -70,15 +80,21 @@ still exits — but a job interrupted mid-research keeps its claim until the
 for that long. This is parity with legacy, not a regression, and it is now on
 the typed runtime's path too.
 
-**Usage accounting is blind.** The same live run wrote 1,005 rows to
-`ai_provider_attempts` and 0 to `ai_usage_events`, so the usage dashboard and
-any spend alerting saw nothing while the storm was happening.
+~~**Usage accounting is blind.**~~ **Closed.** The provider adapters emit
+usage events alongside attempts, and the integration stage now reports both:
+`AiTotals attempts=20535 usage_events=4461` at the last inspection. The
+dashboard and any spend alerting can see the spend as it happens.
 
-**The poll loop is not covered by the health check.** A permanently failing
-`getUpdates` — revoked token, lasting partition — backs off and retries forever
-without surrendering the lease, so every readiness condition holds while
-nothing is served. Closing it needs the poller to publish a
-last-successful-poll timestamp into the readiness snapshot.
+**One counter is still per-process.** The Exa daily budget lives in the
+adapter's memory, so a restart resets it. It bounds a single run, not a day.
+
+~~**The poll loop is not covered by the health check.**~~ **Closed.** The
+poller now records each completed poll, `runtime-health.ts` publishes it as
+`lastPolledAt` in a snapshot at schema version 3, and
+`runtime-health-check.ts` refuses a runtime whose polling worker is running
+but whose last poll is absent or older than `DEFAULT_MAX_POLL_AGE_MS`
+(180s). A permanently failing `getUpdates` now loses the health check, and
+because the release gate reads health, it loses the release too.
 
 The release and rollback procedure lives in
 [nestjs-cutover-runbook.md](nestjs-cutover-runbook.md), including a rollback gap
@@ -86,8 +102,10 @@ that must be closed before any cutover attempt.
 
 ## What cutover would involve
 
-1. A test bot and channel, and a full manual pass on the new runtime: `/news`,
-   draft preview, approve, publish, a scheduled run, and quiet-hours deferral.
+1. A test bot and channel, and a full manual pass on the new runtime.
+   ~~`/news`, draft preview, approve, publish~~ **Done** on the integration
+   stage. Outstanding: a scheduled run, the automatic-approval publish path,
+   and a quiet-hours deferral.
 2. ~~Teaching `ops/deploy.sh` to gate on `.State.Health`.~~ **Done.** The gate
    lives in `ops/lib/deploy-gate.sh` and requires the container to be running,
    never restarted, and healthy. `compose.yaml` now declares an
