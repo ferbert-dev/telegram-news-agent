@@ -94,6 +94,7 @@ import { EditorialPersistenceModule } from "../editorial/editorial-persistence.m
 import { EDITORIAL_PERSISTENCE } from "../editorial/editorial-persistence.tokens.js";
 import type { EditorialPersistence } from "../editorial/editorial-persistence.contracts.js";
 
+import { createPollActivityRecorder } from "../runtime/poll-activity.js";
 import { RuntimeHealthWorker } from "../runtime/runtime-health.js";
 import { PIPELINE_LEASES_REPOSITORY } from "../operations/operations.tokens.js";
 import { randomUUID } from "node:crypto";
@@ -215,6 +216,9 @@ export class NewsAgentModule {
     // that equality is what makes the health check verifiable rather than
     // self-asserted.
     const pollerOwnerId = randomUUID();
+    // Constructed once per runtime and handed to exactly two workers: the
+    // poller writes to it, the health worker reads it. Nothing else sees it.
+    const pollActivity = createPollActivityRecorder();
     const newsJobOwnerId = randomUUID();
 
     // --- Late-bound ports -------------------------------------------------
@@ -467,6 +471,13 @@ export class NewsAgentModule {
               token,
               callTelegram: callTelegram as never,
               ownerId: pollerOwnerId,
+              // The one object shared between the poller and the probe. The
+              // poller writes when Telegram answers; the health worker reads it
+              // into the readiness snapshot. Without this the probe can only
+              // say the process is alive, which it was in the failure this
+              // closes: a revoked token backs off forever, the lease is held,
+              // and nothing is served.
+              pollActivity,
               transport: new TelegramControlTransportHandler(application, outcomeRenderer, identity),
               updates,
               leaseApplication,
@@ -552,6 +563,7 @@ export class NewsAgentModule {
           useFactory: () =>
             new RuntimeHealthWorker({
               runtimeId,
+              pollActivity,
               botId: identity.botId,
               channelId: identity.channelId,
               pollerLeaseName: TELEGRAM_CONTROL_POLLER_LEASE_NAME,

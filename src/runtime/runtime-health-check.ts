@@ -9,6 +9,19 @@ import {
 
 /** How stale a heartbeat may be before the runtime is considered wedged. */
 export const DEFAULT_MAX_HEARTBEAT_AGE_MS = 45_000;
+/**
+ * How long a runtime may go without a completed Telegram poll and still be
+ * called healthy.
+ *
+ * Generous next to the heartbeat, and deliberately: `getUpdates` long-polls
+ * for 25 seconds, a quiet channel returns empty batches, and the backoff after
+ * a transient failure reaches tens of seconds. Three minutes is well past all
+ * of that and still far short of the fifteen minutes a revoked token would
+ * otherwise go unnoticed.
+ */
+export const DEFAULT_MAX_POLL_AGE_MS = 180_000;
+/** The worker whose silence this rule is about. */
+const POLLING_WORKER = "telegram-polling";
 
 export type RuntimeHealthCheckResult =
   | { healthy: true; snapshot: RuntimeHealthSnapshot }
@@ -17,6 +30,7 @@ export type RuntimeHealthCheckResult =
 export type RuntimeHealthCheckOptions = {
   filePath?: string;
   maxHeartbeatAgeMs?: number;
+  maxPollAgeMs?: number;
   leases: PipelineLeaseReadPort;
   /**
    * What this probe expects the runtime to be.
@@ -74,6 +88,11 @@ function parseSnapshot(raw: string): RuntimeHealthSnapshot | null {
     (snapshot.state !== "ready" && snapshot.state !== "stopping") ||
     !Array.isArray(snapshot.startedWorkers) ||
     snapshot.startedWorkers.some((worker) => typeof worker !== "string") ||
+    // Present and correctly typed, or the snapshot is not one this probe
+    // understands. Accepting `undefined` here would let a runtime built before
+    // this field existed report healthy without ever having polled, which is
+    // the exact state the field was added to catch.
+    (snapshot.lastPolledAt !== null && typeof snapshot.lastPolledAt !== "string") ||
     stringFields.some((field) => typeof snapshot[field] !== "string")
   ) {
     return null;
@@ -159,6 +178,35 @@ export async function checkRuntimeHealth(
   const age = now().valueOf() - heartbeatAt;
   if (age > maxAge) {
     return { healthy: false, reason: `readiness heartbeat is ${age}ms old, over ${maxAge}ms` };
+  }
+
+  // A runtime that is up but not serving.
+  //
+  // The heartbeat above proves the process is alive; it says nothing about
+  // whether Telegram is answering. A permanently failing `getUpdates` -- a
+  // revoked token, a lasting partition -- backs off and retries forever
+  // without surrendering the lease, so every condition checked so far holds
+  // while the bot is deaf. This is the condition that separates them.
+  //
+  // Only asked of a runtime that started the poller: a reduced worker set is
+  // refused below, on its own terms, and asking a runtime without a poller to
+  // have polled would report the wrong fault.
+  if (snapshot.startedWorkers.includes(POLLING_WORKER)) {
+    const maxPollAge = options.maxPollAgeMs ?? DEFAULT_MAX_POLL_AGE_MS;
+    if (!snapshot.lastPolledAt) {
+      return { healthy: false, reason: "the poller has not completed a poll yet" };
+    }
+    const polledAt = Date.parse(snapshot.lastPolledAt);
+    if (Number.isNaN(polledAt)) {
+      return { healthy: false, reason: "last poll timestamp is unparseable" };
+    }
+    const pollAge = now().valueOf() - polledAt;
+    if (pollAge > maxPollAge) {
+      return {
+        healthy: false,
+        reason: `the last completed poll is ${pollAge}ms old, over ${maxPollAge}ms`,
+      };
+    }
   }
 
   if (expected?.updateMode !== undefined && snapshot.updateMode !== expected.updateMode) {

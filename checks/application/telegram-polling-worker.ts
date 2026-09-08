@@ -616,3 +616,52 @@ test("own AbortError during lease, poll, and update retry sleeps completes clean
     assert.equal(releases, 1);
   }
 });
+
+test("a completed poll is recorded, so readiness can tell serving from merely alive", async () => {
+  // The wiring, not the rule. The rule is covered in checks/runtime: a stale
+  // or absent poll time makes the runtime unhealthy. What was uncovered is
+  // whether the poller ever writes one -- and a mutation deleting the call
+  // passed the entire runtime suite, because those checks supply the recorder
+  // as a fake.
+  //
+  // Without this the failure would be worse than the hole it closes: once the
+  // deploy gate reads health, a poller that records nothing makes every
+  // deployment permanently unhealthy.
+  const controller = new AbortController();
+  const updates = createUpdatesPersistence();
+  const marks: string[] = [];
+  const at = new Date("2026-09-08T12:00:00.000Z");
+
+  await pollTelegramUpdates({
+    token: "token",
+    leaseName: "telegram-control-poller",
+    ownerId: "owner",
+    updates: updates.updates,
+    transport: {
+      handle: async () => {
+        controller.abort("stop-after-poll");
+        return { handled: false };
+      },
+    },
+    callTelegram: async () => [{ update_id: 10, message: { text: "ok" } }],
+    leaseApplication: {
+      acquire: async () => true,
+      renew: async () => true,
+      release: async () => true,
+    },
+    nowImpl: () => at.valueOf(),
+    pollActivity: {
+      mark(when: Date) {
+        marks.push(when.toISOString());
+      },
+      lastPolledAt: () => marks.at(-1) ?? null,
+    },
+    signal: controller.signal,
+  });
+
+  assert.deepEqual(
+    marks,
+    [at.toISOString()],
+    "the poll that returned must be recorded exactly once, at the runtime's clock",
+  );
+});

@@ -31,6 +31,10 @@ function worker(filePath: string, overrides: Record<string, unknown> = {}) {
     pollerLeaseOwnerId: "owner-1",
     updateMode: "polling",
     startedWorkers: ["telegram-polling", "news-scheduler"],
+    // A poller that has just polled, which is the ordinary case. Readiness now
+    // separates "the process is alive" from "Telegram is answering", so every
+    // snapshot needs the second fact as well as the first.
+    pollActivity: { mark() {}, lastPolledAt: () => NOW.toISOString() },
     filePath,
     now: () => NOW,
     ...overrides,
@@ -227,6 +231,7 @@ test("a missing or malformed readiness file is unhealthy, never an exception", a
         startedWorkers: [],
         state: "ready",
         heartbeatAt: NOW.toISOString(),
+        lastPolledAt: NOW.toISOString(),
       }),
   });
   assert.equal(futureSchema.healthy, false);
@@ -544,10 +549,10 @@ test("a runtime in another update mode is rejected rather than polled for", asyn
   assert.match(result.healthy ? "" : result.reason, /webhook mode, not polling/);
 });
 
-test("a schema-1 readiness file is rejected on its version, not incidentally", async () => {
-  // The v2 fields are present, so the version is the only defect and the check
-  // that fires is the one this test is named for. Without them the file is
-  // simply malformed and the version branch is never reached -- which is how
+test("an older readiness file is rejected on its version, not incidentally", async () => {
+  // Every current field is present, so the version is the only defect and the
+  // check that fires is the one this test is named for. Without them the file
+  // is simply malformed and the version branch is never reached -- which is how
   // the first version of this test passed with the version check deleted.
   const result = await checkRuntimeHealth({
     filePath: "ignored",
@@ -566,10 +571,11 @@ test("a schema-1 readiness file is rejected on its version, not incidentally", a
         startedWorkers: ["telegram-polling", "news-scheduler"],
         state: "ready",
         heartbeatAt: NOW.toISOString(),
+        lastPolledAt: NOW.toISOString(),
       }),
   });
   assert.equal(result.healthy, false);
-  assert.match(result.healthy ? "" : result.reason, /schema 1 is not 2/);
+  assert.match(result.healthy ? "" : result.reason, /schema 1 is not 3/);
 });
 
 test("a malformed startedWorkers is unhealthy rather than silently satisfied", async () => {
@@ -597,9 +603,94 @@ test("a malformed startedWorkers is unhealthy rather than silently satisfied", a
           startedWorkers,
           state: "ready",
           heartbeatAt: NOW.toISOString(),
+          lastPolledAt: NOW.toISOString(),
         }),
     });
     assert.equal(result.healthy, false, `expected unhealthy for ${JSON.stringify(startedWorkers)}`);
     assert.match(result.healthy ? "" : result.reason, /malformed/);
   }
+});
+
+test("a runtime that has stopped polling is refused, however alive it looks", async () => {
+  // The hole this closes was not hypothetical. A permanently failing
+  // `getUpdates` -- a revoked token, a lasting partition -- backs off and
+  // retries forever without surrendering the lease. The process runs, the
+  // lease is held, every worker is started, the heartbeat keeps ticking, and
+  // the bot is deaf. Every readiness condition held while nothing was served.
+  const filePath = await temporaryFile();
+  const health = worker(filePath, {
+    pollActivity: {
+      mark() {},
+      lastPolledAt: () => new Date(NOW.valueOf() - 10 * 60_000).toISOString(),
+    },
+  });
+  await health.start(new AbortController().signal);
+
+  const result = await checkRuntimeHealth({
+    filePath,
+    leases: leaseReader({}),
+    now: () => NOW,
+    expect: { channelId: "@channel", updateMode: "polling" },
+  });
+  await health.stop();
+
+  assert.equal(result.healthy, false, `expected unhealthy, got ${JSON.stringify(result)}`);
+  assert.match(result.healthy ? "" : result.reason, /last completed poll is \d+ms old/);
+});
+
+test("a runtime that has not polled at all is refused, and said so plainly", async () => {
+  // Distinct from a stale poll on purpose: a runtime that has never polled has
+  // a different fault from one that stopped, and reporting them the same way
+  // would send whoever reads it looking in the wrong place.
+  const filePath = await temporaryFile();
+  const health = worker(filePath, {
+    pollActivity: { mark() {}, lastPolledAt: () => null },
+  });
+  await health.start(new AbortController().signal);
+
+  const result = await checkRuntimeHealth({
+    filePath,
+    leases: leaseReader({}),
+    now: () => NOW,
+    expect: { channelId: "@channel", updateMode: "polling" },
+  });
+  await health.stop();
+
+  assert.equal(result.healthy, false);
+  assert.match(result.healthy ? "" : result.reason, /has not completed a poll yet/);
+});
+
+test("a runtime with no poller is not asked to have polled", async () => {
+  // A reduced worker set is refused on its own terms, by the required-workers
+  // rule. Asking a runtime without a poller to have polled would report the
+  // wrong fault and send the reader looking for a network problem.
+  const filePath = await temporaryFile();
+  const health = worker(filePath, {
+    startedWorkers: ["news-scheduler"],
+    pollActivity: { mark() {}, lastPolledAt: () => null },
+  });
+  await health.start(new AbortController().signal);
+
+  const result = await checkRuntimeHealth({
+    filePath,
+    leases: leaseReader({}),
+    now: () => NOW,
+    expect: { channelId: "@channel", updateMode: "polling", startedWorkers: ["telegram-polling"] },
+  });
+  await health.stop();
+
+  assert.equal(result.healthy, false);
+  // Not `/poll/`: the missing worker is called telegram-polling, so that
+  // pattern matches the right answer as well as the wrong one. The distinction
+  // is between "a worker is missing" and "a poll is overdue".
+  assert.doesNotMatch(
+    result.healthy ? "" : result.reason,
+    /completed a poll/,
+    "the missing worker is the fault, not the missing poll",
+  );
+  assert.match(
+    result.healthy ? "" : result.reason,
+    /telegram-polling/,
+    "and the reason names the worker that is absent",
+  );
 });

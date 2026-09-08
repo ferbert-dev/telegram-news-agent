@@ -11,6 +11,7 @@ import type {
   RecordTelegramUpdateFailureInput,
   TelegramUpdatesPersistence,
 } from "./telegram-persistence.contracts.js";
+import type { PollActivityRecorder } from "../runtime/poll-activity.js";
 import type { PipelineLeaseApplicationPort } from "../operations/operations-application.contracts.js";
 import { TelegramError } from "../telegram.js";
 
@@ -279,8 +280,10 @@ export async function pollTelegramUpdates(options: {
   maxUpdateAttempts?: number;
   maxFailureLedgerAttempts?: number;
   onReady?: () => void;
+  pollActivity?: PollActivityRecorder;
 }): Promise<void> {
   const {
+    pollActivity,
     token,
     leaseName,
     ownerId,
@@ -449,6 +452,11 @@ export async function pollTelegramUpdates(options: {
         throw new TelegramUpdateProtocolError("updates_not_array");
       }
       pollAttempt = 0;
+      // Marked here, after the call returned and before the batch is handled:
+      // this records that Telegram answered, not that the updates were
+      // processed. A batch that fails to process is a different fault, and one
+      // the poller already reports separately.
+      pollActivity?.mark(new Date(nowImpl()));
 
       let retryCurrentUpdate = false;
       for (const rawUpdate of updatesBatch) {
@@ -645,6 +653,12 @@ export type TelegramPollingWorkerOptions = {
   transport: TelegramControlTransport;
   updates: TelegramUpdatesPersistence;
   leaseApplication: PipelineLeaseApplicationPort;
+  /**
+   * Records that a poll completed, so readiness can tell a serving runtime
+   * from one that is merely up. Optional: a poller without it behaves exactly
+   * as before, which keeps this out of every existing construction site.
+   */
+  pollActivity?: PollActivityRecorder;
   config?: {
     heartbeatIntervalMs?: number;
     leaseAcquireTimeoutMs?: number;
@@ -745,6 +759,7 @@ export class TelegramPollingWorker implements RuntimeWorker {
       sleepImpl: this.options.config?.sleepImpl,
       log: console,
       onReady: startup.resolve,
+      ...(this.options.pollActivity ? { pollActivity: this.options.pollActivity } : {}),
     });
     this.currentRun = run;
     void run.then(

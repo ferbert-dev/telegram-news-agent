@@ -1,8 +1,9 @@
 import { chmod, readFile, rename, unlink, writeFile } from "node:fs/promises";
 
 import type { RuntimeWorker } from "./runtime-coordinator.js";
+import type { PollActivityRecorder } from "./poll-activity.js";
 
-export const RUNTIME_HEALTH_SCHEMA_VERSION = 2;
+export const RUNTIME_HEALTH_SCHEMA_VERSION = 3;
 export const DEFAULT_RUNTIME_HEALTH_FILE = "/tmp/telegram-news-agent-runtime-health.json";
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 
@@ -30,6 +31,17 @@ export type RuntimeHealthSnapshot = {
   startedWorkers: readonly string[];
   state: "ready" | "stopping";
   heartbeatAt: string;
+  /**
+   * When the poller last completed a call to Telegram, or null if it never has.
+   *
+   * The heartbeat above says the runtime is alive; this says it is serving.
+   * They came apart in exactly one way and it was not hypothetical: a
+   * permanently failing `getUpdates` backs off and retries forever without
+   * surrendering its lease, so the process runs, the lease is held, every
+   * worker is started, the heartbeat keeps ticking -- and nothing reaches the
+   * bot. Every readiness condition held while the runtime served nothing.
+   */
+  lastPolledAt: string | null;
 };
 
 export type RuntimeHealthWorkerOptions = {
@@ -40,6 +52,8 @@ export type RuntimeHealthWorkerOptions = {
   pollerLeaseOwnerId: string;
   updateMode: string;
   startedWorkers: readonly string[];
+  /** Read at each heartbeat. Absent, the snapshot reports a null poll time. */
+  pollActivity?: PollActivityRecorder;
   filePath?: string;
   heartbeatIntervalMs?: number;
   now?: () => Date;
@@ -128,6 +142,7 @@ export class RuntimeHealthWorker implements RuntimeWorker {
       startedWorkers: this.options.startedWorkers,
       state,
       heartbeatAt: this.options.now().toISOString(),
+      lastPolledAt: this.options.pollActivity?.lastPolledAt() ?? null,
     };
   }
 
