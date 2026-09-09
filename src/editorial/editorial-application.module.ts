@@ -22,8 +22,20 @@ import {
 import { EditorialIntegrationEventsModule } from "./editorial-integration-events.module.js";
 import { EditorialPersistenceModule } from "./editorial-persistence.module.js";
 
-export type EditorialApplicationGateways = {
-  draft: EditorialDraftGateway;
+/**
+ * Where `EDITORIAL_DRAFT_GATEWAY` comes from, and exactly one of the two.
+ *
+ * `draft` is the original shape and still the right one for a test that hands
+ * in a stand-in gateway. `draftModule` is for a gateway that has dependencies
+ * of its own to resolve -- `LegacyEditorialDraftGatewayModule` builds the real
+ * one from `EVIDENCE_CORROBORATION` -- because a module cannot be handed an
+ * instance that the container has not built yet.
+ */
+export type EditorialApplicationDraftSource =
+  | { draft: EditorialDraftGateway; draftModule?: never }
+  | { draft?: never; draftModule: DynamicModule };
+
+export type EditorialApplicationGateways = EditorialApplicationDraftSource & {
   publication: EditorialPublicationGateway;
   excludedTopics: ExcludedTopicPublicationPolicy;
 };
@@ -42,9 +54,14 @@ export class EditorialApplicationModule {
         UsagePersistenceModule,
         SettingsPersistenceModule,
         EditorialIntegrationEventsModule,
+        // The draft module exports EDITORIAL_DRAFT_GATEWAY itself, so importing
+        // it is what satisfies the use cases below.
+        ...(gateways.draftModule ? [gateways.draftModule] : []),
       ],
       providers: [
-        { provide: EDITORIAL_DRAFT_GATEWAY, useValue: gateways.draft },
+        ...(gateways.draftModule
+          ? []
+          : [{ provide: EDITORIAL_DRAFT_GATEWAY, useValue: gateways.draft }]),
         {
           provide: EDITORIAL_PUBLICATION_GATEWAY,
           useValue: gateways.publication,

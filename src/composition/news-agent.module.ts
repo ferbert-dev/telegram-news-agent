@@ -13,10 +13,6 @@ import { AI_PROVIDER } from "../ai/ai-provider.tokens.js";
 import type { FallbackAiProvider } from "../ai/ai-provider-composition.js";
 
 import { DatabaseModule } from "../database/database.module.js";
-import {
-  DEFAULT_CORROBORATION_OPTIONS,
-  EvidenceCorroborationService,
-} from "../editorial/corroboration/evidence-corroboration.service.js";
 import { FactPlanService } from "../editorial/corroboration/fact-plan.service.js";
 import { buildArticleContentPort } from "../research/content/article-content.factory.js";
 import { buildCorroborationSearchPort } from "../editorial/corroboration/fact-search.factory.js";
@@ -27,10 +23,8 @@ import type { LegacyPersistence } from "../persistence/legacy-persistence.contra
 import { EditorialApplicationModule } from "../editorial/editorial-application.module.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../editorial/editorial-application.tokens.js";
 import type { EditorialWorkflowApplicationPort } from "../editorial/editorial-application.contracts.js";
-import {
-  LegacyEditorialDraftGateway,
-  LEGACY_EDITORIAL_ENRICHMENT_PORTS,
-} from "../editorial/legacy-editorial-draft.gateway.js";
+import { LEGACY_EDITORIAL_ENRICHMENT_PORTS } from "../editorial/legacy-editorial-draft.gateway.js";
+import { LegacyEditorialDraftGatewayModule } from "../editorial/legacy-editorial-draft.module.js";
 import { EditorialEnrichmentService } from "../editorial/enrichment/editorial-enrichment.service.js";
 import { DEFAULT_ENRICHMENT_LIMITS } from "../editorial/enrichment/editorial-enrichment.contracts.js";
 import { LegacyEditorialPublicationGateway } from "../editorial/legacy-editorial-publication.gateway.js";
@@ -343,7 +337,7 @@ export class NewsAgentModule {
         OperationsApplicationModule.register({ notionAudit }),
 
         EditorialApplicationModule.register({
-          draft: new LegacyEditorialDraftGateway({
+          draftModule: LegacyEditorialDraftGatewayModule.register({
             aiProvider,
             model: draftModel,
             repository: legacyPersistence.port as never,
@@ -366,15 +360,11 @@ export class NewsAgentModule {
             ),
             // Corroboration runs before drafting: the unverified caveat is
             // derived from the evidence, so this is the only point that can
-            // affect it without editing the frozen legacy draft module.
-            //
-            // Both are constructed here rather than injected as ports because
-            // the gateway is itself built here by hand -- the same seam the
-            // other legacy gateways use.
+            // affect it without editing the frozen legacy draft module. The
+            // service itself is injected by the draft module from
+            // EVIDENCE_CORROBORATION; only the plan, which has no dependencies
+            // at all, is built here.
             factPlan: new FactPlanService(),
-            corroboration: new EvidenceCorroborationService(
-              DEFAULT_CORROBORATION_OPTIONS,
-            ),
           }),
           publication: new LegacyEditorialPublicationGateway({ token }),
           excludedTopics: new LegacyEditorialPublicationPolicyGateway({

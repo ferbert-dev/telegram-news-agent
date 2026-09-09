@@ -552,6 +552,107 @@ test("Nest module imports are acyclic and avoid forwardRef", async () => {
   for (const file of files) visit(file, []);
 });
 
+/**
+ * Every `.ts` and `.mjs` file that can name a module: `src/` for the wiring
+ * itself, `checks/` because a slice that only a check assembles is still
+ * assembled somewhere, and `checks/emitted-*.mjs` because those reach the same
+ * modules through `dist/`.
+ */
+async function moduleReferenceFiles(): Promise<string[]> {
+  const scan = async (directory: string): Promise<string[]> => {
+    const entries = await readdir(directory, { withFileTypes: true });
+    const nested = await Promise.all(
+      entries.map(async (entry) => {
+        const target = path.join(directory, entry.name);
+        if (entry.isDirectory()) return scan(target);
+        return entry.isFile() && /\.(?:ts|mjs)$/.test(target) ? [target] : [];
+      }),
+    );
+    return nested.flat().sort();
+  };
+  return [
+    ...(await scan(sourceRoot)),
+    ...(await scan(path.join(projectRoot, "checks"))),
+  ];
+}
+
+/**
+ * A relative specifier resolved to the `src/` file it names, so a reference
+ * through the compiled output counts as a reference to the source.
+ */
+function resolveModuleReference(from: string, specifier: string): string | null {
+  const resolved = resolveRelativeImport(from, specifier);
+  if (resolved === null) return null;
+  const distRoot = path.join(projectRoot, "dist") + path.sep;
+  if (!resolved.startsWith(distRoot)) return resolved;
+  return path.join(sourceRoot, resolved.slice(distRoot.length));
+}
+
+/**
+ * A `.module.ts` nothing imports is dead wiring, and it does not look dead:
+ * `EvidenceCorroborationModule` declared providers and exports for a service
+ * that the composition root was meanwhile constructing with `new`, so the
+ * slice worked and its module was never loaded. That survived review, a
+ * cutover-readiness pass and a module-graph drawing, and was found by hand.
+ *
+ * The rule is deliberately generous about who may do the importing. Several
+ * slices are additive and are assembled only by a check until their cutover
+ * ticket -- that is the documented state of this repository, not a defect. A
+ * module that no check assembles either is a different thing: nothing anywhere
+ * has ever built it, so nothing can say whether it still works.
+ */
+test("every Nest module is imported by something that assembles it", async () => {
+  const modules = new Set(
+    (await sourceFiles(sourceRoot)).filter((file) => file.endsWith(".module.ts")),
+  );
+  const referenced = new Set<string>();
+
+  for (const file of await moduleReferenceFiles()) {
+    const source = await readFile(file, "utf8");
+    // `importsOf` asserts a `.ts` name; the scanner itself is extension-blind,
+    // and the emitted checks it has to read are `.mjs`.
+    for (const specifier of importsOf(file.replace(/\.mjs$/, ".ts"), source)) {
+      const resolved = resolveModuleReference(file, specifier);
+      if (resolved !== null && resolved !== file && modules.has(resolved)) {
+        referenced.add(resolved);
+      }
+    }
+  }
+
+  const orphans = [...modules]
+    .filter((file) => !referenced.has(file))
+    .map(relative)
+    .sort();
+
+  assert.deepEqual(
+    orphans,
+    [],
+    `Nest modules that nothing imports: ${orphans.join(", ")}. Either wire the module into the composition that needs it, or delete it and say in a comment why the thing it provided is built directly instead.`,
+  );
+});
+
+test("the corroboration slice is wired through its module rather than constructed by hand", async () => {
+  const draftModule = await readFile(
+    path.join(sourceRoot, "editorial/legacy-editorial-draft.module.ts"),
+    "utf8",
+  );
+  assert.match(draftModule, /EvidenceCorroborationModule\.register\(/);
+  assert.match(draftModule, /inject:\s*\[EVIDENCE_CORROBORATION\]/);
+
+  // The root composes the gateway's module, not the service. `new
+  // EvidenceCorroborationService` there is what made the module dead the first
+  // time, and it is invisible from the module graph.
+  const root = await readFile(
+    path.join(sourceRoot, "composition/news-agent.module.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    root,
+    /new EvidenceCorroborationService\s*\(/,
+    "the composition root must take corroboration from the module, not construct it",
+  );
+});
+
 test("runtime bootstrap owns signals and never calls process.exit directly", async () => {
   const runtimeCoordinator = await readFile(
     path.join(sourceRoot, "runtime/runtime-coordinator.ts"),
