@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1780" height="1040" viewBox="0 0 1780 1040" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+<title id="t">How the NestJS modules interact, from trigger to published post</title>
+<desc id="d">End-to-end flow through the typed runtime: a Telegram command or a scheduler tick is admitted, research gathers and deduplicates sources, the editorial pass writes and grounds the article, the draft is approved and published, and every step writes to PostgreSQL, the usage ledger and the Notion audit.</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#07111f"/><stop offset="0.55" stop-color="#0b1d2a"/><stop offset="1" stop-color="#102419"/></linearGradient>
+  <linearGradient id="tg" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#53c7ff"/><stop offset="0.55" stop-color="#8de4d1"/><stop offset="1" stop-color="#f5d47a"/></linearGradient>
+  <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M 32 0 L 0 0 0 32" fill="none" stroke="#9dd7c8" stroke-opacity="0.05" stroke-width="1"/></pattern>
+  <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#000" flood-opacity="0.3"/></filter>
+  <marker id="ar" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#72cfd0"/></marker>
+  <marker id="ar2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#5d8ba3"/></marker>
+</defs>
+<rect width="1780" height="1040" fill="url(#bg)"/><rect width="1780" height="1040" fill="url(#grid)"/>
+<text x="40" y="52" fill="url(#tg)" font-size="26" font-weight="700">How the NestJS modules interact</text>
+<text x="40" y="78" fill="#8fb3c7" font-size="13">One run, end to end: a <tspan fill="#cfe3ef">/news</tspan> tap or a scheduler tick becomes a published post. Every arrow is a call that exists in the code.</text>
+<text x="1740" y="52" text-anchor="end" fill="#f5d47a" font-size="12" font-weight="600">typed runtime &#183; ports in, adapters out</text>
+<rect x="40" y="112" width="306" height="600" rx="12" fill="#0d1c2b" fill-opacity="0.55" stroke="#1f3a4d" stroke-width="0"/>
+<text x="54" y="136" fill="#8de4d1" font-size="11" font-weight="700" letter-spacing="1.5">TRIGGER</text>
+<text x="54" y="152" fill="#6f8ea3" font-size="9.5">two entry points, one queue</text>
+<rect x="388" y="112" width="306" height="600" rx="12" fill="#0d1c2b" fill-opacity="0.55" stroke="#1f3a4d" stroke-width="0"/>
+<text x="402" y="136" fill="#8de4d1" font-size="11" font-weight="700" letter-spacing="1.5">ADMIT</text>
+<text x="402" y="152" fill="#6f8ea3" font-size="9.5">refuse early, before spending</text>
+<rect x="737" y="112" width="306" height="600" rx="12" fill="#0d1c2b" fill-opacity="0.55" stroke="#1f3a4d" stroke-width="0"/>
+<text x="751" y="136" fill="#8de4d1" font-size="11" font-weight="700" letter-spacing="1.5">RESEARCH</text>
+<text x="751" y="152" fill="#6f8ea3" font-size="9.5">free sources first, paid last</text>
+<rect x="1085" y="112" width="306" height="600" rx="12" fill="#0d1c2b" fill-opacity="0.55" stroke="#1f3a4d" stroke-width="0"/>
+<text x="1099" y="136" fill="#8de4d1" font-size="11" font-weight="700" letter-spacing="1.5">WRITE AND GROUND</text>
+<text x="1099" y="152" fill="#6f8ea3" font-size="9.5">evidence before prose</text>
+<rect x="1434" y="112" width="306" height="600" rx="12" fill="#0d1c2b" fill-opacity="0.55" stroke="#1f3a4d" stroke-width="0"/>
+<text x="1448" y="136" fill="#8de4d1" font-size="11" font-weight="700" letter-spacing="1.5">DECIDE AND DELIVER</text>
+<text x="1448" y="152" fill="#6f8ea3" font-size="9.5">irreversible, so atomic</text>
+<rect x="50" y="166" width="286" height="74" rx="9" fill="#13314a" stroke="#35678a" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="50" y="166" width="286" height="2.5" rx="1.2" fill="#53c7ff"/>
+<text x="64" y="187" fill="#e6f1f8" font-size="11.5" font-weight="600">telegram-polling worker</text>
+<text x="64" y="203" fill="#93b5c9" font-size="9.3">getUpdates → parser → control handler</text>
+<text x="64" y="216" fill="#93b5c9" font-size="9.3">records each poll into runtime health</text>
+<rect x="50" y="252" width="286" height="74" rx="9" fill="#13314a" stroke="#35678a" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="50" y="252" width="286" height="2.5" rx="1.2" fill="#53c7ff"/>
+<text x="64" y="273" fill="#e6f1f8" font-size="11.5" font-weight="600">news-scheduler worker</text>
+<text x="64" y="289" fill="#93b5c9" font-size="9.3">one tick, every 180 min</text>
+<text x="64" y="302" fill="#93b5c9" font-size="9.3">SchedulerService.runOnce()</text>
+<rect x="50" y="338" width="286" height="74" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="64" y="359" fill="#e6f1f8" font-size="11.5" font-weight="600">RunTelegramNewsUseCase</text>
+<text x="64" y="375" fill="#93b5c9" font-size="9.3">settings.getOrCreateNewsSettings</text>
+<text x="64" y="388" fill="#93b5c9" font-size="9.3">jobs.enqueueTelegramNewsJob</text>
+<rect x="398" y="166" width="286" height="74" rx="9" fill="#263020" stroke="#5c6b3a" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="398" y="166" width="286" height="2.5" rx="1.2" fill="#e9c46a"/>
+<text x="412" y="187" fill="#e6f1f8" font-size="11.5" font-weight="600">claimDueNewsSchedule</text>
+<text x="412" y="203" fill="#93b5c9" font-size="9.3">atomic. During 22:00–08:00 Madrid it</text>
+<text x="412" y="216" fill="#93b5c9" font-size="9.3">defers instead of claiming — nothing is spent</text>
+<rect x="398" y="252" width="286" height="74" rx="9" fill="#263020" stroke="#5c6b3a" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="398" y="252" width="286" height="2.5" rx="1.2" fill="#e9c46a"/>
+<text x="412" y="273" fill="#e6f1f8" font-size="11.5" font-weight="600">Notion Agent Run · audit.run</text>
+<text x="412" y="289" fill="#93b5c9" font-size="9.3">opened BEFORE the work, and not in a try:</text>
+<text x="412" y="302" fill="#93b5c9" font-size="9.3">no Notion, no run, no tokens</text>
+<rect x="398" y="338" width="286" height="74" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="412" y="359" fill="#e6f1f8" font-size="11.5" font-weight="600">hasPendingTelegramReview</text>
+<text x="412" y="375" fill="#93b5c9" font-size="9.3">a review already waiting stops a second one</text>
+<rect x="398" y="424" width="286" height="74" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="412" y="445" fill="#e6f1f8" font-size="11.5" font-weight="600">pipelineLease.acquire</text>
+<text x="412" y="461" fill="#93b5c9" font-size="9.3">one pipeline at a time, across the database</text>
+<rect x="398" y="510" width="286" height="74" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="412" y="531" fill="#e6f1f8" font-size="11.5" font-weight="600">claimNextTelegramNewsJob</text>
+<text x="412" y="547" fill="#93b5c9" font-size="9.3">SKIP LOCKED · execute phase, then deliver</text>
+<rect x="747" y="166" width="286" height="74" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="761" y="187" fill="#e6f1f8" font-size="11.5" font-weight="600">catalog.listEnabledSources</text>
+<text x="761" y="203" fill="#93b5c9" font-size="9.3">the channel's topics decide which sources</text>
+<text x="761" y="216" fill="#93b5c9" font-size="9.3">are reachable at all</text>
+<rect x="747" y="252" width="286" height="74" rx="9" fill="#17352e" stroke="#2f6a5b" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="747" y="252" width="286" height="2.5" rx="1.2" fill="#8de4d1"/>
+<text x="761" y="273" fill="#e6f1f8" font-size="11.5" font-weight="600">SourceAcquisition.fetchSource</text>
+<text x="761" y="289" fill="#93b5c9" font-size="9.3">rss · reddit · gdelt — free, and tried first</text>
+<rect x="747" y="338" width="286" height="74" rx="9" fill="#17352e" stroke="#2f6a5b" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="747" y="338" width="286" height="2.5" rx="1.2" fill="#8de4d1"/>
+<text x="761" y="359" fill="#e6f1f8" font-size="11.5" font-weight="600">ai.searchNews → Exa</text>
+<text x="761" y="375" fill="#93b5c9" font-size="9.3">paid, and only when the feeds came up short</text>
+<text x="761" y="388" fill="#93b5c9" font-size="9.3">bounded per run</text>
+<rect x="747" y="424" width="286" height="74" rx="9" fill="#17352e" stroke="#2f6a5b" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="747" y="424" width="286" height="2.5" rx="1.2" fill="#8de4d1"/>
+<text x="761" y="445" fill="#e6f1f8" font-size="11.5" font-weight="600">EvidenceCuration.curate</text>
+<text x="761" y="461" fill="#93b5c9" font-size="9.3">the model ranks candidates;</text>
+<text x="761" y="474" fill="#93b5c9" font-size="9.3">discovery summaries are not articles</text>
+<rect x="747" y="510" width="286" height="74" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="761" y="531" fill="#e6f1f8" font-size="11.5" font-weight="600">storyDedup.evaluateDuplicate</text>
+<text x="761" y="547" fill="#93b5c9" font-size="9.3">against recently published stories</text>
+<text x="761" y="560" fill="#93b5c9" font-size="9.3">verdict recorded, not just applied</text>
+<rect x="747" y="596" width="286" height="74" rx="9" fill="#17352e" stroke="#2f6a5b" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="747" y="596" width="286" height="2.5" rx="1.2" fill="#8de4d1"/>
+<text x="761" y="617" fill="#e6f1f8" font-size="11.5" font-weight="600">articleContent.fetch</text>
+<text x="761" y="633" fill="#93b5c9" font-size="9.3">the full text of the one article</text>
+<text x="761" y="646" fill="#93b5c9" font-size="9.3">the run will actually write from</text>
+<rect x="1095" y="166" width="286" height="74" rx="9" fill="#17352e" stroke="#2f6a5b" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="1095" y="166" width="286" height="2.5" rx="1.2" fill="#8de4d1"/>
+<text x="1109" y="187" fill="#e6f1f8" font-size="11.5" font-weight="600">factPlan.plan</text>
+<text x="1109" y="203" fill="#93b5c9" font-size="9.3">which claims need corroborating at all</text>
+<rect x="1095" y="252" width="286" height="74" rx="9" fill="#17352e" stroke="#2f6a5b" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="1095" y="252" width="286" height="2.5" rx="1.2" fill="#8de4d1"/>
+<text x="1109" y="273" fill="#e6f1f8" font-size="11.5" font-weight="600">EvidenceCorroboration</text>
+<text x="1109" y="289" fill="#93b5c9" font-size="9.3">Exa fact search · vetted hosts only</text>
+<text x="1109" y="302" fill="#93b5c9" font-size="9.3">nothing older than 72 hours</text>
+<rect x="1095" y="338" width="286" height="74" rx="9" fill="#263020" stroke="#5c6b3a" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="1095" y="338" width="286" height="2.5" rx="1.2" fill="#e9c46a"/>
+<text x="1109" y="359" fill="#e6f1f8" font-size="11.5" font-weight="600">LegacyEditorialDraftGateway</text>
+<text x="1109" y="375" fill="#93b5c9" font-size="9.3">draft.js writes the baseline — kept,</text>
+<text x="1109" y="388" fill="#93b5c9" font-size="9.3">so a failed enrichment still ships something</text>
+<rect x="1095" y="424" width="286" height="74" rx="9" fill="#17352e" stroke="#2f6a5b" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="1095" y="424" width="286" height="2.5" rx="1.2" fill="#8de4d1"/>
+<text x="1109" y="445" fill="#e6f1f8" font-size="11.5" font-weight="600">EditorialEnrichmentService</text>
+<text x="1109" y="461" fill="#93b5c9" font-size="9.3">the article: 185–220 words, four paragraphs</text>
+<text x="1109" y="474" fill="#93b5c9" font-size="9.3">too long is handed back to edit, not discarded</text>
+<rect x="1095" y="510" width="286" height="74" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="1109" y="531" fill="#e6f1f8" font-size="11.5" font-weight="600">editorial.createReviewDraft</text>
+<text x="1109" y="547" fill="#93b5c9" font-size="9.3">body, evidence map, topics and tags</text>
+<text x="1109" y="560" fill="#93b5c9" font-size="9.3">one source link, other outlets never named</text>
+<rect x="1444" y="166" width="286" height="74" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="1458" y="187" fill="#e6f1f8" font-size="11.5" font-weight="600">review card → owner chat</text>
+<text x="1458" y="203" fill="#93b5c9" font-size="9.3">preview with Publish and Reject</text>
+<rect x="1444" y="252" width="286" height="74" rx="9" fill="#263020" stroke="#5c6b3a" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="1444" y="252" width="286" height="2.5" rx="1.2" fill="#e9c46a"/>
+<text x="1458" y="273" fill="#e6f1f8" font-size="11.5" font-weight="600">policy.evaluate</text>
+<text x="1458" y="289" fill="#93b5c9" font-size="9.3">excluded topics refuse here, before any send</text>
+<rect x="1444" y="338" width="286" height="74" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="1458" y="359" fill="#e6f1f8" font-size="11.5" font-weight="600">claimDraftForPublicationWithPolicy</text>
+<text x="1458" y="375" fill="#93b5c9" font-size="9.3">atomic claim. Automatic approval passes</text>
+<text x="1458" y="388" fill="#93b5c9" font-size="9.3">through the same gate a human tap does</text>
+<rect x="1444" y="424" width="286" height="74" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="1458" y="445" fill="#e6f1f8" font-size="11.5" font-weight="600">PublishApprovedDraftUseCase</text>
+<text x="1458" y="461" fill="#93b5c9" font-size="9.3">an uncertain Telegram reply leaves the draft</text>
+<text x="1458" y="474" fill="#93b5c9" font-size="9.3">in publishing for a human — never a blind retry</text>
+<rect x="1444" y="510" width="286" height="74" rx="9" fill="#13314a" stroke="#35678a" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="1444" y="510" width="286" height="2.5" rx="1.2" fill="#53c7ff"/>
+<text x="1458" y="531" fill="#e6f1f8" font-size="11.5" font-weight="600">news channel</text>
+<text x="1458" y="547" fill="#93b5c9" font-size="9.3">idempotent per draft: published once</text>
+<line x1="350" y1="410" x2="378" y2="410" stroke="#72cfd0" stroke-width="2.2" marker-end="url(#ar)"/>
+<text x="367" y="400" text-anchor="middle" fill="#8fb3c7" font-size="9" font-weight="600">update / tick</text>
+<line x1="699" y1="410" x2="727" y2="410" stroke="#72cfd0" stroke-width="2.2" marker-end="url(#ar)"/>
+<text x="716" y="400" text-anchor="middle" fill="#8fb3c7" font-size="9" font-weight="600">claimed job + settings</text>
+<line x1="1047" y1="410" x2="1075" y2="410" stroke="#72cfd0" stroke-width="2.2" marker-end="url(#ar)"/>
+<text x="1064" y="400" text-anchor="middle" fill="#8fb3c7" font-size="9" font-weight="600">sources, full text, dedup verdict</text>
+<line x1="1396" y1="410" x2="1424" y2="410" stroke="#72cfd0" stroke-width="2.2" marker-end="url(#ar)"/>
+<text x="1413" y="400" text-anchor="middle" fill="#8fb3c7" font-size="9" font-weight="600">draft + evidence map</text>
+<rect x="40" y="754" width="1700" height="66" rx="9" fill="#0f2233" stroke="#3a6f8d" stroke-width="1.1" filter="url(#sh)"/>
+<rect x="40" y="754" width="1700" height="2.5" rx="1.2" fill="#53c7ff"/>
+<text x="54" y="775" fill="#e6f1f8" font-size="14" font-weight="600">PostgreSQL — the authority, not a cache</text>
+<text x="54" y="791" fill="#93b5c9" font-size="10">atomic functions hold every transition: leases, SKIP LOCKED claims, token CAS, review, publication, schedule, quiet-hours deferral</text>
+<text x="54" y="804" fill="#93b5c9" font-size="10">checkpoints let a resumed job keep the research it already paid for · drafts · publications · usage ledger · settings · audit outbox</text>
+<line x1="193" y1="712" x2="193" y2="745" stroke="#5d8ba3" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#ar2)" opacity="0.8"/>
+<line x1="542" y1="712" x2="542" y2="745" stroke="#5d8ba3" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#ar2)" opacity="0.8"/>
+<line x1="890" y1="712" x2="890" y2="745" stroke="#5d8ba3" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#ar2)" opacity="0.8"/>
+<line x1="1238" y1="712" x2="1238" y2="745" stroke="#5d8ba3" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#ar2)" opacity="0.8"/>
+<line x1="1587" y1="712" x2="1587" y2="745" stroke="#5d8ba3" stroke-width="1.6" stroke-dasharray="4 4" marker-end="url(#ar2)" opacity="0.8"/>
+<rect x="40" y="856" width="553" height="62" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="54" y="877" fill="#e6f1f8" font-size="11.5" font-weight="600">AiProvidersModule</text>
+<text x="54" y="893" fill="#93b5c9" font-size="9.3">openai → gemini → openrouter, in order</text>
+<text x="54" y="906" fill="#93b5c9" font-size="9.3">a rate-limited provider opens a breaker</text>
+<text x="54" y="918" fill="#93b5c9" font-size="9.3">1,005 requests in 358s is why</text>
+<rect x="613" y="856" width="553" height="62" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="627" y="877" fill="#e6f1f8" font-size="11.5" font-weight="600">usage.recordAiUsage</text>
+<text x="627" y="893" fill="#93b5c9" font-size="9.3">every attempt and every usage event</text>
+<text x="627" y="906" fill="#93b5c9" font-size="9.3">attempts=20535 · usage_events=4461</text>
+<text x="627" y="918" fill="#93b5c9" font-size="9.3">what the spend dashboard reads</text>
+<rect x="1187" y="856" width="553" height="62" rx="9" fill="#152c3f" stroke="#31536e" stroke-width="1.1" filter="url(#sh)"/>
+<text x="1201" y="877" fill="#e6f1f8" font-size="11.5" font-weight="600">ArticlePublishedEvent</text>
+<text x="1201" y="893" fill="#93b5c9" font-size="9.3">in-process bus → publication-milestones</text>
+<text x="1201" y="906" fill="#93b5c9" font-size="9.3">the only subscriber today</text>
+<text x="40" y="962" fill="#7f9db1" font-size="11">Read it as one run. The two triggers meet at the same queue, the same lease and the same publication gate &#8212; automatic approval is not a second path, it is the same path with the human tap removed.</text>
+<text x="40" y="982" fill="#7f9db1" font-size="11">Amber boxes are where a run is refused or where frozen legacy JS is still reached through a sanctioned gateway. Green is typed work that costs money. Everything writes down before it moves on.</text>
+<text x="40" y="1002" fill="#5d7f95" font-size="10">Traced from the source: TypedNewsJobWorkflowAdapter, RunScheduledNewsOnceUseCase, TypedResearchExecutionGateway, LegacyEditorialDraftGateway, PublishApprovedDraftUseCase.</text>
+</svg>
