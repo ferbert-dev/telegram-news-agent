@@ -57,6 +57,14 @@ Build a minimal workflow where ideas become tickets, agents execute scoped tasks
 
 ## NestJS Module Architecture
 
+<p align="center">
+  <a href="docs/assets/nestjs-modules.svg">
+    <img src="docs/assets/nestjs-modules.svg" alt="Layered map of the NestJS runtime: composition root and four workers, eight application modules, seven gateway and cross-cutting modules, nine persistence modules, one database module, and the four sanctioned legacy seams" width="1200">
+  </a>
+  <br>
+  <sub>Click for the full-size module map. Derived from the code, not drawn by hand.</sub>
+</p>
+
 Two runtimes ship in one image. The legacy JS entrypoint is what production
 starts today; the typed NestJS context below is carried in `dist/` and chosen by
 `BOT_ENTRYPOINT` in the environment file, not by a compose edit.
