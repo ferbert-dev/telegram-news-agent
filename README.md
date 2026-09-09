@@ -65,11 +65,15 @@ Build a minimal workflow where ideas become tickets, agents execute scoped tasks
   <sub>The production map above, redrawn for the typed runtime. Click for full size.</sub>
 </p>
 
-Read left to right. The two triggers meet at one admission gate, and quiet
-hours refuses there &#8212; before any provider is called, which is why an
-overnight pause costs nothing. Feeds are tried before Exa, the baseline draft
-is kept before enrichment is attempted over it, and both the manual tap and
-automatic approval pass through the same atomic claim.
+Read the five numbered stages left to right. The two triggers meet at one
+admission gate, and quiet hours refuses there &#8212; before any provider is
+called, which is why an overnight pause costs nothing. Feeds are tried before
+Exa, the baseline draft is kept before enrichment is attempted over it, and
+both the manual tap and automatic approval pass through the same atomic claim.
+
+Exa, the AI providers and PostgreSQL sit on a shelf of their own rather than in
+the line, because they are called from more than one stage; drawing them as a
+stage would have sent arrows backwards through the flow.
 
 <p align="center">
   <a href="docs/assets/nestjs-dependency-graph.svg">
