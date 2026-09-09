@@ -58,33 +58,31 @@ Build a minimal workflow where ideas become tickets, agents execute scoped tasks
 ## NestJS Module Architecture
 
 <p align="center">
-  <a href="docs/assets/nestjs-dependency-graph.svg">
-    <img src="docs/assets/nestjs-dependency-graph.svg" alt="Dependency graph of the typed runtime: the composition root, fifteen consumer modules, ten persistence and cross-cutting modules and one database module, connected by every import that exists in the source" width="1200">
+  <a href="docs/assets/nestjs-runtime-map.svg">
+    <img src="docs/assets/nestjs-runtime-map.svg" alt="Map of the typed NestJS runtime in the same shape as the production diagram: triggers and free sources, the AI providers, admission and research and the editorial pass, PostgreSQL and the publication gate, delivery to the channel and the owner chat, with the composition root and lifecycle underneath" width="1200">
   </a>
   <br>
-  <sub>Every module, and every import between them. Generated from the source, so it cannot drift.</sub>
+  <sub>The production map above, redrawn for the typed runtime. Click for full size.</sub>
 </p>
 
-Arrows point from the module that imports to the module it imports. Read a
-column as a permission: nothing in persistence may point left, and nothing may
-point back into the root. Gold is the composition root wiring; a bus is one
-line standing in for many endpoints, drawn that way because
-`persistence-facade` reaches all nine persistence modules and every one of
-those reaches `DatabaseModule` and nothing else.
+Read left to right. The two triggers meet at one admission gate, and quiet
+hours refuses there &#8212; before any provider is called, which is why an
+overnight pause costs nothing. Feeds are tried before Exa, the baseline draft
+is kept before enrichment is attempted over it, and both the manual tap and
+automatic approval pass through the same atomic claim.
 
 <p align="center">
-  <a href="docs/assets/nestjs-flow.svg">
-    <img src="docs/assets/nestjs-flow.svg" alt="End-to-end flow through the typed runtime: a Telegram command or scheduler tick is admitted, research gathers and deduplicates sources, the editorial pass grounds and writes the article, the draft is approved and published, and every step writes to PostgreSQL, the usage ledger and the Notion audit" width="1200">
+  <a href="docs/assets/nestjs-dependency-graph.svg">
+    <img src="docs/assets/nestjs-dependency-graph.svg" alt="Dependency graph of the typed runtime: the composition root, fifteen consumer modules, ten persistence and cross-cutting modules and one database module, connected by every import that exists in the source" width="1100">
   </a>
   <br>
-  <sub>One run, end to end. Every arrow is a call that exists in the code &#8212; click for full size.</sub>
+  <sub>And the exact import graph behind it: 31 modules, every edge extracted from the source.</sub>
 </p>
 
-Read it as a single run. The two triggers meet at the same queue, the same
-lease and the same publication gate: automatic approval is not a second path,
-it is this path with the human tap removed. Amber marks where a run is refused,
-or where frozen legacy JS is still reached through a sanctioned gateway; green
-marks typed work that costs money.
+Arrows there point from the module that imports to the module it imports.
+Nothing in the persistence column points left, which is the layering rule as
+geometry rather than as a sentence, and `legacy-research-execution` has no
+inbound edge at all because `typed-research-execution` replaced it.
 
 Two runtimes ship in one image. The legacy JS entrypoint is what production
 starts today; the typed NestJS context below is carried in `dist/` and chosen by
