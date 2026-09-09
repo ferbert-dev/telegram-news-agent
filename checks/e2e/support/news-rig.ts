@@ -20,10 +20,8 @@ import { RESEARCH_EXECUTION_GATEWAY } from "../../../src/research/research-gatew
 import { EditorialApplicationModule } from "../../../src/editorial/editorial-application.module.js";
 import { EDITORIAL_WORKFLOW_APPLICATION } from "../../../src/editorial/editorial-application.tokens.js";
 import { EDITORIAL_PERSISTENCE } from "../../../src/editorial/editorial-persistence.tokens.js";
-import {
-  LegacyEditorialDraftGateway,
-  LEGACY_EDITORIAL_ENRICHMENT_PORTS,
-} from "../../../src/editorial/legacy-editorial-draft.gateway.js";
+import { LEGACY_EDITORIAL_ENRICHMENT_PORTS } from "../../../src/editorial/legacy-editorial-draft.gateway.js";
+import { LegacyEditorialDraftGatewayModule } from "../../../src/editorial/legacy-editorial-draft.module.js";
 import { EditorialEnrichmentService } from "../../../src/editorial/enrichment/editorial-enrichment.service.js";
 import { DEFAULT_ENRICHMENT_LIMITS } from "../../../src/editorial/enrichment/editorial-enrichment.contracts.js";
 import { LegacyEditorialPublicationPolicyGateway } from "../../../src/editorial/legacy-editorial-publication-policy.gateway.js";
@@ -33,10 +31,6 @@ import { PersistenceFacadeModule } from "../../../src/persistence/persistence-fa
 import { SettingsApplicationModule } from "../../../src/settings/settings-application.module.js";
 import { LateBoundPortRegistry } from "../../../src/composition/late-bound-port.js";
 import { FactPlanService } from "../../../src/editorial/corroboration/fact-plan.service.js";
-import {
-  DEFAULT_CORROBORATION_OPTIONS,
-  EvidenceCorroborationService,
-} from "../../../src/editorial/corroboration/evidence-corroboration.service.js";
 import type { ArticleContentPort } from "../../../src/research/content/article-content.contracts.js";
 import { getNewsEditor } from "../../../src/editor.js";
 import { tierOf } from "../../../src/editorial/corroboration/source-policy.js";
@@ -703,7 +697,7 @@ export async function withNewsRig(
         ...(articleContent ? { articleContent } : {}),
       }),
       EditorialApplicationModule.register({
-        draft: new LegacyEditorialDraftGateway({
+        draftModule: LegacyEditorialDraftGatewayModule.register({
           aiProvider: aiProvider as never,
           model: "fake-model",
           repository: legacyPersistence.port as never,
@@ -715,16 +709,17 @@ export async function withNewsRig(
           // never reached. A check that cannot fail for the code it is meant to
           // cover is worse than no check: it reports safety it did not
           // establish.
+          //
+          // The corroboration service comes from EvidenceCorroborationModule
+          // via the draft module, so this rig runs the same wiring production
+          // does rather than a hand-built copy of it.
           factPlan: new FactPlanService(),
-          corroboration: new EvidenceCorroborationService(
-            DEFAULT_CORROBORATION_OPTIONS,
-          ),
           factSearch: factSearch as never,
           enrichment: new EditorialEnrichmentService(
             LEGACY_EDITORIAL_ENRICHMENT_PORTS,
             DEFAULT_ENRICHMENT_LIMITS,
           ),
-        }) as never,
+        }),
         publication: publicationGateway as never,
         excludedTopics: new LegacyEditorialPublicationPolicyGateway({
           aiProvider: aiProvider as never,

@@ -118,6 +118,15 @@ typed-research-execution  -> source-acquisition -> catalog + usage persistence
                           -> research + catalog + story-deduplication + usage persistence
 ```
 
+Editorial splits for the same reason. The draft gateway has a dependency the
+composition root does not own -- the corroboration budget and its thresholds --
+so it is composed as a module and handed to `EditorialApplicationModule` as one,
+rather than constructed by hand and passed in as a value:
+
+```text
+editorial-application     -> legacy-editorial-draft -> evidence-corroboration
+```
+
 ### The legacy seams
 
 `legacy-*.gateway.ts` plus its module is the only sanctioned way a typed

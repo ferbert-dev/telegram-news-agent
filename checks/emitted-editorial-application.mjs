@@ -19,7 +19,10 @@ const { LegacyEditorialDraftGateway } = await import(
 const { LegacyEditorialDraftGatewayModule } = await import(
   "../dist/editorial/legacy-editorial-draft.module.js"
 );
-const { EDITORIAL_WORKFLOW_APPLICATION } = await import(
+const { EvidenceCorroborationService } = await import(
+  "../dist/editorial/corroboration/evidence-corroboration.service.js"
+);
+const { EDITORIAL_DRAFT_GATEWAY, EDITORIAL_WORKFLOW_APPLICATION } = await import(
   "../dist/editorial/editorial-application.tokens.js"
 );
 const { EDITORIAL_PERSISTENCE } = await import(
@@ -84,3 +87,30 @@ const workflow = moduleRef.get(EDITORIAL_WORKFLOW_APPLICATION);
 assert.ok(workflow instanceof EditorialWorkflowService);
 assert.equal(moduleRef.get(EditorialWorkflowService), workflow);
 await moduleRef.close();
+
+// The draft gateway's own wiring, compiled. It resolves EVIDENCE_CORROBORATION
+// out of EvidenceCorroborationModule through a useFactory/inject pair, and an
+// inject array that survives `tsx` but not `tsc` emit is exactly the failure
+// this file exists to catch. Asserting `register` is a function did not reach
+// any of that.
+const draftRef = await Test.createTestingModule({
+  imports: [
+    LegacyEditorialDraftGatewayModule.register({
+      model: "emitted-model",
+      repository: unusedEditorial,
+    }),
+  ],
+}).compile();
+
+const draftGateway = draftRef.get(EDITORIAL_DRAFT_GATEWAY);
+assert.ok(draftGateway instanceof LegacyEditorialDraftGateway);
+assert.equal(typeof draftGateway.generate, "function");
+// Reads the gateway's own dependencies on purpose. That the module compiles
+// and that the token resolves are both true of a factory that quietly received
+// `undefined`; the corroboration service reaching the gateway is the thing this
+// wiring exists to do, and it is only observable here.
+assert.ok(
+  draftGateway.dependencies.corroboration instanceof EvidenceCorroborationService,
+  "draft gateway must be built with the injected corroboration service",
+);
+await draftRef.close();
