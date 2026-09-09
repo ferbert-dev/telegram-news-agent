@@ -58,6 +58,21 @@ Build a minimal workflow where ideas become tickets, agents execute scoped tasks
 ## NestJS Module Architecture
 
 <p align="center">
+  <a href="docs/assets/nestjs-dependency-graph.svg">
+    <img src="docs/assets/nestjs-dependency-graph.svg" alt="Dependency graph of the typed runtime: the composition root, fifteen consumer modules, ten persistence and cross-cutting modules and one database module, connected by every import that exists in the source" width="1200">
+  </a>
+  <br>
+  <sub>Every module, and every import between them. Generated from the source, so it cannot drift.</sub>
+</p>
+
+Arrows point from the module that imports to the module it imports. Read a
+column as a permission: nothing in persistence may point left, and nothing may
+point back into the root. Gold is the composition root wiring; a bus is one
+line standing in for many endpoints, drawn that way because
+`persistence-facade` reaches all nine persistence modules and every one of
+those reaches `DatabaseModule` and nothing else.
+
+<p align="center">
   <a href="docs/assets/nestjs-flow.svg">
     <img src="docs/assets/nestjs-flow.svg" alt="End-to-end flow through the typed runtime: a Telegram command or scheduler tick is admitted, research gathers and deduplicates sources, the editorial pass grounds and writes the article, the draft is approved and published, and every step writes to PostgreSQL, the usage ledger and the Notion audit" width="1200">
   </a>
@@ -70,14 +85,6 @@ lease and the same publication gate: automatic approval is not a second path,
 it is this path with the human tap removed. Amber marks where a run is refused,
 or where frozen legacy JS is still reached through a sanctioned gateway; green
 marks typed work that costs money.
-
-<p align="center">
-  <a href="docs/assets/nestjs-modules.svg">
-    <img src="docs/assets/nestjs-modules.svg" alt="Layered map of the NestJS runtime: composition root and four workers, eight application modules, seven gateway and cross-cutting modules, nine persistence modules, one database module, and the four sanctioned legacy seams" width="1000">
-  </a>
-  <br>
-  <sub>The same runtime at rest: which modules exist, and which layer each may depend on.</sub>
-</p>
 
 Two runtimes ship in one image. The legacy JS entrypoint is what production
 starts today; the typed NestJS context below is carried in `dist/` and chosen by
