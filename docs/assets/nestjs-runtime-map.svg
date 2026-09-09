@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Telegram News Agent on the typed NestJS runtime</title>
+  <desc id="desc">The same shape as the production map, drawn for the typed runtime: triggers and free sources, the AI providers, admission and research and the editorial pass, PostgreSQL and the publication gate, delivery to the channel and the owner chat, with the composition root and lifecycle underneath.</desc>
+    <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="0.55" stop-color="#0b1d2a"/>
+      <stop offset="1" stop-color="#102419"/>
+    </linearGradient>
+    <linearGradient id="titleGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#53c7ff"/>
+      <stop offset="0.55" stop-color="#8de4d1"/>
+      <stop offset="1" stop-color="#f5d47a"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#9dd7c8" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#72cfd0"/>
+    </marker>
+    <marker id="arrowGold" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e9c46a"/>
+    </marker>
+    <style>
+      .title { font: 700 52px 'Avenir Next', 'Trebuchet MS', sans-serif; fill: url(#titleGradient); }
+      .subtitle { font: 400 19px 'Avenir Next', 'Trebuchet MS', sans-serif; fill: #a8bdc9; }
+      .section { font: 700 15px 'Avenir Next', 'Trebuchet MS', sans-serif; letter-spacing: 2px; fill: #79d8d2; }
+      .node-title { font: 700 20px 'Avenir Next', 'Trebuchet MS', sans-serif; fill: #eef8f4; }
+      .node-copy { font: 400 14px 'Avenir Next', 'Trebuchet MS', sans-serif; fill: #a9c1c7; }
+      .small { font: 600 12px 'Avenir Next', 'Trebuchet MS', sans-serif; letter-spacing: 1px; }
+      .edge { fill: none; stroke: #72cfd0; stroke-width: 2.5; stroke-opacity: 0.78; marker-end: url(#arrow); }
+      .edge-gold { fill: none; stroke: #e9c46a; stroke-width: 2.5; stroke-opacity: 0.82; marker-end: url(#arrowGold); }
+      .edge-soft { fill: none; stroke: #6d91a0; stroke-width: 2; stroke-dasharray: 7 7; stroke-opacity: 0.65; marker-end: url(#arrow); }
+      .bus { fill: none; stroke: #4f8192; stroke-width: 2; stroke-opacity: 0.7; }
+    </style>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#bg)"/><rect width="1600" height="1000" fill="url(#grid)"/>
+  <text x="70" y="80" class="title">Typed NestJS Runtime</text>
+  <text x="72" y="120" class="subtitle">The same pipeline, rebuilt as Nest modules behind ports</text>
+  <rect x="1120" y="52" width="150" height="36" rx="18" fill="#12352c" stroke="#3f9c78" stroke-width="1.5"/>
+  <text x="1195.0" y="76" text-anchor="middle" class="small" fill="#7fe0b6">STAGE ONLY</text>
+  <rect x="1284" y="52" width="120" height="36" rx="18" fill="#12283d" stroke="#3f7fb0" stroke-width="1.5"/>
+  <text x="1344.0" y="76" text-anchor="middle" class="small" fill="#8fc6ef">9b72fac</text>
+  <rect x="1418" y="52" width="132" height="36" rx="18" fill="#33280f" stroke="#a8802e" stroke-width="1.5"/>
+  <text x="1484.0" y="76" text-anchor="middle" class="small" fill="#f0c672">AUTO-PUBLISH</text>
+  <text x="72" y="176" class="section">TRIGGER AND SOURCES</text>
+  <text x="362" y="176" class="section">PROVIDERS</text>
+  <text x="692" y="176" class="section">ADMIT, RESEARCH, WRITE</text>
+  <text x="1052" y="176" class="section">CONTROL AND PERSIST</text>
+  <text x="1372" y="176" class="section">DELIVER</text>
+  <rect x="60" y="210" width="230" height="92" rx="16" fill="#11283a" stroke="#407b98" stroke-width="1" filter="url(#shadow)"/>
+  <text x="82" y="248" class="node-title">telegram-polling</text>
+  <text x="82" y="274" class="node-copy">/news, Publish, Reject</text>
+  <text x="82" y="296" class="node-copy">and every poll it records</text>
+  <rect x="60" y="326" width="230" height="92" rx="16" fill="#11283a" stroke="#407b98" stroke-width="1" filter="url(#shadow)"/>
+  <text x="82" y="364" class="node-title">news-scheduler</text>
+  <text x="82" y="390" class="node-copy">one tick every 3 hours,</text>
+  <text x="82" y="412" class="node-copy">paused 22:00-08:00</text>
+  <rect x="60" y="442" width="230" height="92" rx="16" fill="#11283a" stroke="#407b98" stroke-width="1" filter="url(#shadow)"/>
+  <text x="82" y="480" class="node-title">source-acquisition</text>
+  <text x="82" y="506" class="node-copy">RSS, Reddit, GDELT</text>
+  <text x="82" y="528" class="node-copy">free, and tried first</text>
+  <rect x="350" y="210" width="270" height="112" rx="16" fill="#15352f" stroke="#49d1a8" stroke-width="2" filter="url(#shadow)"/>
+  <text x="372" y="248" class="node-title">Exa</text>
+  <text x="372" y="274" class="node-copy">Feeds, news, article detail, facts</text>
+  <text x="372" y="296" class="node-copy">Only when the feeds fall short.</text>
+  <text x="372" y="318" class="node-copy">Vetted hosts, nothing over 72h</text>
+  <rect x="350" y="350" width="270" height="92" rx="16" fill="#172d45" stroke="#4ba8e8" stroke-width="1" filter="url(#shadow)"/>
+  <text x="372" y="388" class="node-title">OpenAI</text>
+  <text x="372" y="414" class="node-copy">Structured generation</text>
+  <text x="372" y="436" class="node-copy">and candidate curation</text>
+  <rect x="350" y="466" width="270" height="92" rx="16" fill="#172d45" stroke="#4ba8e8" stroke-width="1" filter="url(#shadow)"/>
+  <text x="372" y="504" class="node-title">Gemini</text>
+  <text x="372" y="530" class="node-copy">Fallback, then OpenRouter</text>
+  <text x="372" y="552" class="node-copy">A rate limit opens a breaker</text>
+  <rect x="680" y="210" width="280" height="92" rx="16" fill="#172638" stroke="#557b9b" stroke-width="1" filter="url(#shadow)"/>
+  <text x="702" y="248" class="node-title">Admit or refuse</text>
+  <text x="702" y="274" class="node-copy">One job per channel, SKIP LOCKED</text>
+  <text x="702" y="296" class="node-copy">Quiet hours defers here</text>
+  <rect x="680" y="326" width="280" height="92" rx="16" fill="#172638" stroke="#557b9b" stroke-width="1" filter="url(#shadow)"/>
+  <text x="702" y="364" class="node-title">Research execution</text>
+  <text x="702" y="390" class="node-copy">Acquire, curate, deduplicate,</text>
+  <text x="702" y="412" class="node-copy">then fetch the one full text</text>
+  <rect x="680" y="442" width="280" height="112" rx="16" fill="#2d2a1d" stroke="#d4ad50" stroke-width="1" filter="url(#shadow)"/>
+  <text x="702" y="480" class="node-title">Editorial pass</text>
+  <text x="702" y="506" class="node-copy">Corroborate, keep the baseline,</text>
+  <text x="702" y="528" class="node-copy">then enrich over it</text>
+  <text x="702" y="550" class="node-copy">185-220 words, one source link</text>
+  <rect x="1040" y="210" width="280" height="112" rx="16" fill="#192b27" stroke="#5dc0a6" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1062" y="248" class="node-title">PostgreSQL</text>
+  <text x="1062" y="274" class="node-copy">Authoritative state, usage, settings</text>
+  <text x="1062" y="296" class="node-copy">Atomic leases, review, publish,</text>
+  <text x="1062" y="318" class="node-copy">schedule, quiet-hours deferral</text>
+  <rect x="1040" y="350" width="280" height="112" rx="16" fill="#22283b" stroke="#7c91d9" stroke-width="1" filter="url(#shadow)"/>
+  <text x="1062" y="388" class="node-title">Review draft</text>
+  <text x="1062" y="414" class="node-copy">Body, evidence map, topics, tags</text>
+  <text x="1062" y="436" class="node-copy">Preview card with Publish</text>
+  <text x="1062" y="458" class="node-copy">and Reject</text>
+  <rect x="1040" y="490" width="280" height="92" rx="16" fill="#2d2a1d" stroke="#d4ad50" stroke-width="1" filter="url(#shadow)"/>
+  <text x="1062" y="528" class="node-title">Publication gate</text>
+  <text x="1062" y="554" class="node-copy">Excluded topics refuse here</text>
+  <text x="1062" y="576" class="node-copy">Manual tap or automatic - one claim</text>
+  <rect x="1360" y="266" width="190" height="92" rx="16" fill="#17352e" stroke="#52c99f" stroke-width="1" filter="url(#shadow)"/>
+  <text x="1382" y="304" class="node-title">News channel</text>
+  <text x="1382" y="330" class="node-copy">Idempotent</text>
+  <text x="1382" y="352" class="node-copy">publication</text>
+  <rect x="1360" y="410" width="190" height="112" rx="16" fill="#263020" stroke="#d4ad50" stroke-width="1" filter="url(#shadow)"/>
+  <text x="1382" y="448" class="node-title">Owner chat</text>
+  <text x="1382" y="474" class="node-copy">Review cards, status,</text>
+  <text x="1382" y="496" class="node-copy">failures the worker</text>
+  <text x="1382" y="518" class="node-copy">can now report</text>
+  <path d="M290 256 V604 H655 V256 H680" class="edge"/>
+  <path d="M290 372 V590 H645 V270 H680" class="edge"/>
+  <path d="M290 488 H320 V372 H680" class="edge"/>
+  <path d="M620 266 H650 V372 H680" class="edge-gold"/>
+  <path d="M620 296 H638 V498 H680" class="edge-gold"/>
+  <path d="M620 396 H680" class="edge"/>
+  <path d="M620 426 H632 V512 H680" class="edge"/>
+  <path d="M620 512 H680" class="edge"/>
+  <path d="M820 302 V326" class="edge"/>
+  <path d="M820 418 V442" class="edge"/>
+  <path d="M960 256 H1040" class="edge"/>
+  <path d="M960 372 H1000 V296 H1040" class="edge"/>
+  <path d="M960 498 H1000 V406 H1040" class="edge-gold"/>
+  <path d="M1180 322 V350" class="edge"/>
+  <path d="M1180 462 V490" class="edge"/>
+  <path d="M1320 536 H1338 V312 H1357" class="edge-gold"/>
+  <path d="M1320 406 H1344 V452 H1357" class="edge"/>
+  <path d="M1320 536 H1332 V488 H1357" class="edge"/>
+  <path d="M785 722 V618 H1180 V325" class="edge-soft"/>
+  <rect x="60" y="648" width="1480" height="212" rx="22" fill="#0a1a26" fill-opacity="0.72" stroke="#1d3a4a" stroke-width="1.5"/>
+  <text x="90" y="690" class="section">COMPOSITION AND LIFECYCLE</text>
+  <rect x="90" y="722" width="230" height="94" rx="16" fill="#172638" stroke="#557b9b" stroke-width="1" filter="url(#shadow)"/>
+  <text x="112" y="760" class="node-title">NewsAgentModule</text>
+  <text x="112" y="786" class="node-copy">The composition root.</text>
+  <text x="112" y="808" class="node-copy">Ten imports, no more</text>
+  <rect x="380" y="722" width="230" height="94" rx="16" fill="#172638" stroke="#557b9b" stroke-width="1" filter="url(#shadow)"/>
+  <text x="402" y="760" class="node-title">RuntimeModule</text>
+  <text x="402" y="786" class="node-copy">Starts four workers,</text>
+  <text x="402" y="808" class="node-copy">stops them in reverse</text>
+  <rect x="670" y="722" width="230" height="94" rx="16" fill="#17352e" stroke="#52c99f" stroke-width="1" filter="url(#shadow)"/>
+  <text x="692" y="760" class="node-title">DatabaseModule</text>
+  <text x="692" y="786" class="node-copy">One pool, one Drizzle</text>
+  <text x="692" y="808" class="node-copy">provider, one shutdown</text>
+  <rect x="960" y="722" width="250" height="94" rx="16" fill="#263020" stroke="#d4ad50" stroke-width="1" filter="url(#shadow)"/>
+  <text x="982" y="760" class="node-title">Health gate</text>
+  <text x="982" y="786" class="node-copy">Running, never restarted,</text>
+  <text x="982" y="808" class="node-copy">healthy - and polling</text>
+  <rect x="1270" y="722" width="250" height="94" rx="16" fill="#263020" stroke="#d4ad50" stroke-width="1" filter="url(#shadow)"/>
+  <text x="1292" y="760" class="node-title">Release</text>
+  <text x="1292" y="786" class="node-copy">No health, no release.</text>
+  <text x="1292" y="808" class="node-copy">Rollback is one env line</text>
+  <path d="M320 769 H380" class="edge-gold"/>
+  <path d="M610 769 H670" class="edge-gold"/>
+  <path d="M900 769 H960" class="edge-gold"/>
+  <path d="M1210 769 H1270" class="edge-gold"/>
+  <rect x="60" y="898" width="1480" height="66" rx="18" fill="#0a1a26" fill-opacity="0.72" stroke="#1d3a4a" stroke-width="1.5"/>
+  <text x="90" y="927" class="small" fill="#79d8d2">LEGACY SEAMS</text>
+  <text x="90" y="951" class="node-copy">Four legacy-*.gateway.ts adapters are the only route from typed code into frozen src/*.js. They are the surface that has to disappear before legacy can - and legacy stays until it does, because it is the rollback.</text>
+  </svg>
