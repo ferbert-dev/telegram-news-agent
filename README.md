@@ -57,6 +57,28 @@ Build a minimal workflow where ideas become tickets, agents execute scoped tasks
 
 ## NestJS Module Architecture
 
+<p align="center">
+  <a href="docs/assets/nestjs-flow.svg">
+    <img src="docs/assets/nestjs-flow.svg" alt="End-to-end flow through the typed runtime: a Telegram command or scheduler tick is admitted, research gathers and deduplicates sources, the editorial pass grounds and writes the article, the draft is approved and published, and every step writes to PostgreSQL, the usage ledger and the Notion audit" width="1200">
+  </a>
+  <br>
+  <sub>One run, end to end. Every arrow is a call that exists in the code &#8212; click for full size.</sub>
+</p>
+
+Read it as a single run. The two triggers meet at the same queue, the same
+lease and the same publication gate: automatic approval is not a second path,
+it is this path with the human tap removed. Amber marks where a run is refused,
+or where frozen legacy JS is still reached through a sanctioned gateway; green
+marks typed work that costs money.
+
+<p align="center">
+  <a href="docs/assets/nestjs-modules.svg">
+    <img src="docs/assets/nestjs-modules.svg" alt="Layered map of the NestJS runtime: composition root and four workers, eight application modules, seven gateway and cross-cutting modules, nine persistence modules, one database module, and the four sanctioned legacy seams" width="1000">
+  </a>
+  <br>
+  <sub>The same runtime at rest: which modules exist, and which layer each may depend on.</sub>
+</p>
+
 Two runtimes ship in one image. The legacy JS entrypoint is what production
 starts today; the typed NestJS context below is carried in `dist/` and chosen by
 `BOT_ENTRYPOINT` in the environment file, not by a compose edit.
