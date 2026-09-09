@@ -73,7 +73,7 @@ marks typed work that costs money.
 
 <p align="center">
   <a href="docs/assets/nestjs-modules.svg">
-    <img src="docs/assets/nestjs-modules.svg" alt="Layered map of the NestJS runtime: composition root and four workers, eight application modules, seven gateway and cross-cutting modules, nine persistence modules, one database module, and the four sanctioned legacy seams" width="1000">
+    <img src="docs/assets/nestjs-modules.svg" alt="Layered map of the NestJS runtime: composition root and four workers, eight application modules, eight gateway and cross-cutting modules, nine persistence modules, one database module, and the four sanctioned legacy seams" width="1000">
   </a>
   <br>
   <sub>The same runtime at rest: which modules exist, and which layer each may depend on.</sub>

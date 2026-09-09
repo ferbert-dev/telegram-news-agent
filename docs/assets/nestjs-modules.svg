@@ -68,27 +68,30 @@
   <text x="1470.2" y="312.0" text-anchor="middle" fill="#93b5c9" font-size="10.5">application</text>
   <text x="40" y="386" fill="#8de4d1" font-size="12" font-weight="700" letter-spacing="1.6">GATEWAYS AND CROSS-CUTTING</text>
   <text x="1560" y="386" text-anchor="end" fill="#6f8ea3" font-size="11.5">the seams and the shared ports</text>
-  <rect x="40.0" y="396" width="206.9" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
-  <text x="143.4" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="12" font-weight="600">ai-providers</text>
-  <text x="143.4" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10.5">provider-neutral port</text>
-  <rect x="258.9" y="396" width="206.9" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
-  <text x="362.3" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="12" font-weight="600">typed-research-execution</text>
-  <text x="362.3" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10.5">wired research path</text>
-  <rect x="477.7" y="396" width="206.9" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
-  <text x="581.1" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="12" font-weight="600">source-acquisition</text>
-  <text x="581.1" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10.5">feeds first</text>
-  <rect x="696.6" y="396" width="206.9" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
-  <text x="800.0" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="12" font-weight="600">evidence-curation</text>
-  <text x="800.0" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10.5">dedup and ranking</text>
-  <rect x="915.4" y="396" width="206.9" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
-  <text x="1018.9" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="12" font-weight="600">editorial-integration-events</text>
-  <text x="1018.9" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10.5">in-process events</text>
-  <rect x="1134.3" y="396" width="206.9" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
-  <text x="1237.7" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="12" font-weight="600">publication-milestones</text>
-  <text x="1237.7" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10.5">milestone messages</text>
-  <rect x="1353.1" y="396" width="206.9" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
-  <text x="1456.6" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="12" font-weight="600">persistence-facade</text>
-  <text x="1456.6" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10.5">NewsRepository shape</text>
+  <rect x="40.0" y="396" width="179.6" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="129.8" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="11" font-weight="600">ai-providers</text>
+  <text x="129.8" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10">provider-neutral port</text>
+  <rect x="231.5" y="396" width="179.6" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="321.3" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="11" font-weight="600">typed-research-execution</text>
+  <text x="321.3" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10">wired research path</text>
+  <rect x="423.0" y="396" width="179.6" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="512.8" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="11" font-weight="600">source-acquisition</text>
+  <text x="512.8" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10">feeds first</text>
+  <rect x="614.5" y="396" width="179.6" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="704.3" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="11" font-weight="600">evidence-curation</text>
+  <text x="704.3" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10">dedup and ranking</text>
+  <rect x="806.0" y="396" width="179.6" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="895.7" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="11" font-weight="600">evidence-corroboration</text>
+  <text x="895.7" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10">independent publishers</text>
+  <rect x="997.4" y="396" width="179.6" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="1087.2" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="11" font-weight="600">editorial-integration-events</text>
+  <text x="1087.2" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10">in-process events</text>
+  <rect x="1188.9" y="396" width="179.6" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="1278.7" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="11" font-weight="600">publication-milestones</text>
+  <text x="1278.7" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10">milestone messages</text>
+  <rect x="1380.4" y="396" width="179.6" height="74" rx="10" fill="#152c3f" stroke="#31536e" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="1470.2" y="429.0" text-anchor="middle" fill="#e6f1f8" font-size="11" font-weight="600">persistence-facade</text>
+  <text x="1470.2" y="446.0" text-anchor="middle" fill="#93b5c9" font-size="10">NewsRepository shape</text>
   <text x="40" y="520" fill="#8de4d1" font-size="12" font-weight="700" letter-spacing="1.6">PERSISTENCE &#8212; ONE PER TABLE GROUP</text>
   <text x="1560" y="520" text-anchor="end" fill="#6f8ea3" font-size="11.5">typed Drizzle repositories &#183; repositories never call each other</text>
   <rect x="40.0" y="530" width="160.0" height="70" rx="10" fill="#172638" stroke="#2e4257" stroke-width="1.2" filter="url(#shadow)"/>
