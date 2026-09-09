@@ -55,6 +55,96 @@ Build a minimal workflow where ideas become tickets, agents execute scoped tasks
 - Node.js Telegram sender with preview-first publishing.
 - Current handoff/status: `docs/current-status.md`.
 
+## NestJS Module Architecture
+
+Two runtimes ship in one image. The legacy JS entrypoint is what production
+starts today; the typed NestJS context below is carried in `dist/` and chosen by
+`BOT_ENTRYPOINT` in the environment file, not by a compose edit.
+
+The graph is acyclic by rule and checked by `npm run test:architecture`: no
+`forwardRef`, no module imported by something it imports.
+
+```text
+composition/runtime-entry.ts            boots the standalone context; owns signals and shutdown
+  |
+  +-- NewsAgentModule                   the composition root -- imports exactly these ten
+  |     ai-providers . database . editorial-application . editorial-persistence
+  |     operations-application . persistence-facade . scheduler-application
+  |     telegram-control-application . telegram-persistence . typed-research-execution
+  |
+  +-- RuntimeModule                     starts four workers, stops them in reverse order
+        telegram-polling -> news-scheduler -> telegram-news-jobs -> runtime-health
+```
+
+Everything below hangs off one database module, in four layers. A module may
+only depend downwards.
+
+```text
+LAYER 3   transport and runtime               src/telegram/transport . src/runtime
+              ^
+LAYER 2   application                         services and use-cases; ports in,
+          catalog . editorial . operations    no pg, no drizzle, no provider SDK,
+          research . scheduler . settings     no fetch -- infrastructure arrives
+          telegram-control . usage            through injected Symbol tokens
+              ^
+LAYER 1   persistence, one per table group    typed Drizzle repositories;
+          catalog . editorial . operations    repositories never call each other,
+          research . scheduler . settings     application services coordinate them
+          story-deduplication . telegram . usage
+              ^
+LAYER 0   DatabaseModule                      PG_POOL . DRIZZLE_DB . DATABASE_LIFECYCLE
+                                              one pool, one Drizzle provider, one owner of shutdown
+```
+
+The edges that are not simply "layer 2 on its own layer 1" -- these are the
+real cross-domain dependencies, and the reason the check exists:
+
+```text
+editorial-application        -> editorial + settings + usage persistence, editorial-integration-events
+scheduler-application        -> scheduler + editorial + telegram persistence
+telegram-control-application -> telegram + editorial persistence, settings-application
+research-application         -> research + catalog + usage persistence
+persistence-facade           -> all nine persistence modules (the NewsRepository-shaped
+                                compatibility surface; persistence only, never application)
+publication-milestones       -> database, settings-persistence, editorial-integration-events
+```
+
+Research is composed from four modules rather than one, so the paid path stays
+separable from the free one:
+
+```text
+typed-research-execution  -> source-acquisition -> catalog + usage persistence
+                          -> evidence-curation  -> story-deduplication persistence
+                          -> research + catalog + story-deduplication + usage persistence
+```
+
+### The legacy seams
+
+`legacy-*.gateway.ts` plus its module is the only sanctioned way a typed
+use-case reaches a legacy JS module. They are listed here because they are the
+surface that has to disappear before `src/*.js` can, and not before.
+
+```text
+legacy-editorial-draft        -> draft.js . editorial-enrichment.js . article-tags.js . telegram.js
+legacy-editorial-publication  -> telegram.js
+legacy-notion-audit           -> nothing directly: the gateway takes a finalizer, and the
+                                 composition root builds it from notion-audit.js
+legacy-research-execution     -> research.js . feed.js . gdelt.js . reddit.js
+                                 article-extractor.js . retry.js
+                                 (superseded -- the runtime wires typed-research-execution)
+```
+
+"Typed" means the orchestration is typed, not that the seam is gone.
+`typed-research-execution.gateway.ts` still reaches `feed.js`, `ai-usage.js`,
+`excluded-topic-policy.js` and `news-settings.js` -- shared helpers that have
+not been ported yet. That is what the gateway is for, and it is also the
+measure of how much is left.
+
+Cross-cutting modules that are not persistence slices: `ai-providers` (the
+provider-neutral port and its adapters), `editorial-integration-events`,
+`publication-milestones`, and `src/telemetry/` (usage-ledger and
+provider-attempt writes).
+
 ## Telegram Messages
 
 Verify the configured bot and channel:
