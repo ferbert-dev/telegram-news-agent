@@ -59,7 +59,10 @@ Build a minimal workflow where ideas become tickets, agents execute scoped tasks
 
 <p align="center">
   <a href="docs/assets/nestjs-runtime-map.svg">
-    <img src="docs/assets/nestjs-runtime-map.svg" alt="Map of the typed NestJS runtime in the same shape as the production diagram: triggers and free sources, the AI providers, admission and research and the editorial pass, PostgreSQL and the publication gate, delivery to the channel and the owner chat, with the composition root and lifecycle underneath" width="1200">
+    <picture>
+      <source srcset="docs/assets/nestjs-runtime-map.svg" type="image/svg+xml">
+      <img src="docs/assets/nestjs-runtime-map.png" alt="Map of the typed NestJS runtime in the same shape as the production diagram: triggers and free sources, the AI providers, admission and research and the editorial pass, PostgreSQL and the publication gate, delivery to the channel and the owner chat, with the composition root and lifecycle underneath" width="1200">
+    </picture>
   </a>
   <br>
   <sub>The production map above, redrawn for the typed runtime. Click for full size.</sub>
@@ -77,7 +80,10 @@ stage would have sent arrows backwards through the flow.
 
 <p align="center">
   <a href="docs/assets/nestjs-dependency-graph.svg">
-    <img src="docs/assets/nestjs-dependency-graph.svg" alt="Dependency graph of the typed runtime: the composition root, fifteen consumer modules, ten persistence and cross-cutting modules and one database module, connected by every import that exists in the source" width="1100">
+    <picture>
+      <source srcset="docs/assets/nestjs-dependency-graph.svg" type="image/svg+xml">
+      <img src="docs/assets/nestjs-dependency-graph.png" alt="Dependency graph of the typed runtime: the composition root, fifteen consumer modules, ten persistence and cross-cutting modules and one database module, connected by every import that exists in the source" width="1100">
+    </picture>
   </a>
   <br>
   <sub>And the exact import graph behind it: 31 modules, every edge extracted from the source.</sub>
