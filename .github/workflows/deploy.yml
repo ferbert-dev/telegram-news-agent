@@ -423,9 +423,14 @@ jobs:
           await client.connect();
           const result = await client.query(`select provider, status, error_code, operation, started_at, completed_at, latency_ms, correlation_id from public.ai_provider_attempts order by started_at desc limit 10`);
           for (const row of result.rows) console.log(`AiProviderAttempt provider=${row.provider} status=${row.status} error_code=${row.error_code ?? 'none'} operation=${row.operation} started_at=${row.started_at?.toISOString?.() ?? row.started_at} completed_at=${row.completed_at?.toISOString?.() ?? row.completed_at} latency_ms=${row.latency_ms ?? 'none'} trace_id=${row.correlation_id}`);
-          const settings = await client.query(`select telegram_channel_id, excluded_topic_codes, topic_codes, custom_topics, language_code, approval_policy, schedule_interval_minutes from public.news_bot_settings order by telegram_channel_id`);
+          const settings = await client.query(`select telegram_channel_id, excluded_topic_codes, topic_codes, custom_topics, language_code, approval_policy, schedule_interval_minutes, quiet_hours_enabled, next_run_at, last_run_at, last_run_status, public.is_news_quiet_hours(now()) as in_quiet_hours from public.news_bot_settings order by telegram_channel_id`);
           if (!settings.rows.length) console.log("Settings (no rows)");
           for (const r of settings.rows) console.log(`Settings channel=${r.telegram_channel_id} topics=[${(r.topic_codes ?? []).join(",")}] custom_topics=[${(r.custom_topics ?? []).join("|")}] excluded=[${(r.excluded_topic_codes ?? []).join(",")}] language=${r.language_code} approval=${r.approval_policy} interval_minutes=${r.schedule_interval_minutes ?? "none"}`);
+          // The scheduler's own row. Without this the only evidence of a
+          // quiet-hours deferral is that nothing was published, which is also
+          // what a broken scheduler looks like. `last_run_status` is written
+          // by the atomic claim function, so it says which of the two it was.
+          for (const r of settings.rows) console.log(`Schedule channel=${r.telegram_channel_id} quiet_hours=${r.quiet_hours_enabled} in_quiet_hours_now=${r.in_quiet_hours} next_run=${r.next_run_at?.toISOString?.() ?? r.next_run_at ?? "none"} last_run=${r.last_run_at?.toISOString?.() ?? r.last_run_at ?? "never"} last_run_status=${r.last_run_status ?? "none"}`);
           const perOp = await client.query(`select operation, count(*)::int as n from public.ai_provider_attempts where started_at > now() - interval '24 hours' group by operation order by n desc`);
           if (!perOp.rows.length) console.log("AiCalls24h (none)");
           for (const r of perOp.rows) console.log(`AiCalls24h operation=${r.operation} count=${r.n}`);
@@ -592,9 +597,14 @@ jobs:
           import pg from "pg";
           const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
           await client.connect();
-          const settings = await client.query(`select telegram_channel_id, excluded_topic_codes, topic_codes, custom_topics, language_code, approval_policy, schedule_interval_minutes from public.news_bot_settings order by telegram_channel_id`);
+          const settings = await client.query(`select telegram_channel_id, excluded_topic_codes, topic_codes, custom_topics, language_code, approval_policy, schedule_interval_minutes, quiet_hours_enabled, next_run_at, last_run_at, last_run_status, public.is_news_quiet_hours(now()) as in_quiet_hours from public.news_bot_settings order by telegram_channel_id`);
           if (!settings.rows.length) console.log("Settings (no rows)");
           for (const r of settings.rows) console.log(`Settings channel=${r.telegram_channel_id} topics=[${(r.topic_codes ?? []).join(",")}] custom_topics=[${(r.custom_topics ?? []).join("|")}] excluded=[${(r.excluded_topic_codes ?? []).join(",")}] language=${r.language_code} approval=${r.approval_policy} interval_minutes=${r.schedule_interval_minutes ?? "none"}`);
+          // The scheduler's own row. Without this the only evidence of a
+          // quiet-hours deferral is that nothing was published, which is also
+          // what a broken scheduler looks like. `last_run_status` is written
+          // by the atomic claim function, so it says which of the two it was.
+          for (const r of settings.rows) console.log(`Schedule channel=${r.telegram_channel_id} quiet_hours=${r.quiet_hours_enabled} in_quiet_hours_now=${r.in_quiet_hours} next_run=${r.next_run_at?.toISOString?.() ?? r.next_run_at ?? "none"} last_run=${r.last_run_at?.toISOString?.() ?? r.last_run_at ?? "never"} last_run_status=${r.last_run_status ?? "none"}`);
           // Whether the channel's topic selection can reach any source at all.
           //
           // sourceMatchesSettings admits an UNTAGGED source only when "ai" is
