@@ -984,3 +984,31 @@ test("SchedulerApplicationModule compiles with real Nest identity and exports on
   assert.equal(moduleRef.get(SchedulerService), application);
   await moduleRef.close();
 });
+
+test("a failed run names what failed without ever carrying the error's text", async () => {
+  const leaky = Object.assign(
+    new Error("provider said: invalid key sk-live-SECRET for chat 1009999777"),
+    { name: "AiProvidersExhaustedError", code: "ai_providers_exhausted" },
+  );
+  const typed = await fixture({ audit: { async run() { throw leaky; } } }).useCase.execute();
+  assert.equal(typed.status, "failed");
+  assert.equal(typed.errorCode, "scheduled_run_failed", "the audit-facing code stays generic");
+  assert.equal(typed.errorCause, "AiProvidersExhaustedError:ai_providers_exhausted");
+  assert.doesNotMatch(JSON.stringify(typed), /SECRET|sk-live|1009999777|invalid key/u);
+
+  const nested = new AggregateError(
+    [
+      Object.assign(new Error("timeout after 30000ms"), { code: "timeout" }),
+      new TypeError("x.y is undefined"),
+    ],
+    "all providers failed",
+  );
+  const aggregate = await fixture({ audit: { async run() { throw nested; } } }).useCase.execute();
+  assert.equal(aggregate.errorCause, "AggregateError,Error:timeout,TypeError");
+
+  const driver = Object.assign(new Error("connect ECONNREFUSED 10.0.0.5:5432"), {
+    code: "ECONNREFUSED",
+  });
+  const refused = await fixture({ audit: { async run() { throw driver; } } }).useCase.execute();
+  assert.equal(refused.errorCause, "Error", "an upper-case driver code is not trusted into the log");
+});

@@ -504,3 +504,33 @@ test("an unexpected loop failure is reported fatal to the coordinator", async ()
   assert.equal(fatals.length, 1);
   assert.match((fatals[0] as Error).message, /timer subsystem failed/);
 });
+
+test("the failure line carries the cause the use case recovered", async () => {
+  const controller = new AbortController();
+  const sleeper = makeSleep(controller, 1);
+  const scheduler = schedulerReturning([
+    {
+      status: "failed",
+      errorCode: "scheduled_run_failed",
+      errorCause: "AiProvidersExhaustedError:ai_providers_exhausted",
+      settings: { version: 25 } as never,
+    },
+  ]);
+  const { entries, log } = makeLog();
+
+  await runNewsSchedulerLoop({
+    scheduler,
+    signal: controller.signal,
+    sleepImpl: sleeper.sleepImpl,
+    log,
+  });
+
+  assert.deepEqual(events(entries.errors), [
+    {
+      event: "scheduled_news_failed",
+      error_code: "scheduled_run_failed",
+      cause: "AiProvidersExhaustedError:ai_providers_exhausted",
+      settings_version: 25,
+    },
+  ]);
+});
