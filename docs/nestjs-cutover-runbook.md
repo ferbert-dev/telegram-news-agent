@@ -12,85 +12,47 @@ Deleting it is a separate, later decision. Nothing in this runbook removes it.
 ## What is true today
 
 - **Both runtimes ship in the same image.** `src/` (legacy) and `dist/` (compiled
-  NestJS) are both present. `CMD` and `compose.yaml` both run
-  `node src/telegram-bot.js`, and CI asserts the `CMD` byte-for-byte.
-- **`ops/deploy.sh` already rolls back automatically.** It records the running
-  container's image before deploying, installs `trap rollback_on_error ERR`, and
-  on any failure restores the previous environment file *and* the previous image,
-  waits for PostgreSQL to become healthy, and reconciles the application-role
-  credential.
+  NestJS) are both present. `compose.yaml` runs
+  `node ${BOT_ENTRYPOINT:-src/telegram-bot.js}`, so an environment that never
+  names a runtime gets the legacy one.
+- **The runtime is chosen in `ops/production-runtime.env`**, one line,
+  `BOT_ENTRYPOINT=...`. The deploy job appends it to the environment it
+  decrypted from SOPS and ships the result as `.env.production.incoming`.
+  From v2.0.0 it names the NestJS runtime.
+- **Production deploys only on a `vX.Y.Z` tag** cut from a `release/*` branch.
+  A merge to `main` builds and gates an image and deploys nothing. Editing the
+  switch therefore changes nothing until the next tag.
+- **`ops/deploy.sh` rolls back automatically.** It snapshots the running
+  environment and image before promoting the new ones, and on any failure
+  restores both -- which restores the runtime, because the runtime is a line in
+  that environment.
 - **Migrations are a separate one-shot service** (`compose run --rm migrate`),
   run before the bot starts. The runtime never migrates on startup.
-- **The release gate is process-liveness**, not health: three consecutive checks,
-  five seconds apart, of `.State.Running == true` and `.RestartCount == 0`,
-  followed by `ops/verify-production-runtime.sh`.
-- **`compose.nest.yaml` is not shipped.** The deployment bundle installs files
-  one by one (`compose.yaml`, `compose.ssh-access.yaml`, five `ops/*.sh`,
-  `package.json`), so the overlay never reaches the server and cannot be picked
-  up by accident.
+- **The release gate reads health** (`ops/lib/deploy-gate.sh`): running, never
+  restarted, and `healthy`, three checks in a row, inside a 300-second window
+  that is longer than the container's own 120-second start period. The typed
+  runtime's healthcheck runs the readiness probe, which also fails a poller that
+  has stopped polling; the legacy runtime's exits 0.
 
-## The rollback gap — fix this before cutover
+## The rollback gap -- closed
 
-**`deploy.sh` restores the previous image and the previous environment. It does
-not restore the previous `compose.yaml`.**
-
-That does not matter today, because the command never changes. It matters a great
-deal at cutover:
-
-1. The workflow copies the new `compose.yaml` onto the host **before**
-   `deploy.sh` runs.
-2. If that file now says `command: ["node", "dist/composition/runtime-entry.js"]`
-   and the new runtime fails its gate, `deploy.sh` restores the **previous
-   image** — but the **new command** is still in the compose file on disk.
-3. Every image built since the packaging change contains `dist/`. So the restored
-   "previous" container would start the **new runtime from the old image**. That
-   is not a rollback to legacy; it is a rollback to a different broken thing.
-
-Three ways to close it, in order of preference:
-
-| Option | What it means | Trade-off |
-| --- | --- | --- |
-| **A. Make the command an environment variable** | `command: ["node", "${BOT_ENTRYPOINT:-src/telegram-bot.js}"]`, set in `.env.production` | `deploy.sh` already snapshots and restores the env file, so rollback restores the command for free. Smallest change, uses machinery that is already proven. |
-| **B. Snapshot the compose file** | `deploy.sh` copies `compose.yaml` to `compose.yaml.rollback` alongside the env snapshot and restores it in `rollback()` | Explicit, but adds a second restore path to the highest-stakes script. |
-| **C. Ship the overlay** | Add `compose.nest.yaml` to the bundle and to every `docker compose` invocation, including the two inside `rollback()` | Most invasive: four call sites, and forgetting the ones in `rollback()` reintroduces the same bug silently. |
-
-**Option A was chosen and is implemented.** `compose.yaml` now reads
-`command: ["node", "${BOT_ENTRYPOINT:-src/telegram-bot.js}"]`, interpolated from
-the same `--env-file` that `deploy.sh` already snapshots to
-`.env.production.rollback` and restores in `rollback()`. It reuses a path that
-runs on every deploy rather than one that only runs during an incident.
-
-Two guardrails came with it:
-
-- `ops/validate-production-env.sh` accepts only the two real runtimes as a value,
-  in every mode. A typo does not produce a helpful error at deploy time — it
-  produces a container that cannot start and a rollback driven by hand.
-- CI asserts both directions: with no variable the resolved command is the legacy
-  entrypoint, with the variable set it is the compiled one. The default cannot be
-  flipped by accident.
-
-Proven against real containers before merge: the default starts
-`src/telegram-bot.js`; setting the variable starts
-`dist/composition/runtime-entry.js`; and restoring the previous environment file
-— exactly what `rollback()` does — brings the legacy runtime back.
-
-### How rollback behaves in each case
-
-| When it fails | What the environment restore does | Result |
-| --- | --- | --- |
-| The cutover deploy itself | Restores the previous file, which has no `BOT_ENTRYPOINT` | Back on legacy — correct |
-| A later deploy, already cut over | Restores a file that still selects the compiled runtime | Stays on the new runtime with the previous image — also correct |
+A failed cutover used to restore the previous image and environment but not the
+previous `compose.yaml`, so a compose file naming the new command would survive
+the rollback. The command became `${BOT_ENTRYPOINT:-...}` and the value moved
+into the environment, which `deploy.sh` already snapshots and restores. There
+is no longer anything a rollback leaves behind.
 
 ## Prerequisites
 
 Do not start the release until all of these are true.
 
 - [x] ~~The rollback gap above is closed and merged.~~ Done — `BOT_ENTRYPOINT`.
-- [ ] A **separate test bot and channel** exist, and the full smoke matrix has
-      been run against them on the new runtime: `/news`, draft preview, approve,
-      publish, reject, a scheduled run, quiet-hours deferral, `/stats`,
-      `/settings`, `/labs`. *No runtime has ever polled a real bot; this is the
-      largest untested surface and the reason cutover is gated.*
+- [x] ~~A separate test bot and channel, and the full smoke matrix on the new
+      runtime.~~ Done on the integration stage, 2026-09-08 to 2026-09-10:
+      `/news`, preview, publish, reject and `/settings` by hand; then eight
+      unattended scheduled runs every three hours with automatic approval,
+      seven published, and a night with zero events between 22:00 and 08:00
+      Madrid, the first run landing at 08:00:21.
 - [ ] `main` is green: the full CI gate including both integration suites against
       a clean PostgreSQL 17.
 - [ ] The current production image digest and commit SHA are written down, along
@@ -100,46 +62,59 @@ Do not start the release until all of these are true.
 - [ ] Deployment is scheduled **outside** 22:00–08:00 Europe/Madrid, so the
       quiet-hours path is not exercised for the first time during a release.
 
-## Where the value actually lives — read this before touching anything
+## Where the value actually lives -- read this before touching anything
 
-The production environment is **not** authored on the host. It is decrypted from
-`secrets/production.env.sops` in the repository on every deploy, shipped as
-`.env.production.incoming`, and promoted by `deploy.sh`.
-
-That has one consequence which matters more than anything else in this document:
-
-> **A host-side edit to `.env.production` is temporary.** The next merge to
-> `main` — for anything at all, an unrelated one-line change — re-decrypts SOPS
-> and promotes it. A cutover rolled back only on the host will silently come
-> back at the next deploy, hours or days later, with nobody connecting the two
-> events.
-
-So every change to `BOT_ENTRYPOINT` exists in two places, and both have to move:
+The switch is authored in **`ops/production-runtime.env`**, in git, and reaches
+the host only through a release: on a `vX.Y.Z` tag the deploy job decrypts
+`secrets/production.env.sops`, appends the switch, validates the result and
+ships it as `.env.production.incoming`, which `deploy.sh` promotes.
 
 | Where | What it is | When it takes effect |
 | --- | --- | --- |
-| `secrets/production.env.sops` | the source of truth, in git | at the next deploy |
+| `ops/production-runtime.env` | the source of truth, in git | at the next tag release |
 | `.env.production` on the host | the running value | immediately |
 
-The host edit is how you stop an incident **now**. The SOPS revert is how you
-stop it coming back. Do the host edit first, then the revert — never only one.
+It is not in SOPS on purpose. It is not a secret, and the production age key is
+held only by CI, so a switch kept in SOPS is one nobody can flip back from a
+laptop during an incident. The deploy job **refuses** a release if SOPS defines
+`BOT_ENTRYPOINT` as well, and `checks/ops/production-runtime.sh` fails CI if the
+file stops being exactly one valid line.
+
+> **A host-side edit to `.env.production` is temporary.** The next release of
+> anything at all re-applies `ops/production-runtime.env`. A rollback done only
+> on the host silently comes back at the next tag, days later, with nobody
+> connecting the two events.
+
+(An earlier version of this page said the next *merge to `main`* would bring it
+back. That stopped being true when deploys moved to tags; the danger is the
+same, it just arrives at the next release instead.)
 
 ## The release
 
-The switch is one value. Everything else is the existing, unchanged deploy path.
+The switch is one line. Everything else is the existing, unchanged deploy path.
 
-1. **Set the entrypoint** in `secrets/production.env.sops`:
-   `BOT_ENTRYPOINT=dist/composition/runtime-entry.js`. This is the entire
-   cutover. It reaches the host through the normal deploy.
-2. **Merge and let CI deploy.** The workflow builds the image, runs migrations as
-   a separate service, then `deploy.sh` brings up the bot.
-3. **Watch the gate.** `deploy.sh` requires three consecutive liveness checks and
-   the runtime credential check. On any failure it rolls back on its own.
-4. **Confirm exactly one poller.** The lease is the safety net, never the cutover
-   mechanism — the old container must be gone before the new one starts, which
-   `up -d --no-deps bot` handles by replacing it.
-5. **Verify by hand, against production**, in this order:
-   - the readiness probe reports healthy — `docker compose exec bot node dist/composition/health-cli.js`
+1. **Record the baseline and prove the backup.** Run the `backup-production-db`
+   workflow operation. It prints the running image, command, `APP_VERSION` and
+   the `.env.production` hash, dumps the database, restores the dump into a
+   throwaway server with no network, and compares every table's row count
+   against the live database. It fails rather than reporting a backup it could
+   not restore.
+2. **Set the switch and the version on `main`.** `BOT_ENTRYPOINT` in
+   `ops/production-runtime.env`, the release version in `package.json`. Merge.
+   This deploys nothing.
+3. **Cut the snapshot.** `git switch -c release/vX.Y.Z origin/main` and push it.
+   The push runs the full gate and builds an image for that exact commit.
+4. **Tag it.** `git tag vX.Y.Z` on that commit and push the tag. The release job
+   refuses a tag that is not on a release branch, has no gated image, or
+   disagrees with `package.json`; then it retags the image -- never rebuilds --
+   and the deploy job runs.
+5. **Watch the gate.** `deploy.sh` needs three consecutive healthy checks and the
+   runtime credential check. On any failure it rolls back on its own.
+6. **Confirm exactly one poller.** The lease is the safety net, never the cutover
+   mechanism -- `up -d --no-deps bot` replaces the old container before the new
+   one polls.
+7. **Verify by hand, against production**, in this order:
+   - the readiness probe reports healthy -- `docker compose exec bot node dist/composition/health-cli.js`
    - bot identity and polling mode are correct
    - one lease heartbeat window passes with the lease still owned
    - `/stats`, `/settings`, `/labs` respond
@@ -186,9 +161,9 @@ the old container running, which looks exactly like a rollback that was ignored.
 
 #### Step 2 — in the repository, same session
 
-Revert `BOT_ENTRYPOINT` in `secrets/production.env.sops` to
-`src/telegram-bot.js` (or remove the line) and merge it. Until that lands, the
-next deploy of anything at all puts the failed runtime back.
+Set `BOT_ENTRYPOINT=src/telegram-bot.js` in `ops/production-runtime.env`, merge,
+and cut a patch release (`release/vX.Y.Z+1`, tag, push). Until that release
+ships, the next release of anything at all puts the failed runtime back.
 
 ### Rollback triggers
 

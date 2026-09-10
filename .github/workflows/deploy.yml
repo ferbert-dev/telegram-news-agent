@@ -22,6 +22,7 @@ on:
         options:
           - verify-production-db
           - inspect-production
+          - backup-production-db
           - inspect-host-capacity
           - deploy-integration
           - stop-integration
@@ -102,6 +103,7 @@ jobs:
           # each into refusing rather than trusting that it would.
           ./checks/ops/deploy-integration-guards.sh
           ./checks/ops/deploy-gate.sh
+          ./checks/ops/production-runtime.sh
           docker compose \
             -f compose.yaml \
             -f compose.ssh-access.yaml \
@@ -522,6 +524,132 @@ jobs:
   # the database the same way inspect-production does -- `docker exec` inside
   # the stage's own bot container, using that container's DATABASE_URL, so no
   # credential is copied anywhere.
+  backup-production-db:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'backup-production-db'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Configure SSH
+        env:
+          ORACLE_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+          ORACLE_SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_PRIVATE_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$ORACLE_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      # A backup of production that is proven to restore, and a record of what
+      # is running, taken before a release that changes the runtime.
+      #
+      # Production's database is only ever read: pg_dump holds one snapshot,
+      # and the restore goes into a throwaway server with no network, never
+      # into anything production uses. The dump stays on the host, mode 600;
+      # it holds production data and is never uploaded anywhere.
+      #
+      # Row counts are compared against counts taken just before and just
+      # after the dump, because the live bot keeps writing while this runs. A
+      # table that did not move must match exactly; one that did must land
+      # inside that window.
+      - name: Record the baseline, dump, and prove the dump restores
+        env:
+          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_USER: ${{ vars.ORACLE_USER }}
+        run: |
+          ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/telegram-news-agent
+          compose=(docker compose --env-file .env.production -f compose.yaml -f compose.ssh-access.yaml)
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          bot="$("${compose[@]}" ps -q bot)"
+          db="$("${compose[@]}" ps -q db)"
+          if [[ -z "$bot" || -z "$db" ]]; then
+            echo "Production bot or database container is missing." >&2
+            exit 1
+          fi
+
+          echo "=== baseline ==="
+          docker inspect --format 'Baseline image={{.Config.Image}} image_id={{.Image}} started_at={{.State.StartedAt}} restart_count={{.RestartCount}}' "$bot"
+          echo "Baseline command=$(docker inspect --format '{{join .Config.Cmd " "}}' "$bot")"
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$bot" | sed -nE 's/^APP_VERSION=(.*)/Baseline app_version=\1/p'
+          echo "Baseline env_sha256=$(sha256sum .env.production | awk '{print $1}')"
+
+          counts() {
+            docker exec "$1" psql -U postgres -d "$2" -Atc "
+              select t.relname || '=' || (xpath('/row/c/text()', query_to_xml(
+                       format('select count(*) as c from public.%I', t.relname), false, true, '')))[1]::text
+                from pg_class t
+                join pg_namespace n on n.oid = t.relnamespace
+               where n.nspname = 'public' and t.relkind in ('r', 'p')
+               order by t.relname"
+          }
+
+          before="/tmp/tna-before-${stamp}"
+          after="/tmp/tna-after-${stamp}"
+          restored="/tmp/tna-restored-${stamp}"
+          check="tna-restore-check-${stamp}"
+          cleanup() {
+            docker rm -f "$check" >/dev/null 2>&1 || true
+            rm -f "$before" "$after" "$restored"
+          }
+          trap cleanup EXIT
+
+          echo "=== dump ==="
+          install -d -m 700 backups
+          dump="backups/pre-v2.0.0-${stamp}.dump"
+          counts "$db" telegram_news > "$before"
+          docker exec "$db" pg_dump -U postgres -d telegram_news -Fc > "$dump"
+          counts "$db" telegram_news > "$after"
+          chmod 600 "$dump"
+          echo "Dump file=/opt/telegram-news-agent/${dump} bytes=$(stat -c %s "$dump") sha256=$(sha256sum "$dump" | awk '{print $1}')"
+
+          echo "=== restore into a throwaway server ==="
+          docker run -d --rm --name "$check" --network none --memory 192m \
+            -e POSTGRES_PASSWORD="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)" \
+            postgres:17-alpine >/dev/null
+          for _ in $(seq 1 45); do
+            if docker exec "$check" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker exec "$check" pg_isready -U postgres
+          # Roles are cluster objects, so pg_dump does not carry them. Every
+          # role the source has is recreated first, or the policies and grants
+          # that name them fail the restore.
+          docker exec "$db" psql -U postgres -Atc "select rolname from pg_roles where rolname !~ '^pg_' and rolname <> 'postgres'" |
+            while read -r role; do
+              if [[ -n "$role" ]]; then docker exec "$check" psql -U postgres -qc "create role \"${role}\""; fi
+            done
+          docker exec "$check" createdb -U postgres restore_check
+          docker exec -i "$check" pg_restore -U postgres -d restore_check --exit-on-error < "$dump"
+          counts "$check" restore_check > "$restored"
+
+          echo "=== compare ==="
+          mismatches=0
+          while IFS='=' read -r table live_before; do
+            live_after="$(sed -nE "s/^${table}=//p" "$after")"
+            live_after="${live_after:-$live_before}"
+            got="$(sed -nE "s/^${table}=//p" "$restored")"
+            if [[ -z "$got" ]]; then
+              echo "  MISSING  ${table}: absent from the restored database" >&2
+              mismatches=$((mismatches + 1))
+            elif (( got < live_before || got > live_after )); then
+              echo "  MISMATCH ${table}: restored ${got}, live ${live_before}..${live_after}" >&2
+              mismatches=$((mismatches + 1))
+            fi
+          done < "$before"
+          tables="$(wc -l < "$before" | tr -d ' ')"
+          if (( mismatches > 0 )); then
+            echo "Restore FAILED: ${mismatches} of ${tables} tables do not match." >&2
+            exit 1
+          fi
+          echo "Restore verified: ${tables} tables, every row count accounted for."
+          echo "Restored schema_migrations=$(docker exec "$check" psql -U postgres -d restore_check -Atc 'select count(*) from public.schema_migrations' 2>/dev/null || echo unknown)"
+          REMOTE
+
   inspect-integration:
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect-integration'
     runs-on: ubuntu-latest
@@ -1702,6 +1830,15 @@ jobs:
           test -n "$ORACLE_HOST"
           test -n "$ORACLE_USER"
           install -m 600 "$RUNNER_TEMP/production.base.env" "$RUNNER_TEMP/production.env"
+          # The runtime switch, from ops/production-runtime.env. One source
+          # only: a BOT_ENTRYPOINT in SOPS as well would be a second value that
+          # nobody reviewing this file can see.
+          if grep -Eq '^BOT_ENTRYPOINT=' "$RUNNER_TEMP/production.env"; then
+            echo "BOT_ENTRYPOINT is set in secrets/production.env.sops; it belongs in ops/production-runtime.env only" >&2
+            exit 1
+          fi
+          grep -E '^BOT_ENTRYPOINT=' ops/production-runtime.env >> "$RUNNER_TEMP/production.env"
+          echo "Runtime for this release: $(sed -nE 's/^BOT_ENTRYPOINT=//p' ops/production-runtime.env)"
           ops/validate-production-env.sh --complete "$RUNNER_TEMP/production.env"
 
       - name: Upload deployment bundle

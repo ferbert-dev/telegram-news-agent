@@ -1,6 +1,6 @@
 {
   "name": "telegram-news-agent",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,7 @@
     "test:application": "tsx --test checks/application/*.ts",
     "test:architecture": "tsx --test checks/architecture/*.ts",
     "test:runtime": "tsx --test checks/runtime/*.ts",
-    "test:ops": "./checks/ops/deploy-integration-guards.sh && ./checks/ops/deploy-gate.sh",
+    "test:ops": "./checks/ops/deploy-integration-guards.sh && ./checks/ops/deploy-gate.sh && ./checks/ops/production-runtime.sh",
     "test:e2e": "./ops/e2e.sh all",
     "test:e2e:up": "./ops/e2e.sh up",
     "test:e2e:run": "./ops/e2e.sh run",
