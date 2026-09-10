@@ -86,6 +86,28 @@ The gate is extracted into its own file so `checks/ops/deploy-gate.sh` can drive
 
 Operator CLIs (all load `.env`): `npm run pipeline:run`, `npm run drafts -- list|preview|approve|publish|reconcile-sent|reconcile-not-sent`, `npm run sources -- list|add|disable|enable`, `npm run research`, `npm run telegram:check|control|smoke|send`, `npm run audit:flush`, `npm run usage:dashboard` (this one builds first and runs from `dist/`).
 
+
+## The integration stage is for tests only
+
+The Oracle host also carries an integration stage (`telegram-news-agent-int`: its
+own bot, channel, database and AI keys). **Bring it up for a test and stop it when
+the test is done. Never leave it running beside production** -- not overnight, not
+between sessions. This is a standing rule from the repository owner.
+
+The reason is memory. The host has 952 MiB. With production on the NestJS runtime
+the stage fits with about 11 MiB to spare while production is idle, and the
+production bot grows by roughly 75 MiB during a run. A stage left up squeezes
+production.
+
+```bash
+gh workflow run deploy.yml -f operation=deploy-integration --ref <branch>
+gh workflow run deploy.yml -f operation=stop-integration --ref main
+```
+
+Stopping is `down` without `-v`: the stage's database volume survives, so the next
+deploy resumes with its data. Do not schedule recurring jobs against the stage.
+The procedure is in `docs/integration-stage.md`.
+
 ## Architecture
 
 **The legacy JS runtime is frozen. All new work goes in TypeScript.**
