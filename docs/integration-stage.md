@@ -81,9 +81,28 @@ starts and is kept below the bot's ceiling so the steady state is the peak.
 With 96 MiB of headroom the requirement is **448 MiB** against 461 MiB
 available.
 
-That is thin, and it is why this stage is **brought up to test and torn down
-after** (`stop-integration`) rather than left running. Idle, the box gets the
-whole 461 MiB back.
+That was thin even with production on the legacy runtime, and it is why the
+stage has a rule:
+
+> **The integration stage is for tests only.** Bring it up for a test and stop
+> it (`stop-integration`) as soon as the test is done. Never leave it running
+> beside production -- not overnight, not between sessions.
+
+Since v2.0.0 production runs the NestJS runtime, and the margin is gone.
+Measured on 2026-09-10 with the stage down and production idle: 450 MiB
+available, production's bot at 77 MiB. The guard still says `fits` -- by
+11 MiB -- because it measures at deploy time, when production is quiet. On the
+integration stage the same runtime peaked at 150 MiB during a run, so the first
+scheduled run in production after a stage deploy eats the margin and pushes
+both into swap.
+
+The guard is deliberately not raised to demand that headroom: it would then
+refuse every deploy, and the stage is still how features get tested before they
+reach production. The rule is what keeps both of those true.
+
+Stopped, the box gets the stage's whole footprint back, and `down` without `-v`
+keeps the stage's database, so the next deploy resumes where the last one left
+off.
 
 `ops/deploy-integration.sh` measures `MemAvailable` before starting anything and
 refuses below the threshold. A redeploy adds back what the integration stack

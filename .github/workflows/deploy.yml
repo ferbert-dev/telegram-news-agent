@@ -1559,6 +1559,14 @@ jobs:
             deployment-int \
             deployment-int.tar.gz
 
+      # The stage is for tests only and must not be left running beside
+      # production: the host has 952MiB, and with production on the NestJS
+      # runtime there is almost no headroom once both are up.
+      - name: Remind whoever started this to stop it
+        if: success()
+        run: |
+          echo "::notice title=Integration stage is running::It is for testing only. When the test is done, stop it: gh workflow run deploy.yml -f operation=stop-integration --ref main"
+
   # Tears the integration stage down and gives the host its memory back. The
   # box is a 952MiB instance, so this stage is brought up to test and stopped
   # after rather than left running. The volume is deliberately KEPT: `down`
