@@ -142,6 +142,14 @@ export type SchedulerRunResult = {
     | "blocked_by_policy"
     | "failed";
   errorCode?: string;
+  /**
+   * What actually failed, for the operator's log -- never for Notion, which
+   * keeps the generic `errorCode` on purpose. Built only from each error's
+   * class name and its own lower-case code, never from its message: pipeline
+   * messages can carry provider responses, and container logs are copied into
+   * workflow output that every collaborator can read.
+   */
+  errorCause?: string;
   reasonCode?: string;
   draftId?: string;
   windowHours?: number;

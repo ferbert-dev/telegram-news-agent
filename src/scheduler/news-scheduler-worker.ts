@@ -144,6 +144,7 @@ export async function runNewsSchedulerLoop(
           JSON.stringify({
             event: "scheduled_news_failed",
             error_code: result.errorCode ?? "scheduled_run_failed",
+            ...(result.errorCause ? { cause: result.errorCause } : {}),
             settings_version: result.settings?.version ?? null,
           }),
         );

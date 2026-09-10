@@ -68,6 +68,36 @@ function errorCode(error: unknown): string {
   return "scheduled_run_failed";
 }
 
+const CAUSE_NAME = /^[A-Za-z][A-Za-z0-9]{0,63}$/u;
+const CAUSE_CODE = /^[a-z0-9_]{1,64}$/u;
+
+/**
+ * The failure's class and code, e.g.
+ * `AiProvidersExhaustedError:ai_providers_exhausted`.
+ *
+ * `errorCode` above collapses everything it does not recognise into
+ * `scheduled_run_failed`. That is right for the audit record and useless for
+ * finding out why a run failed: on the integration stage a run died with
+ * exactly that code and nothing else, and the cause could not be recovered
+ * from anywhere. This keeps the part that is safe to log -- class names are
+ * defined in code, codes are lower-case by the same rule the worker already
+ * applies -- and drops the message entirely.
+ */
+export function failureCause(error: unknown): string {
+  const errors =
+    error instanceof AggregateError ? [error, ...error.errors] : [error];
+  const parts: string[] = [];
+  for (const item of errors.slice(0, 5)) {
+    const name =
+      item instanceof Error && CAUSE_NAME.test(item.name) ? item.name : "unknown";
+    const code = (item as { code?: unknown } | null)?.code;
+    const part =
+      typeof code === "string" && CAUSE_CODE.test(code) ? `${name}:${code}` : name;
+    if (!parts.includes(part)) parts.push(part);
+  }
+  return parts.join(",");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -459,7 +489,7 @@ export class RunScheduledNewsOnceUseCase {
           code = "claim_lost";
         }
       }
-      return { status: "failed", errorCode: code, settings };
+      return { status: "failed", errorCode: code, errorCause: failureCause(error), settings };
     }
   }
 
