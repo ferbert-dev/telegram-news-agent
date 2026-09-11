@@ -1,76 +1,70 @@
 # Current Status
 
-Last verified: 2026-08-26
+Last verified: **2026-09-11**, from a read-only
+[production inspection](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/34613856971).
 
 ## Production
 
 | Item | Verified state |
 | --- | --- |
-| Service | Healthy on Oracle |
-| Production runtime SHA | `721ff791332635350c0869a2333ed00b33f27057` |
-| Container image | `ghcr.io/ferbert-dev/telegram-news-agent:721ff791332635350c0869a2333ed00b33f27057` (version `v0.1.0+721ff79`) |
-| Telegram | Polling active, webhook disabled, channel access valid, zero pending updates at inspection |
-| Runtime entrypoint | `src/telegram-bot.js`; the additive Nest poller is present in the image but not activated |
-| Container health | Running; restart count 0; OOM false |
-| Database | PostgreSQL authoritative; runtime connection and migrations verified |
-| AI providers | Exa, OpenAI, and Gemini configured |
-| Release message | Private notification `v0.1.0+721ff79` accepted by Telegram |
-| Release evidence | [exact-head CI](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/32902791374), [deploy workflow](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/32903263629), [read-only production inspection](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/32903971749), [database verification](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/32904062788) |
+| Release | **v2.0.0** — tag on `release/v2.0.0` at [`bdf0d71`](https://github.com/ferbert-dev/telegram-news-agent/commit/bdf0d71) |
+| Image | `ghcr.io/ferbert-dev/telegram-news-agent:v2.0.0`, retagged from the image already gated for that commit, never rebuilt |
+| Runtime | NestJS — `dist/composition/runtime-entry.js`, workers `telegram-polling`, `news-scheduler`, `telegram-news-jobs`, `runtime-health` |
+| Rollback | Legacy `src/telegram-bot.js` ships in the same image, unstarted. Rollback is one line in `ops/production-runtime.env` plus a patch release, or a host-side edit during an incident — see the [runbook](nestjs-cutover-runbook.md) |
+| Container | Running, 0 restarts, not OOM-killed, started 2026-09-10 20:49 UTC |
+| Release gate | Three consecutive `healthy` checks, then the runtime credential check: `Deployment healthy: …:v2.0.0` |
+| Telegram | Bot answers, polling mode, no webhook, 0 pending updates, channel reachable |
+| Channel | Automatic approval, a run every 3 hours, night pause 22:00–08:00 Europe/Madrid |
+| Database | PostgreSQL 17, 37 ordered migrations. Before the release a `pg_dump` was restored into a throwaway server and every one of 27 tables' row counts matched |
+| AI | OpenAI working; Exa configured; **Gemini key rejected** (see below) |
 
-## What Is Shipped
+Release evidence: [release and deploy](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/34528494521),
+[backup proven by restore](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/34527426002),
+[post-release inspection](https://github.com/ferbert-dev/telegram-news-agent/actions/runs/34613856971).
 
-- PostgreSQL-backed Telegram polling, scheduling, settings, review, and publication.
-- RSS/Atom ingestion, Google News publisher resolution, GDELT discovery, extraction, ranking, and deduplication.
-- Grounded structured drafting with exact source evidence and fail-closed validation.
-- OpenAI and Gemini generation with bounded Exa research for feeds, news, article details, and missing facts.
-- Editorial enrichment with baseline preservation, evidence mapping, and a maximum of three detail searches per article.
-- Private admin workflows: `/news`, `/settings`, `/labs`, `/stats`, and `/status`.
-- Provider visibility with configured/idle/success states and an explicit one-search Exa connection test.
-- Per-operation AI token, web-search, provider, and estimated-cost accounting.
-- SOPS-encrypted production configuration, hash-aware environment promotion, immutable GHCR images, health gates, and rollback.
-- Private, idempotent deployment-version notifications after successful production verification.
-- Typed Drizzle repositories and NestJS modules operating alongside the current legacy entrypoint.
-- A finite-lifecycle Nest Telegram polling worker with lease, heartbeat, claim/finalize, offset-fencing, and cancellation paths is shipped additively; it is not activated in production.
-- An optional `PublicationMilestonesModule` implements deterministic every-50th-
-  article audience messages behind a default-off per-channel flag. It is not
-  wired into the legacy production entrypoint and remains inactive until the
-  standalone Nest runtime and durable event replay gate are complete. Delivery
-  uses a PostgreSQL claim token and parks ambiguous Telegram outcomes in
-  `uncertain` for explicit reconciliation instead of retrying blindly.
+## Known issues
 
-## Current Architecture
+1. **Scheduled runs fail when no ranked article yields readable text.** Some
+   publishers block extraction (the New York Times returns 403), and when every
+   ranked candidate is blocked the run ends with a plain error, logged only as
+   `cause: "Error"`. The legacy runtime could fall back to a primary
+   publisher's feed summary; whether the typed path lost that is being
+   investigated, together with giving the failure a real error code.
+2. **Production's Gemini key is rejected** (`authentication_failed` on every
+   attempt), so structured generation has one provider instead of two. The key
+   lives in `secrets/production.env.sops` and takes effect at the next release.
+3. **The Exa daily search cap is counted per process**, so a restart resets it.
+   It bounds a run, not a calendar day.
 
-The production entrypoint remains `src/telegram-bot.js`. It owns Telegram long
-polling and the database scheduler while persistence migration proceeds in
-vertical slices. PostgreSQL functions remain authoritative for atomic leases,
-review decisions, publication claims, scheduling checkpoints, and other
-concurrency-sensitive transitions.
+## How v2.0.0 got here
 
-New Nest feature slices communicate through a neutral in-process integration-
-event bus rather than importing each other. Optional subscribers register with
-the bus at module startup; omitting a module leaves the publisher unchanged.
-Idempotent publication retries replay `ArticlePublished`, but crash-independent
-delivery still requires the durable outbox named in the cutover plan.
+The NestJS runtime ran on an isolated integration stage — its own bot, channel,
+database and AI keys — from 2026-09-08 to 2026-09-10 before it replaced the
+legacy runtime:
 
-Exa is a retrieval provider, not a structured drafting replacement. It supplies
-bounded source-linked evidence; OpenAI or Gemini produces structured output when
-the operation requires it. An Exa detail-search failure does not silently fall
-through to a paid web search.
+- manual `/news`, preview, Publish, Reject and `/settings` exercised by hand;
+- **8 unattended scheduled runs**, one every three hours, with automatic
+  approval: **7 published**, 1 failed on provider timeouts;
+- **one full night with zero events** between 22:00 and 08:00 Madrid — the
+  night pause refuses before research starts, so it costs nothing — and the
+  first run of the morning at 08:00:21.
 
-See [architecture.md](architecture.md), [database-migration.md](database-migration.md),
-and [nestjs-drizzle-migration-blueprint.md](nestjs-drizzle-migration-blueprint.md).
+Then: a backup proven by restore, a release branch, a tag, and a health-gated
+deploy. The pilot's criteria and results are in
+[nestjs-cutover-readiness.md](nestjs-cutover-readiness.md).
 
-## Remaining Work
+## Next
 
-1. Complete the remaining NestJS and Drizzle vertical slices without weakening PostgreSQL atomicity.
-2. Prove clean-database parity, emitted build artifacts, Docker smoke behavior, shutdown ordering, and rollback before entrypoint cutover.
-3. Enable durable Telegram news jobs only after their separate production gate.
-4. Add digest-level runtime image attestation and perform a documented rollback drill.
-5. Continue source-quality and editorial-cost tuning from measured production data.
+1. Fix the extraction-failure runs above and ship them as a patch release.
+2. Rotate the production Gemini key.
+3. Let v2.0.0 soak for at least 72 hours.
+4. Only then, on an explicit decision, retire the legacy runtime —
+   [ticket 0006](../tickets/0006-retire-legacy-runtime.md). Five seams still
+   reach legacy modules, so that is a porting job before it is a deletion.
 
-## Release Boundary
+## Release boundary
 
-The legacy entrypoint and rollback path stay available until the migration
-blueprint's cutover gates pass. Do not retire the current Oracle instance,
-disable rollback infrastructure, rotate secrets, or change production feature
-flags without explicit release authority.
+Production deploys only on a `vX.Y.Z` tag cut from a `release/*` branch; a
+merge to `main` deploys nothing. Do not retire the legacy runtime, disable
+rollback infrastructure, rotate secrets or change production settings without
+explicit authority for that action.

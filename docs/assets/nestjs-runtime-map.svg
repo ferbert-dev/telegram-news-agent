@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1130" viewBox="0 0 1600 1130" role="img" aria-labelledby="title desc">
-  <title id="title">The typed NestJS runtime, one run from left to right</title>
+  <title id="title">Telegram News Agent: one run through the NestJS runtime, left to right</title>
   <desc id="desc">Five numbered stages read left to right: a trigger, admission, research, writing and the publication decision, delivery. Underneath, the services every stage calls, then the composition root and lifecycle, then the legacy seams.</desc>
     <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -38,14 +38,14 @@
     </style>
   </defs>
   <rect width="1600" height="1130" fill="url(#bg)"/><rect width="1600" height="1130" fill="url(#grid)"/>
-  <text x="70" y="80" class="title">Typed NestJS Runtime</text>
-  <text x="72" y="120" class="subtitle">One run, left to right. Five stages, and the services all of them share.</text>
+  <text x="70" y="80" class="title">Telegram News Agent</text>
+  <text x="72" y="120" class="subtitle">An AI news desk on a typed NestJS runtime. One run, left to right.</text>
   <rect x="1120" y="52" width="150" height="36" rx="18" fill="#12352c" stroke="#3f9c78" stroke-width="1.5"/>
-  <text x="1195.0" y="76" text-anchor="middle" class="small" fill="#7fe0b6">STAGE ONLY</text>
+  <text x="1195.0" y="76" text-anchor="middle" class="small" fill="#7fe0b6">PRODUCTION</text>
   <rect x="1284" y="52" width="120" height="36" rx="18" fill="#12283d" stroke="#3f7fb0" stroke-width="1.5"/>
-  <text x="1344.0" y="76" text-anchor="middle" class="small" fill="#8fc6ef">9b72fac</text>
+  <text x="1344.0" y="76" text-anchor="middle" class="small" fill="#8fc6ef">v2.0.0</text>
   <rect x="1418" y="52" width="132" height="36" rx="18" fill="#33280f" stroke="#a8802e" stroke-width="1.5"/>
-  <text x="1484.0" y="76" text-anchor="middle" class="small" fill="#f0c672">AUTO-PUBLISH</text>
+  <text x="1484.0" y="76" text-anchor="middle" class="small" fill="#f0c672">NESTJS</text>
   <circle cx="71" cy="170" r="12" fill="#12352c" stroke="#49d1a8" stroke-width="1.5"/>
   <text x="71" y="175" text-anchor="middle" class="small" fill="#7fe0b6">1</text>
   <text x="92" y="176" class="section">TRIGGER</text>
