@@ -75,7 +75,7 @@ The whole desk is operated from Telegram: `/news`, `/settings`, `/stats`,
 - **Idempotent publication.** An uncertain response from Telegram parks the
   draft for reconciliation instead of retrying, so a post is never published
   twice.
-- **A strangler-fig migration, finished.** The system began as a JavaScript
+- **A strangler-fig migration, now serving production.** The system began as a JavaScript
   application and was rebuilt module by module in TypeScript while the old
   runtime kept serving production. Both runtimes ship in one image, the switch
   between them is one environment line, and the old one remains the rollback.
@@ -99,7 +99,7 @@ The whole desk is operated from Telegram: `/news`, `/settings`, `/stats`,
 
 ## By the numbers
 
-| | |
+| Area | Figure |
 | --- | --- |
 | TypeScript runtime | 31 NestJS modules · 201 files · ~25,600 lines |
 | Tests | 900+ test cases · 18 end-to-end scenarios · 17 compiled-build checks |
@@ -128,10 +128,10 @@ back. The whole procedure is in the [cutover runbook](docs/nestjs-cutover-runboo
 ## Architecture
 
 ```text
-DatabaseModule            one pool, one Drizzle provider, one owner of shutdown
-  └─ persistence          nine domains, one per table group; repositories never call each other
-       └─ application     use cases and services; ports in, no SQL, no SDKs, no fetch
-            └─ runtime    four workers: Telegram polling, scheduler, news jobs, health
+DatabaseModule         one pool, one Drizzle provider, one owner of shutdown
+  └─ persistence       nine domains; repositories never call each other
+       └─ application  use cases and services; no SQL, SDKs or fetch
+            └─ runtime four workers: polling, scheduler, news jobs, health
 ```
 
 Research is split so the free path and the paid path stay separate, and the
@@ -167,7 +167,7 @@ npm ci
 npm test               # legacy unit tests
 npm run typecheck
 npm run test:application
-npm run test:e2e       # the whole /news flow on a disposable PostgreSQL, providers faked
+npm run test:e2e       # whole /news flow, real PostgreSQL, providers faked
 ```
 
 Configuration starts from `.env.example`. Running the bot, the Telegram admin
