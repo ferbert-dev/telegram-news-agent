@@ -151,6 +151,36 @@ draft to `approved` for a controlled retry and requires exact confirmation.
 `APPROVAL_POLICY` remains the default for CLI runs. Telegram-triggered and
 scheduled runs use the persisted per-channel setting described below.
 
+### Diagnosing a thin article
+
+A post that ships as the short legacy baseline -- one paragraph, a
+"Caveat: this account relies on one … article" line -- means the editorial pass
+did not run for it. Every draft run writes two JSON lines to the bot's log,
+which `inspect-production` shows in its log tail:
+
+- `evidence_corroboration`, written before drafting, so it is present even for
+  a run that then fails. `fact_plan` is `requests`, `empty` (the model found
+  nothing to check), `invalid`, `failed` (no answer; `fact_plan_error` names
+  why, for example `ai_providers_exhausted:timeout,authentication_failed`) or
+  `not_configured`. `status` is `not_run`, `not_needed`, `corroborated`,
+  `uncorroborated` or `error`. `searches` and `failed_searches` count the
+  searches made through `search_port` -- `exa` when Exa is configured,
+  otherwise `provider_cascade` -- and `search_errors` names failures such as
+  `exa_daily_fact_search_cap`.
+  `strong_publishers` lists the publishers that counted towards the two
+  required.
+- `editorial_pass`: `selected_version` is `enriched` or `baseline`, and
+  `diagnostic` names why the baseline shipped -- `unverified_story` when
+  corroboration did not reach two strong publishers, or the failure kind
+  (`provider_failed`, `not_grounded`, `too_short`, …).
+
+When corroboration is configured and the draft's `reviewer_notes` are a JSON
+object, the same summary is stored there under `evidence_corroboration`, next
+to `editorial_enrichment`. The two log lines and `evidence_corroboration` carry
+codes and counts only. `editorial_enrichment.diagnostic` in the notes is the
+exception, as it was before these lines existed: it keeps the full diagnostic,
+which for `provider_failed` includes the provider's message.
+
 ## Telegram Admin Control
 
 Apply the PostgreSQL migrations, set `TELEGRAM_UPDATE_MODE=polling`, and run:

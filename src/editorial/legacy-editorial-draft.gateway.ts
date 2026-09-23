@@ -16,7 +16,12 @@ import type {
   ArticleTopicAssignmentSource,
 } from "../research/research-persistence.contracts.js";
 import type { EvidenceCorroborationService } from "./corroboration/evidence-corroboration.service.js";
-import type { FactPlanService } from "./corroboration/fact-plan.service.js";
+import type {
+  FactPlanInput,
+  FactPlanOutcome,
+  FactPlanService,
+} from "./corroboration/fact-plan.service.js";
+import { errorCodeOf } from "./corroboration/error-code.js";
 import { factSearchCorroborationPort } from "./corroboration/fact-search.adapter.js";
 import type { CorroborationSearchPort } from "./corroboration/evidence-corroboration.contracts.js";
 import type {
@@ -322,6 +327,12 @@ export type LegacyEditorialDraftGatewayDependencies = {
    * at most one result per search and only from a fixed list of hosts.
    */
   factSearch?: CorroborationSearchPort;
+  /**
+   * Where the two per-run diagnostic lines go. Defaults to the console, the
+   * same pattern the research gateway uses, so production's container log
+   * carries them and a check can capture them.
+   */
+  log?: Pick<Console, "info">;
 };
 
 /** Any unverified item makes the whole set unverified, as draft.js decides it. */
@@ -329,6 +340,84 @@ function isUnverified(evidence: readonly { verificationStatus?: string | null }[
   return evidence.some(
     (item) => (item.verificationStatus ?? "") === "unverified_community",
   );
+}
+
+/**
+ * What happened to corroboration on one run, in a form that survives it.
+ *
+ * Before this existed, "did Exa run for this article, and if not why?" had no
+ * answer anywhere: the plan swallowed its failures as an empty list, each
+ * failed search was skipped silently, and the gateway's own catch fell back
+ * without a trace. Three thin posts in one day could not be explained from
+ * production data. This is written to the container log and into
+ * reviewer_notes, so the next one can.
+ *
+ * Codes and counts only -- never messages, queries or source text.
+ */
+type CorroborationSummary = {
+  /** `not_configured` when the gateway was built without a planner. */
+  fact_plan: "not_configured" | FactPlanOutcome["outcome"];
+  fact_plan_error: string | null;
+  requests: number;
+  /** Which port executed the searches; null when none ran. */
+  search_port: "exa" | "provider_cascade" | null;
+  status: "not_run" | "not_needed" | "corroborated" | "uncorroborated" | "error";
+  error: string | null;
+  searches: number;
+  failed_searches: number;
+  search_errors: string[];
+  publishers: number;
+  /** Publisher hosts, e.g. reuters.com: public names, and the useful part. */
+  strong_publishers: string[];
+  evidence_added: boolean;
+};
+
+async function planFacts(
+  service: FactPlanService,
+  input: FactPlanInput,
+): Promise<FactPlanOutcome> {
+  if (typeof service.planWithOutcome === "function") return service.planWithOutcome(input);
+  // A planner that only implements plan() -- older fakes, or a replacement --
+  // still works; it just cannot tell a failure from an empty answer.
+  const requests = await service.plan(input);
+  return { requests, outcome: requests.length ? "requests" : "empty", errorCode: null };
+}
+
+function articleIdOf(article: unknown): string | number | null {
+  const id = (article as { id?: unknown } | null | undefined)?.id;
+  return typeof id === "string" || typeof id === "number" ? id : null;
+}
+
+/**
+ * The kind of failure a pass diagnostic names, without the detail after it.
+ *
+ * Diagnostics such as `provider_failed: <provider message>` can quote whatever
+ * the provider sent back. reviewer_notes keeps the full text, as it already
+ * did; the log line keeps only the leading code.
+ */
+function diagnosticCode(diagnostic: unknown): string | null {
+  if (typeof diagnostic !== "string" || !diagnostic) return null;
+  const head = (diagnostic.split(":")[0] ?? "").trim();
+  return /^[A-Za-z0-9_ -]{1,64}$/.test(head) ? head.replace(/[ -]/g, "_") : "other";
+}
+
+/** Adds the corroboration summary to notes that are already JSON; never invents notes. */
+function withCorroborationNotes(
+  notes: string | null | undefined,
+  summary: CorroborationSummary,
+): string | null {
+  if (!notes) return notes ?? null;
+  try {
+    const parsed = JSON.parse(notes) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return notes;
+    return JSON.stringify({
+      ...(parsed as Record<string, unknown>),
+      evidence_corroboration: summary,
+    });
+  } catch {
+    // Unparseable notes are legacy's to own, as in withEnrichmentNotes.
+    return notes;
+  }
 }
 
 type EditorialPassResult = {
@@ -407,6 +496,19 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
     generateDraftFn: GenerateDraftFunction = legacyGenerateDraft as GenerateDraftFunction,
   ) {
     this.generateDraft = generateDraftFn;
+  }
+
+  private get log(): Pick<Console, "info"> {
+    return this.dependencies.log ?? console;
+  }
+
+  /** Diagnostics are never a reason for a draft to fail. */
+  private logEvent(event: Record<string, unknown>): void {
+    try {
+      this.log.info?.(JSON.stringify(event));
+    } catch {
+      // A logger that throws loses one line; the article is unaffected.
+    }
   }
 
   /**
@@ -563,9 +665,23 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
     // must never become a way for an article to stop being produced.
     let corroboratedEvidence = input.evidence;
     let corroborationAddedSources = false;
+    const corroborationSummary: CorroborationSummary = {
+      fact_plan: "not_configured",
+      fact_plan_error: null,
+      requests: 0,
+      search_port: null,
+      status: "not_run",
+      error: null,
+      searches: 0,
+      failed_searches: 0,
+      search_errors: [],
+      publishers: 0,
+      strong_publishers: [],
+      evidence_added: false,
+    };
     if (this.dependencies.factPlan && this.dependencies.corroboration) {
       try {
-        const requests = await this.dependencies.factPlan.plan({
+        const plan = await planFacts(this.dependencies.factPlan, {
           article: input.article as { title?: string; summary?: string | null },
           // No `as never` on the evidence, in either call.
           //
@@ -577,10 +693,16 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
           languageCode: input.languageCode,
           generator: this.dependencies.aiProvider as never,
         });
-        if (requests.length) {
+        corroborationSummary.fact_plan = plan.outcome;
+        corroborationSummary.fact_plan_error = plan.errorCode;
+        corroborationSummary.requests = plan.requests.length;
+        if (plan.requests.length) {
+          corroborationSummary.search_port = this.dependencies.factSearch
+            ? "exa"
+            : "provider_cascade";
           const outcome = await this.dependencies.corroboration.corroborate({
             evidence: input.evidence,
-            requests,
+            requests: plan.requests,
             languageCode: input.languageCode,
             search:
               this.dependencies.factSearch
@@ -598,16 +720,44 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
           // nothing for a corroboration round, which is the state content
           // retrieval was in when "did Exa run?" could not be answered.
           usageEvents.push(...(outcome.usageEvents as RecordAiUsageInput[]));
+          corroborationSummary.status = outcome.status;
+          corroborationSummary.searches = outcome.searches;
+          corroborationSummary.failed_searches = outcome.failedSearches ?? 0;
+          corroborationSummary.search_errors = [...(outcome.searchErrors ?? [])];
           if (outcome.status !== "not_needed") {
+            // Evidence first: the summary below is bookkeeping, and bookkeeping
+            // must never be the reason corroborated evidence is lost.
             corroborationAddedSources =
               outcome.evidence.length > input.evidence.length;
             corroboratedEvidence = [...outcome.evidence];
+            corroborationSummary.publishers = outcome.publishers?.length ?? 0;
+            corroborationSummary.strong_publishers = [...(outcome.strongPublishers ?? [])];
           }
+          corroborationSummary.evidence_added = corroborationAddedSources;
         }
-      } catch {
+      } catch (error) {
         corroboratedEvidence = input.evidence;
+        corroborationAddedSources = false;
+        // A planner that throws instead of returning an outcome never got to
+        // say so; without this the line would read "not_configured" for a
+        // gateway that plainly is configured.
+        if (corroborationSummary.fact_plan === "not_configured") {
+          corroborationSummary.fact_plan = "failed";
+          corroborationSummary.fact_plan_error = errorCodeOf(error);
+        }
+        corroborationSummary.status = "error";
+        corroborationSummary.error = errorCodeOf(error);
+        corroborationSummary.evidence_added = false;
       }
     }
+    // Written BEFORE drafting, on purpose: a run that then dies in the draft
+    // (`draft_validation_failed`) is exactly the run someone will need to
+    // explain, and a line written afterwards would never appear for it.
+    this.logEvent({
+      event: "evidence_corroboration",
+      article_id: articleIdOf(input.article),
+      ...corroborationSummary,
+    });
 
     const generated = await this.generateDraft(
       {
@@ -668,7 +818,25 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
       editor: this.dependencies.editor,
       tagging: articleTagging,
       topicAssignments: generated.saved.topic_assignments ?? [],
-      unverified: isUnverified(input.evidence),
+      // The CORROBORATED evidence decides, not the original.
+      //
+      // Corroboration exists to earn the right to drop the unverified label:
+      // when two strong publishers confirm a story, the service clears it. This
+      // read `input.evidence`, so a story Exa had just verified still fell back
+      // to the baseline as `unverified_story` -- the searches were paid for and
+      // then ignored. An uncorroborated story keeps its original status in the
+      // outcome's evidence and still falls back, as designed.
+      unverified: isUnverified(corroboratedEvidence),
+    });
+
+    this.logEvent({
+      event: "editorial_pass",
+      article_id: generated.saved.article_id ?? articleIdOf(input.article),
+      state: enrichment.summary.state ?? null,
+      status: enrichment.summary.status ?? null,
+      selected_version: enrichment.summary.selected_version ?? null,
+      diagnostic: diagnosticCode(enrichment.summary.diagnostic),
+      corroboration_status: corroborationSummary.status,
     });
 
     const output = {
@@ -701,10 +869,17 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
         prompt_version: enrichment.draft
           ? `${generated.saved.prompt_version}+typed-editorial-pass-v1`
           : generated.saved.prompt_version,
-        reviewer_notes: withEnrichmentNotes(
-          generated.saved.reviewer_notes,
-          enrichment,
-        ),
+        // Only when corroboration is wired. Without a planner this gateway
+        // promises to behave exactly as it did before corroboration existed,
+        // and that includes the notes it returns; the log line alone says it
+        // was not configured.
+        reviewer_notes:
+          !(this.dependencies.factPlan && this.dependencies.corroboration)
+            ? withEnrichmentNotes(generated.saved.reviewer_notes, enrichment)
+            : withCorroborationNotes(
+                withEnrichmentNotes(generated.saved.reviewer_notes, enrichment),
+                corroborationSummary,
+              ),
         lease_name: generated.saved.lease_name ?? input.lease?.name ?? null,
         lease_owner_id: generated.saved.lease_owner_id ?? input.lease?.ownerId ?? null,
         // Omitted, not null, when tagging is off -- exactly what src/draft.js

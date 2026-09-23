@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { errorCodeOf } from "./error-code.js";
+
 import type {
   CorroborationEvidence,
   FactRequest,
@@ -70,13 +72,21 @@ const SYSTEM_INSTRUCTION =
  * costs nothing.
  */
 export class FactPlanService {
-  async plan(input: {
-    article: { title?: string; summary?: string | null };
-    evidence: readonly CorroborationEvidence[];
-    languageCode: string;
-    generator: StructuredGenerator;
-    signal?: AbortSignal;
-  }): Promise<readonly FactRequest[]> {
+  async plan(input: FactPlanInput): Promise<readonly FactRequest[]> {
+    return (await this.planWithOutcome(input)).requests;
+  }
+
+  /**
+   * The same plan, plus why it came out the way it did.
+   *
+   * `plan()` answers `[]` for four different situations -- the model found
+   * nothing checkable, answered in the wrong shape, timed out, or every
+   * provider refused -- and all four skip the paid search. When production had
+   * to explain why Exa never ran for an article, there was no way to tell a
+   * model that chose not to ask from one that never answered. The outcome is
+   * that difference, recorded.
+   */
+  async planWithOutcome(input: FactPlanInput): Promise<FactPlanOutcome> {
     // Every article, not only the unverified ones.
     //
     // This gate used to skip anything resting on a primary source, which was
@@ -108,13 +118,38 @@ export class FactPlanService {
         ...(input.signal ? { signal: input.signal } : {}),
       });
       const parsed = FactPlan.safeParse(generated?.value);
-      return parsed.success ? parsed.data.requests : [];
-    } catch {
+      if (!parsed.success) return { requests: [], outcome: "invalid", errorCode: null };
+      return {
+        requests: parsed.data.requests,
+        outcome: parsed.data.requests.length ? "requests" : "empty",
+        errorCode: null,
+      };
+    } catch (error) {
       // Planning is an enhancement, never a gate. A model that will not answer
       // must leave the article exactly as it would have been produced without
       // this step -- an article that fails to appear is a worse outcome than
-      // one published without extra corroboration.
-      return [];
+      // one published without extra corroboration. What changes is that the
+      // failure is now named rather than looking like an empty plan.
+      return { requests: [], outcome: "failed", errorCode: errorCodeOf(error) };
     }
   }
 }
+
+export type FactPlanInput = {
+  article: { title?: string; summary?: string | null };
+  evidence: readonly CorroborationEvidence[];
+  languageCode: string;
+  generator: StructuredGenerator;
+  signal?: AbortSignal;
+};
+
+export type FactPlanOutcome = {
+  requests: readonly FactRequest[];
+  /**
+   * `requests` -- the model asked for lookups. `empty` -- it answered and found
+   * nothing checkable. `invalid` -- it answered in a shape the schema refused.
+   * `failed` -- no answer at all; `errorCode` says why.
+   */
+  outcome: "requests" | "empty" | "invalid" | "failed";
+  errorCode: string | null;
+};
