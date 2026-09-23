@@ -213,6 +213,29 @@ first — it is the fastest path to a current reference. It is **not** attached 
 default; when it is absent, fall back to the vendor's published reference and to
 unauthenticated live calls that cost nothing.
 
+## How a task starts
+
+The first two steps are not optional.
+
+1. **Branch from a freshly fetched `origin/main`:**
+   `git fetch origin && git switch -c codex/<short-name> origin/main`. Not from
+   whatever happens to be checked out -- a branch cut from a stale local main
+   carries unrelated work into the review.
+2. **Rebuild the code graph:** `graphify extract . --code-only`. About four
+   seconds, incremental. A `PostToolUse` hook does this automatically whenever a
+   branch is created with `git switch -c` or `git checkout -b` and reports what
+   it wrote; if that report does not appear, run the extract by hand.
+3. **Ask the graph before grepping:** `graphify query "<question>" --budget 1400`,
+   then open the narrow paths it returns.
+
+The third step is there because of a specific failure. A grep for `.js` imports
+was used to count how many legacy modules the typed runtime still reaches, and
+answered five. The real number is thirty. Under `NodeNext` a TypeScript file
+imports another TypeScript file with a `.js` specifier, so that grep mostly
+finds typed code importing typed code; a seam is real only when the resolved
+path has no `.ts` twin. The wrong number reached the README before anyone
+noticed.
+
 ## Graphify
 
 `graphify-out/` is a persistent, AST-derived, code-only knowledge graph (no LLM tokens). For codebase questions run `graphify query "<question>" --budget 1400` first, then open the narrow paths it returns; `graphify path`, `explain`, and `affected` cover relationships. After changing code run `graphify extract . --code-only` — **not** the generic `graphify update .`, which would pull Markdown into the graph. Verify migration-critical findings against `rg`, SQL, and tests.
