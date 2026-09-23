@@ -9,6 +9,7 @@ import type {
 } from "./evidence-corroboration.contracts.js";
 import { publisherOf, type SourceTier } from "./source-policy.js";
 import { EVIDENCE_CORROBORATION_OPTIONS } from "./evidence-corroboration.tokens.js";
+import { errorCodeOf } from "./error-code.js";
 
 export type EvidenceCorroborationOptions = {
   /** Independent publishers required before an unverified story may be told. */
@@ -89,7 +90,14 @@ export class EvidenceCorroborationService {
     // Searches run for every article now, so `not_needed` no longer means
     // "primary source". It means there was nothing to ask.
     if (!requests.length) {
-      return { status: "not_needed", evidence, searches: 0, usageEvents: [] };
+      return {
+        status: "not_needed",
+        evidence,
+        searches: 0,
+        failedSearches: 0,
+        searchErrors: [],
+        usageEvents: [],
+      };
     }
 
     const known = new Set(
@@ -102,6 +110,8 @@ export class EvidenceCorroborationService {
     const strong = new Set<string>();
     const usageEvents: unknown[] = [];
     let searches = 0;
+    let failedSearches = 0;
+    const searchErrors = new Set<string>();
 
     for (const request of requests) {
       if (searches >= this.options.maxSearches) break;
@@ -111,10 +121,14 @@ export class EvidenceCorroborationService {
       try {
         result = await search.find(request, { languageCode, signal });
         usageEvents.push(...(result.usageEvents ?? []));
-      } catch {
+      } catch (error) {
         // A failed search spends its budget and stops nothing else. Retrying
         // the same question against the same provider would spend the rest of
-        // the budget on the same failure.
+        // the budget on the same failure. It is counted, though: a round where
+        // every search hit the daily cap looks exactly like one where the web
+        // had nothing to say, and only one of those is worth acting on.
+        failedSearches += 1;
+        searchErrors.add(errorCodeOf(error));
         continue;
       }
 
@@ -183,6 +197,8 @@ export class EvidenceCorroborationService {
         searches,
         publishers,
         strongPublishers,
+        failedSearches,
+        searchErrors: [...searchErrors],
         usageEvents,
         tag: RUMOUR_TAG,
         reason: `Found ${strong.size} strong and ${found.size - strong.size} other publisher(s); ${this.options.requiredPublishers} strong required`,
@@ -195,6 +211,8 @@ export class EvidenceCorroborationService {
       searches,
       publishers,
       strongPublishers,
+      failedSearches,
+      searchErrors: [...searchErrors],
       usageEvents,
     };
   }

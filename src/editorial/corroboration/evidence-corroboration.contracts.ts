@@ -50,6 +50,8 @@ export type CorroborationOutcome =
       status: "not_needed";
       evidence: readonly CorroborationEvidence[];
       searches: 0;
+      failedSearches: 0;
+      searchErrors: readonly string[];
       usageEvents: readonly unknown[];
     }
   | {
@@ -60,6 +62,15 @@ export type CorroborationOutcome =
       publishers: readonly string[];
       /** Publishers whose agreement counted towards the threshold. */
       strongPublishers: readonly string[];
+      /**
+       * Searches that threw -- a provider error, a timeout, the daily cap.
+       * Each one still spends its place in the budget; these say how many of
+       * `searches` produced nothing because they failed, not because they
+       * found nothing.
+       */
+      failedSearches: number;
+      /** Log-safe codes of those failures, de-duplicated. Never messages. */
+      searchErrors: readonly string[];
       usageEvents: readonly unknown[];
     }
   | {
@@ -72,6 +83,8 @@ export type CorroborationOutcome =
       searches: number;
       publishers: readonly string[];
       strongPublishers: readonly string[];
+      failedSearches: number;
+      searchErrors: readonly string[];
       usageEvents: readonly unknown[];
       /** Rendered into the post, e.g. "#rumor". */
       tag: string;
