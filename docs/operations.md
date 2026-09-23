@@ -163,8 +163,10 @@ which `inspect-production` shows in its log tail:
   nothing to check), `invalid`, `failed` (no answer; `fact_plan_error` names
   why, for example `ai_providers_exhausted:timeout,authentication_failed`) or
   `not_configured`. `status` is `not_run`, `not_needed`, `corroborated`,
-  `uncorroborated` or `error`. `searches` and `failed_searches` count Exa calls,
-  and `search_errors` names failures such as `exa_daily_fact_search_cap`.
+  `uncorroborated` or `error`. `searches` and `failed_searches` count the
+  searches made through `search_port` -- `exa` when Exa is configured,
+  otherwise `provider_cascade` -- and `search_errors` names failures such as
+  `exa_daily_fact_search_cap`.
   `strong_publishers` lists the publishers that counted towards the two
   required.
 - `editorial_pass`: `selected_version` is `enriched` or `baseline`, and
@@ -172,9 +174,12 @@ which `inspect-production` shows in its log tail:
   corroboration did not reach two strong publishers, or the failure kind
   (`provider_failed`, `not_grounded`, `too_short`, …).
 
-The same corroboration summary is stored on the draft, in `reviewer_notes`
-under `evidence_corroboration`, next to `editorial_enrichment`. Both carry
-codes and counts only, never provider messages.
+When corroboration is configured and the draft's `reviewer_notes` are a JSON
+object, the same summary is stored there under `evidence_corroboration`, next
+to `editorial_enrichment`. The two log lines and `evidence_corroboration` carry
+codes and counts only. `editorial_enrichment.diagnostic` in the notes is the
+exception, as it was before these lines existed: it keeps the full diagnostic,
+which for `provider_failed` includes the provider's message.
 
 ## Telegram Admin Control
 

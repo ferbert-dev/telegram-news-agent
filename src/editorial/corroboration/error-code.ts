@@ -20,7 +20,16 @@ export function errorCodeOf(error: unknown): string {
   return inner.length ? `${own}:${inner.join(",")}`.slice(0, 200) : own;
 }
 
-const SAFE_CODE = /^[A-Za-z0-9_.-]{1,64}$/;
+// A code is a short identifier that starts with a letter. The digit limit is
+// what keeps a key or a UUID that some error put in its `code` field out of
+// the log: real codes (`timeout`, `authentication_failed`, `http_429`) carry
+// at most a status number.
+const SAFE_CODE = /^[A-Za-z][A-Za-z0-9_.-]{0,47}$/;
+const MAX_DIGITS = 3;
+
+function isSafeCode(value: string): boolean {
+  return SAFE_CODE.test(value) && (value.match(/[0-9]/g)?.length ?? 0) <= MAX_DIGITS;
+}
 
 function codeOrName(error: unknown): string {
   if (error && typeof error === "object") {
@@ -30,11 +39,11 @@ function codeOrName(error: unknown): string {
       name?: unknown;
     };
     for (const candidate of [code, errorCode]) {
-      if (typeof candidate === "string" && SAFE_CODE.test(candidate)) return candidate;
+      if (typeof candidate === "string" && isSafeCode(candidate)) return candidate;
     }
     // A bare `Error` says nothing; a specific class (`AbortError`,
     // `TimeoutError`) does.
-    if (typeof name === "string" && name !== "Error" && SAFE_CODE.test(name)) return name;
+    if (typeof name === "string" && name !== "Error" && isSafeCode(name)) return name;
   }
   return "error";
 }

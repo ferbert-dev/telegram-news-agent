@@ -502,6 +502,15 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
     return this.dependencies.log ?? console;
   }
 
+  /** Diagnostics are never a reason for a draft to fail. */
+  private logEvent(event: Record<string, unknown>): void {
+    try {
+      this.log.info?.(JSON.stringify(event));
+    } catch {
+      // A logger that throws loses one line; the article is unaffected.
+    }
+  }
+
   /**
    * The editorial pass and the composition of its result into a publishable
    * body: editor credit and topic hashtags, then Telegram's own message
@@ -716,17 +725,26 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
           corroborationSummary.failed_searches = outcome.failedSearches ?? 0;
           corroborationSummary.search_errors = [...(outcome.searchErrors ?? [])];
           if (outcome.status !== "not_needed") {
-            corroborationSummary.publishers = outcome.publishers.length;
-            corroborationSummary.strong_publishers = [...outcome.strongPublishers];
+            // Evidence first: the summary below is bookkeeping, and bookkeeping
+            // must never be the reason corroborated evidence is lost.
             corroborationAddedSources =
               outcome.evidence.length > input.evidence.length;
             corroboratedEvidence = [...outcome.evidence];
+            corroborationSummary.publishers = outcome.publishers?.length ?? 0;
+            corroborationSummary.strong_publishers = [...(outcome.strongPublishers ?? [])];
           }
           corroborationSummary.evidence_added = corroborationAddedSources;
         }
       } catch (error) {
         corroboratedEvidence = input.evidence;
         corroborationAddedSources = false;
+        // A planner that throws instead of returning an outcome never got to
+        // say so; without this the line would read "not_configured" for a
+        // gateway that plainly is configured.
+        if (corroborationSummary.fact_plan === "not_configured") {
+          corroborationSummary.fact_plan = "failed";
+          corroborationSummary.fact_plan_error = errorCodeOf(error);
+        }
         corroborationSummary.status = "error";
         corroborationSummary.error = errorCodeOf(error);
         corroborationSummary.evidence_added = false;
@@ -735,13 +753,11 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
     // Written BEFORE drafting, on purpose: a run that then dies in the draft
     // (`draft_validation_failed`) is exactly the run someone will need to
     // explain, and a line written afterwards would never appear for it.
-    this.log.info?.(
-      JSON.stringify({
-        event: "evidence_corroboration",
-        article_id: articleIdOf(input.article),
-        ...corroborationSummary,
-      }),
-    );
+    this.logEvent({
+      event: "evidence_corroboration",
+      article_id: articleIdOf(input.article),
+      ...corroborationSummary,
+    });
 
     const generated = await this.generateDraft(
       {
@@ -813,17 +829,15 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
       unverified: isUnverified(corroboratedEvidence),
     });
 
-    this.log.info?.(
-      JSON.stringify({
-        event: "editorial_pass",
-        article_id: generated.saved.article_id ?? articleIdOf(input.article),
-        state: enrichment.summary.state ?? null,
-        status: enrichment.summary.status ?? null,
-        selected_version: enrichment.summary.selected_version ?? null,
-        diagnostic: diagnosticCode(enrichment.summary.diagnostic),
-        corroboration_status: corroborationSummary.status,
-      }),
-    );
+    this.logEvent({
+      event: "editorial_pass",
+      article_id: generated.saved.article_id ?? articleIdOf(input.article),
+      state: enrichment.summary.state ?? null,
+      status: enrichment.summary.status ?? null,
+      selected_version: enrichment.summary.selected_version ?? null,
+      diagnostic: diagnosticCode(enrichment.summary.diagnostic),
+      corroboration_status: corroborationSummary.status,
+    });
 
     const output = {
       baselineDraft: generated.baselineDraft,
@@ -860,7 +874,7 @@ export class LegacyEditorialDraftGateway implements EditorialDraftGateway {
         // and that includes the notes it returns; the log line alone says it
         // was not configured.
         reviewer_notes:
-          corroborationSummary.fact_plan === "not_configured"
+          !(this.dependencies.factPlan && this.dependencies.corroboration)
             ? withEnrichmentNotes(generated.saved.reviewer_notes, enrichment)
             : withCorroborationNotes(
                 withEnrichmentNotes(generated.saved.reviewer_notes, enrichment),

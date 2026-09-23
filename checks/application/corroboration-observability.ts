@@ -73,12 +73,16 @@ const ENRICHED = {
 };
 
 function gateway(options: {
-  factPlan: unknown;
+  /** Omit to build a gateway with no planner and no corroboration at all. */
+  factPlan?: unknown;
   corroboration?: unknown;
   lines: Array<Record<string, unknown>>;
   enrichCalls?: { count: number };
   reviewerNotes?: string | null;
+  draftError?: Error;
+  log?: Pick<Console, "info">;
 }) {
+  const wired = options.factPlan !== undefined;
   return new LegacyEditorialDraftGateway(
     {
       model: "m",
@@ -92,13 +96,17 @@ function gateway(options: {
         },
         createReviewDraft: async () => ({}),
       } as never,
-      factPlan: options.factPlan as never,
-      corroboration: (options.corroboration ?? {
-        async corroborate() {
-          throw new Error("must not be called");
-        },
-      }) as never,
-      factSearch: { async find() { return { sources: [] }; } },
+      ...(wired
+        ? {
+            factPlan: options.factPlan as never,
+            corroboration: (options.corroboration ?? {
+              async corroborate() {
+                throw new Error("must not be called");
+              },
+            }) as never,
+            factSearch: { async find() { return { sources: [] }; } },
+          }
+        : {}),
       enrichment: {
         async enrich() {
           if (options.enrichCalls) options.enrichCalls.count += 1;
@@ -114,9 +122,11 @@ function gateway(options: {
           };
         },
       } as never,
-      log: { info: (line: unknown) => options.lines.push(JSON.parse(String(line))) },
+      log: options.log ?? { info: (line: unknown) => options.lines.push(JSON.parse(String(line))) },
     },
-    (async () => ({
+    (async () => {
+      if (options.draftError) throw options.draftError;
+      return {
       draft: { telegramText: "baseline" },
       baselineDraft: {
         headline: "Baseline",
@@ -136,7 +146,8 @@ function gateway(options: {
       },
       provider: "fake",
       model: "fake",
-    })) as never,
+      };
+    }) as never,
   );
 }
 
@@ -154,6 +165,10 @@ test("errorCodeOf keeps codes, names the inner failures of an aggregate, and nev
   assert.equal(errorCodeOf(new Error("plain message")), "error");
   assert.equal(errorCodeOf(Object.assign(new Error("x"), { code: "has spaces and https://url" })), "error");
   assert.equal(errorCodeOf("a string"), "error");
+  // A key or an identifier some error put in its `code` field is not a code.
+  assert.equal(errorCodeOf(Object.assign(new Error("x"), { code: "3f2b9c1e-8d4a-4f6b-9e2d-7a1c5b8e0f13" })), "error");
+  assert.equal(errorCodeOf(Object.assign(new Error("x"), { code: "sk-proj-a1b2c3d4e5" })), "error");
+  assert.equal(errorCodeOf(Object.assign(new Error("x"), { code: "http_429" })), "http_429");
 });
 
 // --- FactPlanService.planWithOutcome ----------------------------------------
@@ -403,4 +418,62 @@ test("a planner that only implements plan() still works", async () => {
     factPlan: { async plan() { return []; } },
   }).generate(unverifiedInput());
   assert.equal(event(lines, "evidence_corroboration").fact_plan, "empty");
+});
+
+test("without a planner the notes gain nothing from corroboration, and the log says so", async () => {
+  const lines: Array<Record<string, unknown>> = [];
+  const result = await gateway({ lines, reviewerNotes: '{"kept":true}' }).generate(unverifiedInput());
+  // The editorial pass still records itself, as it did before this change;
+  // corroboration, not configured, adds nothing.
+  const notes = JSON.parse(String(result.draft.reviewer_notes));
+  assert.equal(notes.kept, true);
+  assert.ok(notes.editorial_enrichment, "the pass summary is written as before");
+  assert.equal("evidence_corroboration" in notes, false);
+  const line = event(lines, "evidence_corroboration");
+  assert.equal(line.fact_plan, "not_configured");
+  assert.equal(line.status, "not_run");
+});
+
+test("the corroboration line exists for a run whose draft then fails", async () => {
+  // The reason it is written before drafting: `draft_validation_failed` runs
+  // are exactly the ones someone will need to explain.
+  const lines: Array<Record<string, unknown>> = [];
+  await assert.rejects(
+    gateway({
+      lines,
+      draftError: new Error("draft_validation_failed"),
+      factPlan: { async planWithOutcome() { return { requests: [], outcome: "empty", errorCode: null }; } },
+    }).generate(unverifiedInput()),
+    /draft_validation_failed/u,
+  );
+  assert.equal(event(lines, "evidence_corroboration").fact_plan, "empty");
+  assert.equal(lines.filter((line) => line.event === "editorial_pass").length, 0);
+});
+
+test("a planner that throws is recorded as failed, not as not configured", async () => {
+  const lines: Array<Record<string, unknown>> = [];
+  const result = await gateway({
+    lines,
+    factPlan: {
+      async plan() {
+        throw new TimeoutError("OpenAI took too long");
+      },
+    },
+  }).generate(unverifiedInput());
+  const line = event(lines, "evidence_corroboration");
+  assert.equal(line.fact_plan, "failed");
+  assert.equal(line.fact_plan_error, "timeout");
+  assert.equal(line.status, "error");
+  // Configured, so the notes carry it.
+  const notes = JSON.parse(String(result.draft.reviewer_notes));
+  assert.equal(notes.evidence_corroboration.fact_plan, "failed");
+});
+
+test("a logger that throws never fails the draft", async () => {
+  const result = await gateway({
+    lines: [],
+    log: { info: () => { throw new Error("log sink is down"); } },
+    factPlan: { async planWithOutcome() { return { requests: [], outcome: "empty", errorCode: null }; } },
+  }).generate(unverifiedInput());
+  assert.ok(result.draft.body);
 });
