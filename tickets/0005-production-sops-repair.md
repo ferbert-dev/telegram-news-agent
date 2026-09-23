@@ -1,7 +1,5 @@
 # Restore production credentials and harden SOPS deployment
 
-- Notion: https://app.notion.com/p/3c3d78850eab81259131f86ca47fb076
-- Parent Epic: https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb
 - Status: In Progress
 - Priority: P0
 - Branch: `codex/p0-production-sops-repair`

@@ -5,7 +5,7 @@ NestJS application services now cover Usage, Settings, Catalog/Research,
 Operations, Editorial, Telegram control and scheduled-news one-shot
 orchestration; production composition and entrypoints remain legacy.
 
-Notion Epic: [Engineer Telegram News Agent into a modular NestJS platform](https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb)
+Notion Epic: Engineer Telegram News Agent into a modular NestJS platform
 
 ## Outcome
 

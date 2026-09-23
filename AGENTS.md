@@ -5,7 +5,7 @@ These repository instructions apply to every Codex run started inside this proje
 ## Mission and current Epic
 
 - Build and operate a reliable Telegram news service, then migrate it incrementally to typed Drizzle persistence and a modular standalone NestJS runtime.
-- Active Epic: [Engineer Telegram News Agent into a modular NestJS platform](https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb).
+- Active Epic: Engineer Telegram News Agent into a modular NestJS platform.
 - Read `docs/current-status.md`, `docs/engineering-workflow.md`, and the relevant role memory under `agents/memory/` before state-changing work.
 - Treat `docs/nestjs-drizzle-migration-blueprint.md` as the migration plan and update it when verified evidence changes.
 
