@@ -193,8 +193,9 @@ workflow, the source registry, publishing and deployment are covered in
 1. Keep scheduled runs from failing when every candidate article's page is
    blocked to extraction — in progress.
 2. Restore a second AI provider in production.
-3. After the soak period, retire the legacy runtime. Five seams still reach it,
-   so that is porting work first — [ticket 0006](tickets/0006-retire-legacy-runtime.md).
+3. After the soak period, retire the legacy runtime. Thirty legacy modules are
+   still reached from typed code, so that is porting work before it is a
+   deletion — [ticket 0006](tickets/0006-retire-legacy-runtime.md).
 
 ## License
 

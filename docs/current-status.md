@@ -59,8 +59,9 @@ deploy. The pilot's criteria and results are in
 2. Rotate the production Gemini key.
 3. Let v2.0.0 soak for at least 72 hours.
 4. Only then, on an explicit decision, retire the legacy runtime —
-   [ticket 0006](../tickets/0006-retire-legacy-runtime.md). Five seams still
-   reach legacy modules, so that is a porting job before it is a deletion.
+   [ticket 0006](../tickets/0006-retire-legacy-runtime.md). Thirty legacy
+   modules are still reached from typed code, so that is a porting job before
+   it is a deletion.
 
 ## Release boundary
 
