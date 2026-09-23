@@ -195,3 +195,8 @@ workflow, the source registry, publishing and deployment are covered in
 2. Restore a second AI provider in production.
 3. After the soak period, retire the legacy runtime. Five seams still reach it,
    so that is porting work first — [ticket 0006](tickets/0006-retire-legacy-runtime.md).
+
+## License
+
+[MIT](LICENSE) — Copyright (c) 2026 Igor Ferbert. Use it, change it, build on
+it; keep the notice.
