@@ -23,8 +23,18 @@ removing anything the NestJS runtime still reaches.
 
 ## What is not simply deletable
 
-The typed runtime still imports legacy modules through the sanctioned
-`legacy-*.gateway.ts` seams, and one typed gateway reaches shared helpers:
+**Measured 2026-09-23: thirty legacy modules are reached from typed code**, by
+about forty typed files. An earlier version of this ticket said "five seams",
+which counted the `legacy-*.gateway.ts` files rather than what they and the
+rest of the typed code actually import. The correct way to count is to resolve
+every relative `.js` import in a `.ts` file and keep only those with no `.ts`
+twin -- under NodeNext a typed import of a typed file is also written `.js`,
+which is what made the first count wrong.
+
+The most-reached are `telegram.js` (six importers), `news-settings.js` (five),
+then `ai-usage.js`, `exa-provider.js`, `feed.js`, `excluded-topic-policy.js`
+and `telegram-stats.js` with two or three each. The named gateway seams are
+only part of it:
 
 | Seam | Legacy modules it reaches |
 | --- | --- |
