@@ -86,11 +86,11 @@ Never delete completed historical tickets merely because the implementation evol
 
 ## Notion records
 
-- Hub: [Agent Ops - News Channel Project](https://app.notion.com/p/38bd78850eab810ca73de57f1fbbcc1e)
-- Tickets: [Delivery board](https://app.notion.com/p/8e0e1e80d85b4f3794e859be8c2dfeee)
-- Agent Registry: [Role contracts](https://app.notion.com/p/339d95a5ab0d4c4898a41382615870da)
-- Agent Runs: [Execution audit](https://app.notion.com/p/d9886d9543ed4a9f8d547748c80c5f7e)
-- Active Epic: [NestJS platform migration](https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb)
+- Hub: Agent Ops - News Channel Project
+- Tickets: Delivery board
+- Agent Registry: Role contracts
+- Agent Runs: Execution audit
+- Active Epic: NestJS platform migration
 
 ## Three-layer traceability
 

@@ -1,7 +1,5 @@
 # Improve article detail enrichment for RSS and Google News sources
 
-- Notion: https://app.notion.com/p/3c3d78850eab81a0a650cd6307c42081
-- Parent Epic: https://app.notion.com/p/3b7d78850eab81348bcbec541f1c23bb
 - Status: In Progress
 - Branch: `codex/article-detail-enrichment-v2`
 - Recovery commit: `8d87a35`
