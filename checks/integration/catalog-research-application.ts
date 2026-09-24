@@ -9,16 +9,23 @@ import { Pool } from "pg";
 
 import { CatalogService } from "../../src/catalog/application/catalog.service.js";
 import { CatalogApplicationModule } from "../../src/catalog/catalog-application.module.js";
+import type { CatalogPersistence } from "../../src/catalog/catalog-persistence.js";
+import { CatalogPersistenceModule } from "../../src/catalog/catalog-persistence.module.js";
+import { CATALOG_PERSISTENCE } from "../../src/catalog/catalog-persistence.tokens.js";
 import { PG_POOL } from "../../src/database/database.tokens.js";
 import { ResearchService } from "../../src/research/application/research.service.js";
 import { RunResearchUseCase } from "../../src/research/application/run-research.use-case.js";
-import type { LegacyRunResearch } from "../../src/research/legacy-research-execution.gateway.js";
-import { LegacyResearchExecutionGatewayModule } from "../../src/research/legacy-research-execution.module.js";
-import type { ResearchExecutionGateway } from "../../src/research/research-gateway.contracts.js";
+import type {
+  ResearchExecutionGateway,
+  ResearchExecutionRequest,
+  RunResearchResult,
+} from "../../src/research/research-gateway.contracts.js";
 import { RESEARCH_EXECUTION_GATEWAY } from "../../src/research/research-gateway.tokens.js";
 import type { ResearchIngestionPersistence } from "../../src/research/research-persistence.contracts.js";
+import { ResearchPersistenceModule } from "../../src/research/research-persistence.module.js";
 import { RESEARCH_INGESTION_PERSISTENCE } from "../../src/research/research-persistence.tokens.js";
 import type { UsageReportingPersistence } from "../../src/usage/usage-persistence.contracts.js";
+import { UsagePersistenceModule } from "../../src/usage/usage-persistence.module.js";
 import { USAGE_REPORTING_PERSISTENCE } from "../../src/usage/usage-persistence.tokens.js";
 
 const enabled = process.env.RUN_DATABASE_INTEGRATION === "1";
@@ -26,7 +33,7 @@ const connectionString =
   process.env.DATABASE_TEST_URL ?? process.env.DATABASE_URL;
 
 test(
-  "Catalog ports plus stateful legacy research gateway preserve PostgreSQL health, idempotency, resume, and failure behavior",
+  "Catalog ports plus a research execution gateway preserve PostgreSQL health, idempotency, resume, and failure behavior",
   { skip: !enabled || !connectionString },
   async () => {
     const pool = new Pool({ connectionString, max: 6 });
@@ -41,111 +48,161 @@ test(
     const articleIds: string[] = [];
     let activeSourceId = "";
 
-    const runResearchImpl: LegacyRunResearch = async (input) => {
-      const run = await input.repository.startSearchRun({
-        query: input.query,
-        metadata: {
-          keywords: input.keywords,
-          window_hours: input.windowHours,
-          news_settings: input.newsSettings ?? null,
-        },
-      });
-      try {
-        if (input.query.includes("failure")) throw expectedFailure;
+    /**
+     * Test-local stand-in for RESEARCH_EXECUTION_GATEWAY. It runs the same
+     * repository sequence the deleted LegacyResearchExecutionGateway used to
+     * hand to the legacy `runResearch` algorithm (start a run, look up the
+     * enabled source, record usage twice under the same provider response id,
+     * create-or-resume two article candidates, save raw content, finish or
+     * fail the run) but calls the typed persistence ports directly instead of
+     * routing through that adapter.
+     */
+    class InstrumentedResearchExecutionGateway
+      implements ResearchExecutionGateway
+    {
+      constructor(
+        private readonly catalog: Pick<
+          CatalogPersistence,
+          "listEnabledSources"
+        >,
+        private readonly research: Pick<
+          ResearchIngestionPersistence,
+          | "startSearchRun"
+          | "finishSearchRun"
+          | "failSearchRun"
+          | "createOrResumeArticleCandidate"
+          | "saveRawContent"
+        >,
+        private readonly usage: Pick<
+          UsageReportingPersistence,
+          "recordAiUsage"
+        >,
+      ) {}
 
-        const sources = await input.repository.listEnabledSources();
-        const source = sources.find((row) => row.id === activeSourceId);
-        assert.ok(source);
-        await input.repository.recordAiUsage({
-          provider: "openai",
-          providerResponseId: responseId,
-          model: "integration-model",
-          operation: "research",
-          searchRunId: run.id,
-          inputTokens: 30,
-          outputTokens: 10,
-          estimatedCostUsd: "0.00100000",
-        });
-        await input.repository.recordAiUsage({
-          provider: "openai",
-          providerResponseId: responseId,
-          model: "must-not-overwrite",
-          operation: "research-retry",
-          searchRunId: run.id,
-        });
-
-        const article = await input.repository.createOrResumeArticleCandidate({
-          source_id: source.id,
-          search_run_id: run.id,
-          canonical_url: canonicalUrl,
-          title: "Application research candidate",
-          author: "Codex",
-          published_at: "2026-08-09T08:00:00.000Z",
-          content_hash: `article-${suffix}`,
-          metadata: { integration: true },
-        });
-        assert.ok(article);
-        await input.repository.saveRawContent({
-          article_id: article.id,
-          content: "Grounded application evidence",
-          content_type: "text",
-          language_code: "en",
-          extractor: "application-integration",
-          content_hash: `raw-${suffix}`,
-          metadata: { grounded: true },
-        });
-
-        const skipped = await input.repository.createOrResumeArticleCandidate({
-          source_id: source.id,
-          search_run_id: run.id,
-          canonical_url: skippedUrl,
-          title: "Must not resume an extracted article",
-          author: null,
-          published_at: null,
-          content_hash: `skipped-${suffix}`,
-          metadata: { must_not_resume: true },
-        });
-        assert.equal(skipped, null);
-
-        await input.repository.finishSearchRun(run.id, {
-          resultCount: 1,
+      async execute(
+        request: ResearchExecutionRequest,
+      ): Promise<RunResearchResult> {
+        const input = request.input;
+        const run = await this.research.startSearchRun({
+          query: input.query,
           metadata: {
-            selected_article_id: article.id,
-            grounded: true,
+            keywords: input.keywords ?? [],
+            window_hours: input.windowHours ?? 48,
+            news_settings: input.newsSettings ?? null,
           },
         });
-        const selected = {
-          article,
-          source,
-          canonicalUrl,
-          title: article.title,
-          summary: "Grounded application evidence",
-          author: article.author,
-          publishedAt: article.published_at,
-          contentHash: article.content_hash ?? "",
-          score: 100,
-          evidenceText: "Grounded application evidence",
-        };
-        return {
-          runId: run.id,
-          selected,
-          candidates: [selected],
-          feedErrors: [],
-          extractionErrors: [],
-        };
-      } catch (error) {
-        await input.repository.failSearchRun(run.id, error);
-        throw error;
+        try {
+          if (input.query.includes("failure")) throw expectedFailure;
+
+          const sources = await this.catalog.listEnabledSources();
+          const source = sources.find((row) => row.id === activeSourceId);
+          assert.ok(source);
+          await this.usage.recordAiUsage({
+            provider: "openai",
+            providerResponseId: responseId,
+            model: "integration-model",
+            operation: "research",
+            searchRunId: run.id,
+            inputTokens: 30,
+            outputTokens: 10,
+            estimatedCostUsd: "0.00100000",
+          });
+          await this.usage.recordAiUsage({
+            provider: "openai",
+            providerResponseId: responseId,
+            model: "must-not-overwrite",
+            operation: "research-retry",
+            searchRunId: run.id,
+          });
+
+          const article = await this.research.createOrResumeArticleCandidate({
+            source_id: source.id,
+            search_run_id: run.id,
+            canonical_url: canonicalUrl,
+            title: "Application research candidate",
+            author: "Codex",
+            published_at: "2026-08-09T08:00:00.000Z",
+            content_hash: `article-${suffix}`,
+            metadata: { integration: true },
+          });
+          assert.ok(article);
+          await this.research.saveRawContent({
+            article_id: article.id,
+            content: "Grounded application evidence",
+            content_type: "text",
+            language_code: "en",
+            extractor: "application-integration",
+            content_hash: `raw-${suffix}`,
+            metadata: { grounded: true },
+          });
+
+          const skipped = await this.research.createOrResumeArticleCandidate({
+            source_id: source.id,
+            search_run_id: run.id,
+            canonical_url: skippedUrl,
+            title: "Must not resume an extracted article",
+            author: null,
+            published_at: null,
+            content_hash: `skipped-${suffix}`,
+            metadata: { must_not_resume: true },
+          });
+          assert.equal(skipped, null);
+
+          await this.research.finishSearchRun(run.id, {
+            resultCount: 1,
+            metadata: {
+              selected_article_id: article.id,
+              grounded: true,
+            },
+          });
+          const selected = {
+            article,
+            source,
+            canonicalUrl,
+            title: article.title,
+            summary: "Grounded application evidence",
+            author: article.author,
+            publishedAt: article.published_at,
+            contentHash: article.content_hash ?? "",
+            score: 100,
+            evidenceText: "Grounded application evidence",
+          };
+          return {
+            runId: run.id,
+            selected,
+            candidates: [selected],
+            feedErrors: [],
+            extractionErrors: [],
+          };
+        } catch (error) {
+          await this.research.failSearchRun(run.id, error);
+          throw error;
+        }
       }
-    };
+    }
 
     const moduleRef = await Test.createTestingModule({
       imports: [
         CatalogApplicationModule,
-        LegacyResearchExecutionGatewayModule.register({
-          discoveryProvider: { name: "instrumented-test-provider" },
-          runResearchImpl,
-        }),
+        CatalogPersistenceModule,
+        ResearchPersistenceModule,
+        UsagePersistenceModule,
+      ],
+      providers: [
+        {
+          provide: RESEARCH_EXECUTION_GATEWAY,
+          useFactory: (
+            catalog: CatalogPersistence,
+            research: ResearchIngestionPersistence,
+            usage: UsageReportingPersistence,
+          ) =>
+            new InstrumentedResearchExecutionGateway(catalog, research, usage),
+          inject: [
+            CATALOG_PERSISTENCE,
+            RESEARCH_INGESTION_PERSISTENCE,
+            USAGE_REPORTING_PERSISTENCE,
+          ],
+        },
       ],
     })
       .overrideProvider(PG_POOL)

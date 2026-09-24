@@ -12,12 +12,6 @@ const { ResearchService } = await import(
 const { RunResearchUseCase } = await import(
   "../dist/research/application/run-research.use-case.js"
 );
-const { LegacyResearchExecutionGateway } = await import(
-  "../dist/research/legacy-research-execution.gateway.js"
-);
-const { LegacyResearchExecutionGatewayModule } = await import(
-  "../dist/research/legacy-research-execution.module.js"
-);
 const { ResearchApplicationModule } = await import(
   "../dist/research/research-application.module.js"
 );
@@ -114,36 +108,6 @@ const useCase = new RunResearchUseCase(execution);
 const service = new ResearchService(persistence, usage, useCase);
 const result = await service.runResearch({ query: "science" }, abort.signal);
 assert.equal(result, executionResult);
-
-let adapterCalled = false;
-const adapter = new LegacyResearchExecutionGateway(
-  {
-    async listEnabledSources() { return []; },
-  },
-  persistence,
-  {
-    async listRecentPublishedStories() { return []; },
-  },
-  usage,
-  {
-    discoveryProvider: {},
-    async runResearchImpl(input) {
-      adapterCalled = true;
-      assert.equal(input.query, "science");
-      return executionResult;
-    },
-  },
-);
-assert.equal(
-  await adapter.execute({ input: { query: "science" } }),
-  executionResult,
-);
-assert.equal(adapterCalled, true);
-assert.equal(
-  LegacyResearchExecutionGatewayModule.register({ discoveryProvider: {} })
-    .exports.includes(tokens.RESEARCH_EXECUTION_GATEWAY),
-  true,
-);
 
 const module = ResearchApplicationModule.register({
   ai: {},
