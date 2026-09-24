@@ -340,7 +340,7 @@ jobs:
 
       - name: Verify candidate PostgreSQL credentials on Oracle
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           remote_env="$REMOTE_PROBE_ENV"
@@ -376,7 +376,7 @@ jobs:
       - name: Remove Oracle credential probe plaintext
         if: always()
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: ssh "${ORACLE_USER}@${ORACLE_HOST}" "rm -f -- '$REMOTE_PROBE_ENV'"
 
@@ -402,7 +402,7 @@ jobs:
 
       - name: Inspect production bot without changing it
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
@@ -557,7 +557,7 @@ jobs:
       # inside that window.
       - name: Record the baseline, dump, and prove the dump restores
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
@@ -670,7 +670,7 @@ jobs:
 
       - name: Inspect the integration stage
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
@@ -1003,7 +1003,7 @@ jobs:
 
       - name: Release stuck integration news jobs
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
@@ -1068,7 +1068,7 @@ jobs:
 
       - name: Enqueue a news run on the integration stage
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
@@ -1155,7 +1155,7 @@ jobs:
       # dispatched by mistake -- and production already has an empty list.
       - name: Clear the integration channel's excluded topics
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
@@ -1222,7 +1222,7 @@ jobs:
       # a generic news_job_failed has no explanation anywhere a query can reach.
       - name: Tail the integration bot's log
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           ssh "${ORACLE_USER}@${ORACLE_HOST}" 'bash -s' <<'REMOTE'
@@ -1254,7 +1254,7 @@ jobs:
 
       - name: Report host capacity
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
@@ -1439,7 +1439,7 @@ jobs:
 
       - name: Upload integration bundle
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           test -n "$ORACLE_HOST"
@@ -1490,7 +1490,7 @@ jobs:
 
       - name: Preflight the host
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           # Runs every guard and starts nothing, so a host that cannot take the
@@ -1501,7 +1501,7 @@ jobs:
       - name: Log Oracle host in to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           printf '%s' "$GHCR_TOKEN" | ssh "${ORACLE_USER}@${ORACLE_HOST}" \
@@ -1510,7 +1510,7 @@ jobs:
       - name: Deploy integration stage
         env:
           DEPLOY_IMAGE: ${{ steps.image.outputs.value }}
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           # shellcheck disable=SC2029
@@ -1520,7 +1520,7 @@ jobs:
       - name: Confirm production was untouched
         if: always()
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           # The claim this whole job rests on, checked rather than asserted --
@@ -1545,7 +1545,7 @@ jobs:
       - name: Log Oracle host out of GHCR
         if: always()
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: ssh "${ORACLE_USER}@${ORACLE_HOST}" 'docker logout ghcr.io' || true
 
@@ -1592,7 +1592,7 @@ jobs:
 
       - name: Stop the integration stage
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
@@ -1619,7 +1619,7 @@ jobs:
 
       - name: Confirm production is still healthy
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           ssh "${ORACLE_USER}@${ORACLE_HOST}" bash -s <<'REMOTE'
@@ -1832,7 +1832,7 @@ jobs:
 
       - name: Validate deployment configuration
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           test -n "$ORACLE_HOST"
@@ -1851,7 +1851,7 @@ jobs:
 
       - name: Upload deployment bundle
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           umask 077
@@ -1887,7 +1887,7 @@ jobs:
       - name: Log Oracle host in to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           printf '%s' "$GHCR_TOKEN" | ssh "${ORACLE_USER}@${ORACLE_HOST}" \
@@ -1896,7 +1896,7 @@ jobs:
       - name: Deploy immutable image
         env:
           DEPLOY_IMAGE: ${{ needs.release.outputs.image }}
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: |
           # The immutable image name is intentionally expanded on the runner.
@@ -1907,7 +1907,7 @@ jobs:
       - name: Log Oracle host out of GHCR
         if: always()
         env:
-          ORACLE_HOST: ${{ vars.ORACLE_HOST }}
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ vars.ORACLE_USER }}
         run: ssh "${ORACLE_USER}@${ORACLE_HOST}" 'docker logout ghcr.io' || true
 

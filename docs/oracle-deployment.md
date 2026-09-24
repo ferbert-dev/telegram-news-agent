@@ -45,29 +45,33 @@ documented in [`database-access.md`](database-access.md).
 
 ## GitHub production configuration
 
-Create a GitHub environment named `production`. Configure these repository or
-environment values:
+Create a GitHub environment named `production`. Every job that reaches the
+host declares it. Put everything those jobs need in the environment rather than
+at repository level, and limit its deployment branches to `main`, `release/*`,
+`codex/*` (integration-stage deploys are dispatched from feature branches) and
+`v*` tags.
 
-Variables:
+Variables (repository level):
 
-- `ORACLE_HOST`: the instance public IP or DNS name.
 - `ORACLE_USER`: the non-root SSH account, normally `ubuntu`.
 
-Secrets:
+Secrets (`production` environment):
 
+- `ORACLE_HOST`: the instance public IP or DNS name. It is a secret rather than
+  a variable so that GitHub masks it in job logs, which anyone can read while
+  the repository is public.
 - `ORACLE_SSH_PRIVATE_KEY`: a dedicated private deployment key.
 - `ORACLE_KNOWN_HOSTS`: the verified SSH host-key line for Oracle.
-- `SOPS_AGE_KEY`: the complete private `age` identity used only by the deploy
-  job to decrypt `secrets/production.env.sops`.
-- `SOPS_AGE_KEY`: the only GitHub secret that decrypts the complete encrypted
-  production environment. OpenAI, Gemini, Exa, Notion, Telegram, and PostgreSQL
-  credentials are all stored as encrypted values in
-  `secrets/production.env.sops`.
+- `SOPS_AGE_KEY`: the complete private `age` identity, and the only secret the
+  workflow uses to decrypt the production environment. OpenAI, Gemini, Exa,
+  Notion, Telegram and PostgreSQL credentials are encrypted values in
+  `secrets/production.env.sops`, and no workflow reads them from GitHub.
 
-Existing `OPENAI_API_KEY`, `EXA_API_KEY`, and `PRODUCTION_ENV_FILE` GitHub
-secrets are retained as rollback-only recovery material during the SOPS
-cutover. The active deployment workflow does not merge them into the decrypted
-environment, so they cannot silently override the reviewed SOPS source.
+Older setups also carry `PRODUCTION_ENV_FILE`, `OPENAI_API_KEY` and
+`EXA_API_KEY` GitHub secrets from before the SOPS cutover, and
+`ORACLE_SSH_PRIVATE_KEY` / `ORACLE_KNOWN_HOSTS` at repository level. No workflow
+reads the first three; delete them, and move the SSH pair into the
+environment, before the repository is public.
 
 Before deploying a changed encrypted environment, dispatch `CI and deploy` on
 the candidate branch with operation `verify-production-db`. The read-only job
