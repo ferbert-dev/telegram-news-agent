@@ -45,29 +45,26 @@ documented in [`database-access.md`](database-access.md).
 
 ## GitHub production configuration
 
-Create a GitHub environment named `production`. Configure these repository or
-environment values:
+Create a GitHub environment named `production`. Every job that reaches the
+host runs in it, so everything it needs lives there, not at repository level.
+Limit the environment's deployment branches to `main`, `release/*`, `codex/*`
+(integration-stage deploys are dispatched from feature branches) and `v*` tags.
 
-Variables:
+Variables (repository level):
 
-- `ORACLE_HOST`: the instance public IP or DNS name.
 - `ORACLE_USER`: the non-root SSH account, normally `ubuntu`.
 
-Secrets:
+Secrets (`production` environment):
 
+- `ORACLE_HOST`: the instance public IP or DNS name. It is a secret rather than
+  a variable so that GitHub masks it in job logs, which anyone can read once
+  the repository is public.
 - `ORACLE_SSH_PRIVATE_KEY`: a dedicated private deployment key.
 - `ORACLE_KNOWN_HOSTS`: the verified SSH host-key line for Oracle.
-- `SOPS_AGE_KEY`: the complete private `age` identity used only by the deploy
-  job to decrypt `secrets/production.env.sops`.
-- `SOPS_AGE_KEY`: the only GitHub secret that decrypts the complete encrypted
-  production environment. OpenAI, Gemini, Exa, Notion, Telegram, and PostgreSQL
-  credentials are all stored as encrypted values in
-  `secrets/production.env.sops`.
-
-Existing `OPENAI_API_KEY`, `EXA_API_KEY`, and `PRODUCTION_ENV_FILE` GitHub
-secrets are retained as rollback-only recovery material during the SOPS
-cutover. The active deployment workflow does not merge them into the decrypted
-environment, so they cannot silently override the reviewed SOPS source.
+- `SOPS_AGE_KEY`: the complete private `age` identity, and the only GitHub
+  secret that decrypts the production environment. OpenAI, Gemini, Exa,
+  Notion, Telegram and PostgreSQL credentials are all encrypted values in
+  `secrets/production.env.sops`; none of them is a GitHub secret.
 
 Before deploying a changed encrypted environment, dispatch `CI and deploy` on
 the candidate branch with operation `verify-production-db`. The read-only job
