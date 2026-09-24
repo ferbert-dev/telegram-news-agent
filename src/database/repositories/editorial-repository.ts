@@ -32,7 +32,7 @@ import {
   type PublishedPostDatabaseRow,
   type PublicationPolicyBlockDatabaseRow,
 } from "../../editorial/editorial-row-mappers.js";
-import { assertTransition } from "../../pipeline-states.js";
+import { assertTransition } from "../../operations/domain/pipeline-states.js";
 import { DRIZZLE_DB, PG_POOL } from "../database.tokens.js";
 import type { DrizzleDatabase } from "../drizzle-client.js";
 import { drafts, publishedPosts } from "../schema/editorial.js";

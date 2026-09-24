@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { BlockList, isIP } from "node:net";
 import { Inject, Injectable, Optional } from "@nestjs/common";
 import * as cheerio from "cheerio";
-import { LANGUAGE_OPTIONS, TOPIC_PRESETS } from "../../news-settings.js";
+import { LANGUAGE_OPTIONS, TOPIC_PRESETS } from "../../settings/domain/news-settings.js";
 import type { RecentPublishedStoryRow } from "../../story-deduplication/story-deduplication.contracts.js";
 import type { ArticleEvidence, CurationCandidate, CurationResult, DnsAddress, DnsLookupPort, FactEvidence, FactSearchOutcome, FactSearchPort, FetchOptions, HttpPort, JsonValue, NewsSettings, RandomPort, RetryOptions, SleepPort, StoryCandidate, StoryDecision, StructuredGenerationPort } from "./evidence-curation.contracts.js";
 import type { StoryDeduplicationPersistence } from "../../story-deduplication/story-deduplication.contracts.js";

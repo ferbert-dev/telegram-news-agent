@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import type { Pool } from "pg";
 
-import { assertTransition } from "../../pipeline-states.js";
+import { assertTransition } from "../../operations/domain/pipeline-states.js";
 import type {
   ArticleRow,
   ArticleStatus,
