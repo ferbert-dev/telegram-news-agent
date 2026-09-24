@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { mock } from "node:test";
 
 /**
  * Legacy against typed, on shared fixtures.
@@ -16,6 +16,18 @@ import test from "node:test";
  * scheduled run defers for quiet hours, or which pipeline-state transitions
  * are legal -- CLAUDE.md names quiet hours and idempotent publication among
  * the behaviours that must be preserved across the port.
+ *
+ * An independent review of the first version of this file ran eleven mutants
+ * against the twins; only one (an error-message change) turned this suite
+ * red. The rest survived because the fixtures compared only the *returned
+ * value*, never (a) whether the result was frozen the way legacy freezes it,
+ * (b) the exact request object a classifier receives, or (c) several
+ * coercion/precedence rules that only a specific input shape exercises --
+ * empty strings, a null camelCase field next to a present snake_case one,
+ * numeric-string columns (as a bigint row arrives over the wire), Date/number
+ * timestamps, and a classifier whose *returned value* is not a plain object.
+ * Every fixture and helper added below exists to close one of those eleven
+ * gaps; see the comment next to each for which mutant it catches.
  */
 
 import * as legacyExcludedTopics from "../../src/excluded-topics.js";
@@ -59,8 +71,48 @@ function assertSame(name: string, legacy: Attempt, typed: Attempt): void {
   assert.deepEqual(typed, legacy, name);
 }
 
+/**
+ * A deep, order-independent snapshot of which nodes of a value are frozen.
+ *
+ * `assert.deepEqual`/`deepStrictEqual` compare enumerable own properties and
+ * never look at `Object.isFrozen` -- two objects with identical fields but
+ * different mutability compare equal. Legacy freezes the top-level result of
+ * `normalizeNewsSettings` and, individually, its `topicCodes`/`customTopics`/
+ * `excludedTopicCodes` arrays (`src/news-settings.js` around the final
+ * `Object.freeze({...})`), plus every exported constant object down to its
+ * nested fields (`Object.freeze` on `LANGUAGE_OPTIONS`, each entry inside it,
+ * `TOPIC_PRESETS`, `EXCLUDED_TOPIC_TAXONOMY`, etc.). It deliberately does NOT
+ * freeze `newsSettingsSnapshot`'s or `buildSearchPlan`'s return values -- both
+ * build plain object/array literals. This walks a value recursively and
+ * records `Object.isFrozen` at every array/object node so a twin that drops a
+ * freeze (or adds one legacy doesn't have) shows up as a shape difference.
+ */
+function frozenShape(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return { frozen: Object.isFrozen(value), items: value.map(frozenShape) };
+  }
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const fields = Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map((key) => [key, frozenShape(record[key])] as const),
+    );
+    return { frozen: Object.isFrozen(value), fields };
+  }
+  return { leaf: value };
+}
+
+function assertFrozenParity(name: string, legacyValue: unknown, typedValue: unknown): void {
+  assert.deepEqual(
+    frozenShape(typedValue),
+    frozenShape(legacyValue),
+    `${name}: frozen-ness must match, deeply, including nested arrays and objects`,
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Exported constants -- every one, byte for byte.
+// Exported constants -- every one, byte for byte, and frozen exactly alike.
 // ---------------------------------------------------------------------------
 
 test("every exported constant matches between legacy and typed news-settings", () => {
@@ -99,6 +151,36 @@ test("every exported constant matches between legacy and typed quiet-hours", () 
   assert.equal(typedQuietHours.QUIET_HOURS_LABEL, legacyQuietHours.QUIET_HOURS_LABEL);
 });
 
+test("every exported constant has matching frozen-ness, deeply (mutant: drop a nested Object.freeze)", () => {
+  assertFrozenParity("LANGUAGE_OPTIONS", legacyNewsSettings.LANGUAGE_OPTIONS, typedNewsSettings.LANGUAGE_OPTIONS);
+  assertFrozenParity("TOPIC_PRESETS", legacyNewsSettings.TOPIC_PRESETS, typedNewsSettings.TOPIC_PRESETS);
+  assertFrozenParity(
+    "DEFAULT_TOPIC_CODES",
+    legacyNewsSettings.DEFAULT_TOPIC_CODES,
+    typedNewsSettings.DEFAULT_TOPIC_CODES,
+  );
+  assertFrozenParity(
+    "SCHEDULE_INTERVAL_MINUTES",
+    legacyNewsSettings.SCHEDULE_INTERVAL_MINUTES,
+    typedNewsSettings.SCHEDULE_INTERVAL_MINUTES,
+  );
+  assertFrozenParity(
+    "EXCLUDED_TOPIC_TAXONOMY",
+    legacyExcludedTopics.EXCLUDED_TOPIC_TAXONOMY,
+    typedExcludedTopics.EXCLUDED_TOPIC_TAXONOMY,
+  );
+  assertFrozenParity(
+    "DEFAULT_EXCLUDED_TOPIC_CODES",
+    legacyExcludedTopics.DEFAULT_EXCLUDED_TOPIC_CODES,
+    typedExcludedTopics.DEFAULT_EXCLUDED_TOPIC_CODES,
+  );
+  assertFrozenParity(
+    "EXCLUDED_TOPIC_RELATIONS",
+    legacyExcludedTopics.EXCLUDED_TOPIC_RELATIONS,
+    typedExcludedTopics.EXCLUDED_TOPIC_RELATIONS,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // normalizeNewsSettings -- undefined/empty/partial/invalid/full/edge rows.
 // ---------------------------------------------------------------------------
@@ -118,6 +200,13 @@ const NEWS_SETTINGS_ROWS: Array<[string, unknown]> = [
   ["invalid languageCode", { languageCode: "fr" }],
   ["invalid topicCodes: not an array", { topicCodes: "ai" }],
   ["invalid topicCodes: unknown code", { topicCodes: ["not-a-real-topic"] }],
+  // Mutant: remove `.trim()` from the topicCodes map. Without it, "  ai  "
+  // stays "  ai  " (not a known preset) and this throws "Unknown topic code"
+  // on the mutated side while legacy trims it down to "ai" and succeeds.
+  [
+    "topicCodes are trimmed and case-folded before dedup and validation",
+    { topicCodes: ["  ai  ", "AI", " Ai"] },
+  ],
   ["invalid customTopics: not an array", { customTopics: "one topic" }],
   ["invalid customTopics: too short", { customTopics: ["a"] }],
   ["invalid customTopics: too long", { customTopics: ["x".repeat(81)] }],
@@ -151,6 +240,67 @@ const NEWS_SETTINGS_ROWS: Array<[string, unknown]> = [
   ["valid nextRunAt", { nextRunAt: "2026-01-15T10:00:00.000Z" }],
   ["invalid channelId type", { channelId: { nested: true } }],
   ["invalid updatedBy type", { updatedBy: [] }],
+  // Mutant: drop `|| value === ""` from normalizeNullableId (~news-settings.ts
+  // line 146). An empty string is a valid `string`, so without that clause
+  // the mutated twin would return "" instead of coercing to null.
+  [
+    "empty strings coerce to null via normalizeNullableId (channelId, reviewChatId, updatedBy)",
+    { channelId: "", reviewChatId: "", updatedBy: "" },
+  ],
+  // Mutant: drop `|| intervalValue === ""` from the scheduleIntervalMinutes
+  // branch (~line 230). Number("") is 0, which is not one of the allowed
+  // intervals, so a stripped clause would throw instead of yielding null.
+  ["empty string scheduleIntervalMinutes coerces to null", { scheduleIntervalMinutes: "" }],
+  // Mutant: drop `&& nextRunValue !== ""` from the nextRunAt branch (~line
+  // 266). `new Date("")` is Invalid Date, so a stripped clause would throw
+  // "nextRunAt must be a valid timestamp" instead of yielding null.
+  ["empty string nextRunAt coerces to null", { nextRunAt: "" }],
+  // Mutant: change `row[camelName] !== undefined` to something that also
+  // treats an explicit `null` as absent (e.g. `!= null`). Legacy's
+  // `firstDefined` only falls through to the snake_case key when the
+  // camelCase key is literally `undefined` -- a present `null` wins and is
+  // NOT overridden by a present snake_case value.
+  [
+    "explicit null channelId wins over a present telegram_channel_id",
+    { channelId: null, telegram_channel_id: "@should-not-be-used" },
+  ],
+  [
+    "explicit null reviewChatId wins over a present review_chat_id",
+    { reviewChatId: null, review_chat_id: "should-not-be-used" },
+  ],
+  [
+    "explicit null updatedBy wins over a present updated_by",
+    { updatedBy: null, updated_by: "should-not-be-used" },
+  ],
+  [
+    "explicit null scheduleIntervalMinutes wins over a present schedule_interval_minutes",
+    { scheduleIntervalMinutes: null, schedule_interval_minutes: 180 },
+  ],
+  [
+    "explicit null nextRunAt wins over a present next_run_at",
+    { nextRunAt: null, next_run_at: "2026-01-01T00:00:00.000Z" },
+  ],
+  [
+    "explicit null languageCode wins over a present language_code, and null still fails validation",
+    { languageCode: null, language_code: "uk" },
+  ],
+  [
+    "explicit null approvalPolicy wins over a present approval_policy, and null still fails validation",
+    { approvalPolicy: null, approval_policy: "automatic" },
+  ],
+  [
+    "explicit null quietHoursEnabled wins over a present quiet_hours_enabled, and null still fails validation",
+    { quietHoursEnabled: null, quiet_hours_enabled: true },
+  ],
+  // Bigint-typed PostgreSQL columns (schedule_interval_minutes, version)
+  // arrive over `pg` as strings; Number(...) must still coerce them.
+  ["numeric-string version, as a bigint row column would arrive", { version: "5" }],
+  [
+    "numeric-string scheduleIntervalMinutes, as a bigint row column would arrive",
+    { scheduleIntervalMinutes: "360" },
+  ],
+  ["nextRunAt as a Date instance", { nextRunAt: new Date("2026-05-01T06:00:00.000Z") }],
+  ["nextRunAt as an epoch-millisecond number", { nextRunAt: 1_777_000_000_000 }],
   [
     "full valid row, camelCase",
     {
@@ -195,6 +345,26 @@ test("normalizeNewsSettings matches between legacy and typed across every fixtur
   }
 });
 
+test("normalizeNewsSettings freezes exactly what legacy freezes, deeply (mutant: drop the result or array Object.freeze)", () => {
+  const fixtures: Array<[string, unknown]> = [
+    ["empty row", {}],
+    [
+      "full valid row",
+      {
+        channelId: "@channel",
+        topicCodes: ["ai", "science"],
+        customTopics: ["Deep sea life"],
+        excludedTopicCodes: ["war_conflict"],
+      },
+    ],
+  ];
+  for (const [name, row] of fixtures) {
+    const legacy = legacyNewsSettings.normalizeNewsSettings(row as never);
+    const typed = typedNewsSettings.normalizeNewsSettings(row as never);
+    assertFrozenParity(`normalizeNewsSettings: ${name}`, legacy, typed);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // newsSettingsSnapshot
 // ---------------------------------------------------------------------------
@@ -227,6 +397,16 @@ test("newsSettingsSnapshot matches between legacy and typed across every fixture
     const typed = attempt(() => typedNewsSettings.newsSettingsSnapshot(row as never));
     assertSame(`newsSettingsSnapshot: ${name}`, legacy, typed);
   }
+});
+
+test("newsSettingsSnapshot and buildSearchPlan are unfrozen on both sides (only normalizeNewsSettings freezes)", () => {
+  const snapshotLegacy = legacyNewsSettings.newsSettingsSnapshot({} as never);
+  const snapshotTyped = typedNewsSettings.newsSettingsSnapshot({} as never);
+  assertFrozenParity("newsSettingsSnapshot({})", snapshotLegacy, snapshotTyped);
+
+  const planLegacy = legacyNewsSettings.buildSearchPlan({} as never);
+  const planTyped = typedNewsSettings.buildSearchPlan({} as never);
+  assertFrozenParity("buildSearchPlan({})", planLegacy, planTyped);
 });
 
 // ---------------------------------------------------------------------------
@@ -311,11 +491,64 @@ test("normalizeExcludedTopicCodes matches between legacy and typed across every 
 
 const ARTICLE = Object.freeze({ id: "article-1", title: "Test article" });
 
+type ClassifyBehavior =
+  | "none"
+  | "returns"
+  | "returnsNull"
+  | "throws"
+  | "rejects"
+  | "functionWithAssessments";
+
 type EvaluateScenario = {
   name: string;
   excludedTopicCodes?: unknown;
-  classify?: (request: unknown) => unknown;
+  classify?: ClassifyBehavior;
+  returns?: unknown;
 };
+
+/**
+ * Builds a fresh classifier function from a declarative scenario, so legacy
+ * and typed each get their OWN function instance to wrap with a call-capturing
+ * spy -- sharing one instance/spy across both sides would only prove the
+ * function object is the same, not that both callers invoke it identically.
+ */
+function buildClassifier(scenario: EvaluateScenario): ((request: unknown) => unknown) | undefined {
+  switch (scenario.classify) {
+    case undefined:
+    case "none":
+      return undefined;
+    case "returns":
+      return () => scenario.returns;
+    case "returnsNull":
+      // Mutant: legacy's guard is `!value || !Array.isArray(value.assessments)`.
+      // `!null` is true, so this already falls back to uncertain on both
+      // sides -- kept as an explicit fixture per the review request rather
+      // than assumed.
+      return () => null;
+    case "throws":
+      return () => {
+        throw new Error("provider unavailable");
+      };
+    case "rejects":
+      return () => Promise.reject(new Error("provider rejected"));
+    case "functionWithAssessments": {
+      // Mutant: the twin's `normalizeAssessments` guard used to be
+      // `typeof value === "object"`, which excludes functions. Legacy's
+      // actual guard, `!value || !Array.isArray(value.assessments)`, is
+      // truthy for a function and reads `.assessments` straight off it --
+      // JavaScript lets a function carry arbitrary properties. Returning a
+      // function value here (not throwing it, not calling it) is exactly
+      // that case.
+      const resultFn = function classifierResult() {
+        throw new Error("this function is a data value, not meant to be called");
+      };
+      (resultFn as unknown as { assessments: unknown }).assessments = [
+        { topicCode: "war_conflict", relation: "main_subject" },
+      ];
+      return () => resultFn;
+    }
+  }
+}
 
 const EVALUATE_SCENARIOS: EvaluateScenario[] = [
   { name: "no classifier: falls back to uncertain for every topic" },
@@ -325,52 +558,103 @@ const EVALUATE_SCENARIOS: EvaluateScenario[] = [
   },
   {
     name: "classifier returns a structurally valid, fully unrelated assessment",
-    classify: () => ({
-      assessments: [{ topicCode: "war_conflict", relation: "unrelated" }],
-    }),
+    classify: "returns",
+    returns: { assessments: [{ topicCode: "war_conflict", relation: "unrelated" }] },
   },
   {
     name: "classifier returns a structurally valid main_subject assessment",
-    classify: () => ({
-      assessments: [{ topicCode: "war_conflict", relation: "main_subject" }],
-    }),
+    classify: "returns",
+    returns: { assessments: [{ topicCode: "war_conflict", relation: "main_subject" }] },
   },
   {
     name: "classifier response is missing an assessment: falls back to uncertain",
-    classify: () => ({ assessments: [] }),
+    classify: "returns",
+    returns: { assessments: [] },
   },
   {
     name: "classifier response has an unknown relation: falls back to uncertain",
-    classify: () => ({
-      assessments: [{ topicCode: "war_conflict", relation: "not_a_real_relation" }],
-    }),
+    classify: "returns",
+    returns: { assessments: [{ topicCode: "war_conflict", relation: "not_a_real_relation" }] },
   },
   {
     name: "classifier response is not an object with assessments: falls back to uncertain",
-    classify: () => ({ notAssessments: true }),
+    classify: "returns",
+    returns: { notAssessments: true },
   },
   {
-    name: "classifier throws: fails closed to uncertain",
-    classify: () => {
-      throw new Error("provider unavailable");
-    },
+    // Mutant: remove `.trim().toLowerCase()` from either the assessment's
+    // topicCode (canonicalCode) or relation. Whitespace/case here must be
+    // normalized away for the assessment to remain structurally valid and
+    // resolve to "main_subject" -- a stripped normalization leaves it
+    // structurally invalid, which falls back to "uncertain" instead.
+    name: "classifier response has whitespace/mixed-case topicCode and relation that must be trimmed and lowercased",
+    classify: "returns",
+    returns: { assessments: [{ topicCode: "  War_Conflict  ", relation: "  Main_Subject  " }] },
+  },
+  {
+    name: "classifier throws synchronously: fails closed to uncertain",
+    classify: "throws",
+  },
+  {
+    name: "classifier returns a rejected promise: fails closed to uncertain",
+    classify: "rejects",
+  },
+  {
+    name: "classifier returns null: falls back to uncertain",
+    classify: "returnsNull",
+  },
+  {
+    name: "classifier result is a function carrying .assessments: read through it, not typeof-gated",
+    classify: "functionWithAssessments",
   },
 ];
 
-test("evaluateExcludedTopics matches between legacy and typed across every fixture", async () => {
+test("evaluateExcludedTopics matches between legacy and typed across every fixture, including the exact classifier request each side sends", async () => {
   for (const scenario of EVALUATE_SCENARIOS) {
-    const input = {
-      article: ARTICLE,
-      excludedTopicCodes: scenario.excludedTopicCodes,
-      classify: scenario.classify,
-    };
+    const legacyBehavior = buildClassifier(scenario);
+    const typedBehavior = buildClassifier(scenario);
+    const legacyCalls: unknown[] = [];
+    const typedCalls: unknown[] = [];
+
+    const legacyClassify = legacyBehavior
+      ? (request: unknown) => {
+          legacyCalls.push(request);
+          return legacyBehavior(request);
+        }
+      : undefined;
+    const typedClassify = typedBehavior
+      ? (request: unknown) => {
+          typedCalls.push(request);
+          return typedBehavior(request);
+        }
+      : undefined;
+
     const legacy = await attemptAsync(() =>
-      legacyExcludedTopics.evaluateExcludedTopics(input as never),
+      legacyExcludedTopics.evaluateExcludedTopics({
+        article: ARTICLE,
+        excludedTopicCodes: scenario.excludedTopicCodes,
+        classify: legacyClassify,
+      } as never),
     );
     const typed = await attemptAsync(() =>
-      typedExcludedTopics.evaluateExcludedTopics(input as never),
+      typedExcludedTopics.evaluateExcludedTopics({
+        article: ARTICLE,
+        excludedTopicCodes: scenario.excludedTopicCodes,
+        classify: typedClassify,
+      } as never),
     );
+
     assertSame(`evaluateExcludedTopics: ${scenario.name}`, legacy, typed);
+    // Not just the result: the request (article, topicCodes, taxonomy,
+    // relations) handed to the classifier must be identical too. A twin that
+    // e.g. forgot to clone `topicCodes` before mutating it, or built taxonomy
+    // from an unsorted iteration, would still often produce the same final
+    // *result* here while handing the classifier a different request.
+    assert.deepEqual(
+      typedCalls,
+      legacyCalls,
+      `evaluateExcludedTopics: ${scenario.name} -- the classifier must receive an identical request on both sides`,
+    );
   }
 });
 
@@ -436,6 +720,44 @@ test("isQuietHoursAt matches between legacy and typed for invalid input", () => 
   const legacy = attempt(() => legacyQuietHours.isQuietHoursAt("not-a-timestamp" as never));
   const typed = attempt(() => typedQuietHours.isQuietHoursAt("not-a-timestamp" as never));
   assertSame("isQuietHoursAt: invalid timestamp", legacy, typed);
+});
+
+test("isQuietHoursAt matches between legacy and typed for explicit string and number timestamps", () => {
+  const insideIso = "2026-06-15T23:30:00.000Z"; // 01:30 Madrid (CEST), inside quiet hours
+  const outsideIso = "2026-06-15T12:00:00.000Z"; // 14:00 Madrid (CEST), outside quiet hours
+  const fixtures: Array<[string, string | number]> = [
+    ["ISO string inside quiet hours", insideIso],
+    ["ISO string outside quiet hours", outsideIso],
+    ["epoch-millisecond number inside quiet hours", Date.parse(insideIso)],
+    ["epoch-millisecond number outside quiet hours", Date.parse(outsideIso)],
+  ];
+  for (const [name, value] of fixtures) {
+    const legacy = attempt(() => legacyQuietHours.isQuietHoursAt(value as never));
+    const typed = attempt(() => typedQuietHours.isQuietHoursAt(value as never));
+    assertSame(`isQuietHoursAt: ${name}`, legacy, typed);
+  }
+});
+
+test("isQuietHoursAt matches between legacy and typed with no argument, under a frozen clock", () => {
+  // Both sides default their parameter to `new Date()`, evaluated at call
+  // time -- not injectable as a plain argument. node:test's built-in timer
+  // mock freezes what a zero-argument `new Date()` returns without touching
+  // `new Date(arg)` (which every other fixture in this file relies on), so
+  // this is scoped tightly and always reset, even on failure.
+  const fixtures: Array<[string, string]> = [
+    ["frozen clock inside quiet hours", "2026-06-15T23:30:00.000Z"],
+    ["frozen clock outside quiet hours", "2026-06-15T12:00:00.000Z"],
+  ];
+  for (const [name, iso] of fixtures) {
+    mock.timers.enable({ apis: ["Date"], now: Date.parse(iso) });
+    try {
+      const legacy = attempt(() => legacyQuietHours.isQuietHoursAt());
+      const typed = attempt(() => typedQuietHours.isQuietHoursAt());
+      assertSame(`isQuietHoursAt: no argument, ${name}`, legacy, typed);
+    } finally {
+      mock.timers.reset();
+    }
+  }
 });
 
 test("shouldDeferScheduledNews matches between legacy and typed at every boundary time, on both 2026 DST transition days", () => {

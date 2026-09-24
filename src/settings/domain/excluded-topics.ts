@@ -84,13 +84,17 @@ function normalizeAssessments(
   value: unknown,
   topicCodes: string[],
 ): ExcludedTopicAssessment[] {
-  const assessments =
-    value && typeof value === "object" && Array.isArray((value as { assessments?: unknown }).assessments)
-      ? ((value as { assessments: unknown[] }).assessments)
-      : null;
-  if (!assessments) {
+  // Line-for-line with the legacy `!value || !Array.isArray(value.assessments)`
+  // guard: a plain type assertion, not a `typeof value === "object"` check.
+  // The legacy guard is reachable by anything JavaScript lets carry an
+  // `.assessments` property -- including a function -- and narrowing with
+  // `typeof === "object"` would silently exclude that case and fail closed
+  // to `uncertain` where legacy reads the property and proceeds normally.
+  const candidate = value as { assessments?: unknown } | null | undefined;
+  if (!candidate || !Array.isArray(candidate.assessments)) {
     return topicCodes.map(uncertain);
   }
+  const assessments = candidate.assessments;
   const normalized = assessments.map((assessment) => {
     const candidate = assessment as
       | { topicCode?: unknown; relation?: unknown }
