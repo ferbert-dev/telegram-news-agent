@@ -4,8 +4,8 @@ import type { EditorialWorkflowApplicationPort } from "../../editorial/editorial
 import type { EditorialPersistence } from "../../editorial/editorial-persistence.contracts.js";
 import { EDITORIAL_PERSISTENCE } from "../../editorial/editorial-persistence.tokens.js";
 import type { PipelineLeaseApplicationPort } from "../../operations/operations-application.contracts.js";
-import { newsSettingsSnapshot, normalizeNewsSettings } from "../../news-settings.js";
-import { shouldDeferScheduledNews } from "../../quiet-hours.js";
+import { newsSettingsSnapshot, normalizeNewsSettings } from "../../settings/domain/news-settings.js";
+import { shouldDeferScheduledNews } from "../domain/quiet-hours.js";
 import type { TelegramReviewSessionsPersistence } from "../../telegram/telegram-persistence.contracts.js";
 import { TELEGRAM_REVIEW_SESSIONS_PERSISTENCE } from "../../telegram/telegram-persistence.tokens.js";
 import type {

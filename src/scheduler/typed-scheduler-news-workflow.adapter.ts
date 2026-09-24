@@ -1,4 +1,4 @@
-import { buildSearchPlan } from "../news-settings.js";
+import { buildSearchPlan } from "../settings/domain/news-settings.js";
 
 import type {
   SchedulerNewsWorkflowApplicationPort,

@@ -13,7 +13,7 @@ import {
   evaluateExcludedTopics,
   EXCLUDED_TOPIC_RELATIONS,
   normalizeExcludedTopicCodes,
-} from "../excluded-topics.js";
+} from "../settings/domain/excluded-topics.js";
 import type { RecordAiUsageInput } from "../usage/usage-persistence.contracts.js";
 
 const SAFE_IDENTIFIER = /^[A-Za-z0-9._:/-]{1,100}$/;
