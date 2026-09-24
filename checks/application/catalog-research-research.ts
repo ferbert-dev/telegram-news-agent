@@ -6,15 +6,8 @@ import test from "node:test";
 import { SELF_DECLARED_DEPS_METADATA } from "@nestjs/common/constants.js";
 
 import type { CatalogPersistence } from "../../src/catalog/catalog-persistence.js";
-import { CatalogPersistenceModule } from "../../src/catalog/catalog-persistence.module.js";
-import { CATALOG_PERSISTENCE } from "../../src/catalog/catalog-persistence.tokens.js";
 import { ResearchService } from "../../src/research/application/research.service.js";
 import { RunResearchUseCase } from "../../src/research/application/run-research.use-case.js";
-import {
-  LegacyResearchExecutionGateway,
-  type LegacyRunResearchInput,
-} from "../../src/research/legacy-research-execution.gateway.js";
-import { LegacyResearchExecutionGatewayModule } from "../../src/research/legacy-research-execution.module.js";
 import { ResearchApplicationModule } from "../../src/research/research-application.module.js";
 import type {
   ResearchAiGateway,
@@ -36,10 +29,7 @@ import type {
   SearchRunRow,
 } from "../../src/research/research-persistence.contracts.js";
 import { RESEARCH_INGESTION_PERSISTENCE } from "../../src/research/research-persistence.tokens.js";
-import { ResearchPersistenceModule } from "../../src/research/research-persistence.module.js";
 import type { StoryDeduplicationPersistence } from "../../src/story-deduplication/story-deduplication.contracts.js";
-import { StoryDeduplicationPersistenceModule } from "../../src/story-deduplication/story-deduplication-persistence.module.js";
-import { STORY_DEDUPLICATION_PERSISTENCE } from "../../src/story-deduplication/story-deduplication.tokens.js";
 import type {
   AiUsageEventRow,
   RecordAiUsageInput,
@@ -225,148 +215,6 @@ test("RunResearchUseCase preserves gateway error identity", async () => {
     useCase.execute({ query: "science" }),
     (error) => error === failure,
   );
-});
-
-test("LegacyResearchExecutionGateway exposes every required narrow effect and returns the exact legacy result", async () => {
-  const ports = fixturePorts();
-  const provider = { searchNews: async () => ({ items: [] }) };
-  const fixedNow = new Date("2026-08-22T08:00:00.000Z");
-  let captured: LegacyRunResearchInput | undefined;
-  const gateway = new LegacyResearchExecutionGateway(
-    ports.catalog,
-    ports.research,
-    ports.story,
-    ports.usage,
-    {
-      discoveryProvider: provider,
-      now: () => fixedNow,
-      runResearchImpl: async (input) => {
-        captured = input;
-        return RESULT;
-      },
-    },
-  );
-
-  const result = await gateway.execute({
-    input: {
-      query: "science",
-      keywords: ["space"],
-      windowHours: 12,
-      newsSettings: { topicCodes: ["science"] },
-    },
-  });
-
-  assert.equal(result, RESULT);
-  assert.ok(captured);
-  assert.equal(captured.discoveryProvider, provider);
-  assert.equal(captured.now, fixedNow);
-  assert.equal(captured.query, "science");
-  assert.deepEqual(captured.keywords, ["space"]);
-  assert.equal(captured.windowHours, 12);
-  assert.deepEqual(captured.newsSettings, { topicCodes: ["science"] });
-  assert.deepEqual(Object.keys(captured.repository).sort(), [
-    "claimSourceDiscovery",
-    "completeSourceDiscovery",
-    "createOrResumeArticleCandidate",
-    "failSearchRun",
-    "finishSearchRun",
-    "listEnabledSources",
-    "listRecentPublishedStories",
-    "markSourceChecked",
-    "markSourceFetchFailure",
-    "markSourceFetchSuccess",
-    "recordAiUsage",
-    "recordStoryDedupDecision",
-    "saveRawContent",
-    "startSearchRun",
-    "transitionArticle",
-    "upsertDiscoveredSource",
-  ]);
-  assert.equal(await captured.repository.startSearchRun({ query: "x" }), RUN);
-  assert.equal(await captured.repository.createOrResumeArticleCandidate({
-    source_id: ARTICLE.source_id,
-    search_run_id: RUN.id,
-    canonical_url: ARTICLE.canonical_url,
-    title: ARTICLE.title,
-    author: null,
-    published_at: null,
-    content_hash: ARTICLE.content_hash,
-  }), ARTICLE);
-  assert.equal(await captured.repository.saveRawContent({
-    article_id: ARTICLE.id,
-    content: RAW.content,
-    content_hash: RAW.content_hash,
-  }), RAW);
-  assert.equal(await captured.repository.claimSourceDiscovery("topic"), true);
-  assert.equal(await captured.repository.recordAiUsage({
-    provider: "openai",
-    providerResponseId: "response-1",
-    model: "model",
-    operation: "research",
-  }), USAGE);
-});
-
-test("LegacyResearchExecutionGateway rejects a pre-aborted signal before any legacy effect", async () => {
-  const ports = fixturePorts();
-  const controller = new AbortController();
-  const reason = new Error("cancelled before start");
-  controller.abort(reason);
-  let called = false;
-  const gateway = new LegacyResearchExecutionGateway(
-    ports.catalog,
-    ports.research,
-    ports.story,
-    ports.usage,
-    {
-      discoveryProvider: {},
-      runResearchImpl: async () => { called = true; return RESULT; },
-    },
-  );
-
-  await assert.rejects(
-    gateway.execute({ input: { query: "science" } }, controller.signal),
-    (error) => error === reason,
-  );
-  assert.equal(called, false);
-});
-
-test("LegacyResearchExecutionGatewayModule binds the exact Symbol through its injected factory", async () => {
-  const ports = fixturePorts();
-  let called = false;
-  const module = LegacyResearchExecutionGatewayModule.register({
-    discoveryProvider: {},
-    runResearchImpl: async () => { called = true; return RESULT; },
-  });
-  const provider = (module.providers ?? [])[0] as {
-    provide: symbol;
-    inject: symbol[];
-    useFactory: (...args: unknown[]) => ResearchExecutionGateway;
-  };
-  assert.equal(provider.provide, RESEARCH_EXECUTION_GATEWAY);
-  assert.deepEqual(provider.inject, [
-    CATALOG_PERSISTENCE,
-    RESEARCH_INGESTION_PERSISTENCE,
-    STORY_DEDUPLICATION_PERSISTENCE,
-    USAGE_REPORTING_PERSISTENCE,
-  ]);
-  const gateway = provider.useFactory(
-    ports.catalog,
-    ports.research,
-    ports.story,
-    ports.usage,
-  );
-  assert.equal(
-    await gateway.execute({ input: { query: "science" } }),
-    RESULT,
-  );
-  assert.equal(called, true);
-  assert.deepEqual(module.imports, [
-    CatalogPersistenceModule,
-    ResearchPersistenceModule,
-    StoryDeduplicationPersistenceModule,
-    UsagePersistenceModule,
-  ]);
-  assert.deepEqual(module.exports, [RESEARCH_EXECUTION_GATEWAY]);
 });
 
 test("ResearchService preserves persistence DTOs and delegates execution through the use case", async () => {

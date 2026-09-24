@@ -41,8 +41,11 @@ only part of it:
 | `legacy-editorial-draft` | `draft.js`, `editorial-enrichment.js`, `article-tags.js`, `telegram.js` |
 | `legacy-editorial-publication` | `telegram.js` |
 | `legacy-notion-audit` | none directly; the composition root builds its finalizer from `notion-audit.js` |
-| `legacy-research-execution` | `research.js`, `feed.js`, `gdelt.js`, `reddit.js`, `article-extractor.js`, `retry.js` -- superseded, nothing imports it |
 | `typed-research-execution` | `feed.js`, `ai-usage.js`, `excluded-topic-policy.js`, `news-settings.js` |
+
+`legacy-research-execution` was removed from this table: it and its module
+were deleted (2026-09-24), the one seam with no porting behind it, matching
+the acceptance criterion below.
 
 So this is a porting job first and a deletion second: each of those slices is
 ported to TypeScript, its gateway removed, and only then does the module it
@@ -53,8 +56,9 @@ wrapped become dead.
 - v2.0.0 (or a later 2.x) has run in production for at least 72 hours with no
   rollback, verified from production logs: scheduled runs publishing, quiet
   hours holding, no duplicate publication, no restart loop.
-- `legacy-research-execution` and its module are deleted first -- nothing
-  imports them, so this is the one removal with no porting behind it.
+- [x] `legacy-research-execution` and its module are deleted first -- nothing
+  imported them, so this was the one removal with no porting behind it.
+  Done 2026-09-24.
 - Every remaining seam above is ported and removed, one PR per slice, each with
   the differential or seam test that proves the port behaves as the legacy code
   it replaces.

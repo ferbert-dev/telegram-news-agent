@@ -19,8 +19,8 @@ export type TypedResearchExecutionGatewayModuleOptions = {
    * A fully-constructed AI provider composition (see AiProvidersModule /
    * createFallbackAiProvider). Composed and owned by the caller — this
    * module does not decide how AI providers get built for the app, it only
-   * consumes one, exactly like LegacyResearchExecutionGatewayModule takes
-   * its discoveryProvider from the caller.
+   * consumes one, the same way every RESEARCH_EXECUTION_GATEWAY provider
+   * takes its dependencies from the caller rather than constructing them.
    */
   aiProvider: FallbackAiProvider;
   /**

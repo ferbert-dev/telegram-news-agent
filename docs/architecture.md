@@ -285,10 +285,10 @@ legacy-editorial-draft        -> draft.js . editorial-enrichment.js . article-ta
 legacy-editorial-publication  -> telegram.js
 legacy-notion-audit           -> nothing directly: the gateway takes a finalizer, and the
                                  composition root builds it from notion-audit.js
-legacy-research-execution     -> research.js . feed.js . gdelt.js . reddit.js
-                                 article-extractor.js . retry.js
-                                 (superseded -- the runtime wires typed-research-execution)
 ```
+
+`legacy-research-execution` was one of these seams and has been deleted:
+nothing imported it, so removing it needed no port before it.
 
 "Typed" means the orchestration is typed, not that the seam is gone.
 `typed-research-execution.gateway.ts` still reaches `feed.js`, `ai-usage.js`,

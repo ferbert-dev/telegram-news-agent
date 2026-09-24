@@ -12,11 +12,11 @@ import type {
  * depends on neither concrete type.
  *
  * The research shape here is `ResearchExecutionGateway.execute(request, signal)`
- * -- the seam both TypedResearchExecutionGateway and
- * LegacyResearchExecutionGateway implement -- not `ResearchService.runResearch`.
- * That is deliberate: the tier loop needs to drive one research attempt per
- * tier and inspect the outcome, which is exactly what the execution gateway
- * exposes; ResearchService only forwards to it.
+ * -- the RESEARCH_EXECUTION_GATEWAY seam that TypedResearchExecutionGateway
+ * implements -- not `ResearchService.runResearch`. That is deliberate: the
+ * tier loop needs to drive one research attempt per tier and inspect the
+ * outcome, which is exactly what the execution gateway exposes; ResearchService
+ * only forwards to it.
  */
 export type NewsWorkflowResearchPort = {
   execute(

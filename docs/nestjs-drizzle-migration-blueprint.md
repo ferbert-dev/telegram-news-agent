@@ -108,20 +108,20 @@ facade imports persistence modules only.
 
 ### Application services and adapters
 
-- `ResearchService` exposes a Symbol-backed stateful execution seam. The
-  additive `LegacyResearchExecutionGateway` is the current compatibility
-  adapter: it delegates exactly once to the existing `runResearch` algorithm
-  while assembling only narrow Catalog, Research Ingestion, Story
-  Deduplication and Usage ports plus an already configured AI provider. It
-  never constructs `NewsRepository`, a PostgreSQL client, environment config
-  or provider clients, and it preserves the exact legacy result and error
-  identity. The legacy engine remains the sole writer for search-run, source
-  health/discovery, candidate, raw-content, excluded-topic, story-dedup and
-  usage effects in this slice. A pre-aborted signal prevents all effects;
-  safe mid-flight cancellation requires the later typed-engine replacement.
-  This adapter remains unwired from production and is temporary: acquisition,
-  ranking, policy, provider discovery, extraction and terminal semantics must
-  move into typed NestJS services before `src/research.js` can be retired.
+- `ResearchService` exposes a Symbol-backed stateful execution seam
+  (`RESEARCH_EXECUTION_GATEWAY`). Production binds it to
+  `TypedResearchExecutionGateway`, which assembles narrow Catalog, Research
+  Ingestion, Story Deduplication and Usage ports plus an already configured AI
+  provider and never constructs `NewsRepository`, a PostgreSQL client,
+  environment config, or provider clients directly. The earlier
+  `LegacyResearchExecutionGateway` compatibility adapter -- which delegated
+  once to the legacy `runResearch` algorithm -- has been deleted; nothing
+  imported it once the typed engine took over. Acquisition, ranking, policy,
+  provider discovery, extraction and terminal semantics still reach a handful
+  of shared legacy JS helpers (see "The legacy seams" in
+  `docs/architecture.md`) that have not been ported yet -- that remaining
+  surface, not this gateway, is what has to move into typed NestJS services
+  before `src/research.js` can be retired.
 - `EditorialWorkflowService` exposes grounded review-draft generation,
   approved publication and operator reconciliation through one Symbol-backed
   application port. Its publication use case keeps PostgreSQL claim/finalize/
