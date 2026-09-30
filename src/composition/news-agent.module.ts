@@ -5,10 +5,10 @@ import { Inject, Injectable, Module, type DynamicModule, type OnModuleInit } fro
 import { callTelegram } from "../telegram.js";
 import { getNewsEditor } from "../editor.js";
 import { getOpenAiConfig } from "../openai-provider.js";
-import { getGeminiProviderConfig } from "../gemini-provider.js";
 import { NotionAuditLogger, getNotionAuditConfig } from "../notion-audit.js";
 import { AiProvidersModule } from "../ai/ai-providers.module.js";
 import { BUILTIN_PROVIDER_DESCRIPTORS } from "../ai/providers/index.js";
+import { getTypedGeminiProviderConfig } from "../ai/providers/gemini.provider.js";
 import { AI_PROVIDER } from "../ai/ai-provider.tokens.js";
 import type { FallbackAiProvider } from "../ai/ai-provider-composition.js";
 
@@ -64,9 +64,11 @@ import {
   TelegramLegacyStatusGateway,
 } from "../telegram/transport/telegram-legacy-feature.gateways.js";
 import { TelegramControlTransportHandler } from "../telegram/transport/telegram-control-transport.handler.js";
+import type { TelegramCall } from "../telegram/transport/telegram-call.adapter.js";
 import { TelegramNewsJobWorker } from "../telegram/telegram-news-job-worker.js";
 import { TypedNewsJobWorkflowAdapter } from "../telegram/typed-news-job-workflow.adapter.js";
 import { TypedNewsJobDeliveryAdapter } from "../telegram/typed-news-job-delivery.adapter.js";
+import { TelegramAiProviderFailureNotificationAdapter } from "../telegram/telegram-ai-provider-failure-notification.adapter.js";
 import {
   TELEGRAM_CONTROL_POLLER_LEASE_NAME,
   TelegramPollingWorker,
@@ -283,7 +285,7 @@ export class NewsAgentModule {
     // refusing to boot over an unresolvable model would reject a working
     // Exa-plus-provider deployment over a value nothing reads.
     const draftModel =
-      getOpenAiConfig(env)?.model ?? getGeminiProviderConfig(env)?.model ?? "";
+      getOpenAiConfig(env)?.model ?? getTypedGeminiProviderConfig(env)?.model ?? "";
     const botApi = new TelegramBotApiGateway(
       token,
       identity.channelId,
@@ -293,6 +295,12 @@ export class NewsAgentModule {
       token,
       callTelegram as unknown as TelegramBotApiCall,
     );
+    const aiFailureNotifier = new TelegramAiProviderFailureNotificationAdapter({
+      token,
+      channelId: identity.channelId,
+      settings: legacyPersistence.port,
+      callTelegram: callTelegram as unknown as TelegramCall,
+    });
     // NotionAuditLogger.finish requires {status, result} while the port types
     // finalization as an open Record. Adapt at the seam rather than widening
     // the port: every caller in this file supplies both fields.
@@ -319,6 +327,7 @@ export class NewsAgentModule {
         AiProvidersModule.register({
           env,
           attemptRepository: legacyPersistence.port as never,
+          failureNotifier: aiFailureNotifier,
         }),
         // The news-job workflow needs the draft row itself, to approve a
         // review-status draft before publishing it on an automatic channel.

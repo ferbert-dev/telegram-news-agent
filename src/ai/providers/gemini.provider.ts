@@ -1,10 +1,21 @@
 import { GoogleGenAI } from "@google/genai";
 
-import { createGeminiProvider, getGeminiProviderConfig } from "../../gemini-provider.js";
+import { createGeminiProvider } from "../../gemini-provider.js";
 import type { AiProviderPort, GeminiSdkPort } from "../ai-provider.contracts.js";
 import type { AiProviderDescriptor } from "./provider-descriptor.contracts.js";
 
-type GeminiConfig = NonNullable<ReturnType<typeof getGeminiProviderConfig>>;
+export type GeminiConfig = { apiKey: string; model: string };
+
+export function getTypedGeminiProviderConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): GeminiConfig | null {
+  const apiKey = env.GEMINI_API_KEY?.trim();
+  if (!apiKey) return null;
+  return {
+    apiKey,
+    model: env.GEMINI_MODEL?.trim() || "gemini-3.8-flash",
+  };
+}
 
 export const geminiProviderDescriptor: AiProviderDescriptor<GeminiConfig, GeminiSdkPort> = {
   id: "gemini",
@@ -12,7 +23,7 @@ export const geminiProviderDescriptor: AiProviderDescriptor<GeminiConfig, Gemini
   capabilities: ["generateStructured", "searchNews", "searchFeeds", "searchFact"],
   defaultOrderRank: 20,
   traits: {},
-  configure: (env) => getGeminiProviderConfig(env),
+  configure: getTypedGeminiProviderConfig,
   createClient: (config) => new GoogleGenAI({ apiKey: config.apiKey }) as GeminiSdkPort,
   createAdapter: (config, client) =>
     createGeminiProvider(config, { client }) as AiProviderPort | null,

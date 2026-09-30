@@ -4,8 +4,8 @@ import { Module, type DynamicModule, type Provider } from "@nestjs/common";
 
 import { createGeminiClientAdapter } from "./ai-provider.adapters.js";
 import { createFallbackAiProvider, getAiProviderOrder } from "./ai-provider-composition.js";
-import type { AiProviderAttemptWriter, AiProviderLogger } from "./ai-provider.contracts.js";
-import { AI_PROVIDER, AI_PROVIDER_ATTEMPT_WRITER, AI_PROVIDER_ENV, AI_PROVIDER_LOGGER, EXA_PROVIDER, EXA_SDK, GEMINI_CLIENT, GEMINI_PROVIDER, GEMINI_SDK, OPENAI_PROVIDER, OPENAI_SDK } from "./ai-provider.tokens.js";
+import type { AiProviderAttemptWriter, AiProviderFailureNotifier, AiProviderLogger } from "./ai-provider.contracts.js";
+import { AI_PROVIDER, AI_PROVIDER_ATTEMPT_WRITER, AI_PROVIDER_ENV, AI_PROVIDER_FAILURE_NOTIFIER, AI_PROVIDER_LOGGER, EXA_PROVIDER, EXA_SDK, GEMINI_CLIENT, GEMINI_PROVIDER, GEMINI_SDK, OPENAI_PROVIDER, OPENAI_SDK } from "./ai-provider.tokens.js";
 import { BUILTIN_PROVIDER_DESCRIPTORS } from "./providers/index.js";
 import type { AiProviderDescriptor } from "./providers/provider-descriptor.contracts.js";
 import { assertValidDescriptors } from "./providers/provider-registry.js";
@@ -24,11 +24,13 @@ export class AiProvidersModule {
   static register({
     env = process.env,
     attemptRepository = null,
+    failureNotifier = null,
     log = console,
     descriptors = BUILTIN_PROVIDER_DESCRIPTORS,
   }: {
     env?: NodeJS.ProcessEnv;
     attemptRepository?: AiProviderAttemptWriter | null;
+    failureNotifier?: AiProviderFailureNotifier | null;
     log?: AiProviderLogger;
     descriptors?: readonly AiProviderDescriptor[];
   } = {}): DynamicModule {
@@ -73,6 +75,7 @@ export class AiProvidersModule {
       providers: [
         { provide: AI_PROVIDER_ENV, useValue: env },
         { provide: AI_PROVIDER_ATTEMPT_WRITER, useValue: attemptRepository },
+        { provide: AI_PROVIDER_FAILURE_NOTIFIER, useValue: failureNotifier },
         { provide: AI_PROVIDER_LOGGER, useValue: log },
         ...perProviderProviders,
         {
@@ -83,18 +86,24 @@ export class AiProvidersModule {
         },
         {
           provide: AI_PROVIDER,
-          inject: [AI_PROVIDER_ENV, AI_PROVIDER_LOGGER, AI_PROVIDER_ATTEMPT_WRITER, ...adapterTokens],
+          inject: [AI_PROVIDER_ENV, AI_PROVIDER_LOGGER, AI_PROVIDER_ATTEMPT_WRITER, AI_PROVIDER_FAILURE_NOTIFIER, ...adapterTokens],
           useFactory: (
             settings: NodeJS.ProcessEnv,
             logger: AiProviderLogger,
             attempts: AiProviderAttemptWriter | null,
+            notifier: AiProviderFailureNotifier | null,
             ...adapters: unknown[]
           ) => {
             const byId = new Map(adapterIds.map((id, index) => [id, adapters[index]]));
             const order = getAiProviderOrder(settings, descriptors);
             return createFallbackAiProvider(
               order.map((id) => byId.get(id)) as never,
-              { log: logger, attemptRepository: attempts, descriptors },
+              {
+                log: logger,
+                attemptRepository: attempts,
+                failureNotifier: notifier,
+                descriptors,
+              },
             );
           },
         },

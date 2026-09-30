@@ -31,6 +31,27 @@ export type AiProviderAttemptWriter = Pick<
 
 export type AiProviderLogger = { warn?: (message: string) => void };
 
+export type AiProviderFailureContinuation =
+  | "retrying_same_provider"
+  | "trying_next_provider"
+  | "request_failed";
+
+export type AiProviderFailureAlert = {
+  attemptId: string;
+  correlationId: string;
+  operation: string;
+  provider: string;
+  model: string | null;
+  attemptNumber: number;
+  latencyMs: number;
+  errorCode: string;
+  continuation: AiProviderFailureContinuation;
+};
+
+export type AiProviderFailureNotifier = {
+  notify(input: AiProviderFailureAlert): Promise<void>;
+};
+
 export type OpenAiSdkPort = unknown;
 export type GeminiSdkPort = unknown;
 export type ExaSdkPort = unknown;
