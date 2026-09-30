@@ -95,6 +95,34 @@ function resolveRelativeImport(from: string, specifier: string): string | null {
   return candidate;
 }
 
+// "Port settings and scheduling helpers to TypeScript" replaced these four
+// legacy modules with typed twins under src/settings/domain,
+// src/scheduler/domain, and src/operations/domain. A text grep for ".js"
+// would false-negative here: under NodeNext a .ts file importing a .ts twin
+// also uses a ".js" specifier (see CLAUDE.md, "How a task starts"), so this
+// resolves each relative specifier to its actual file on disk instead.
+const FORBIDDEN_LEGACY_SETTINGS_MODULES = new Set([
+  path.join(sourceRoot, "news-settings.js"),
+  path.join(sourceRoot, "quiet-hours.js"),
+  path.join(sourceRoot, "pipeline-states.js"),
+  path.join(sourceRoot, "excluded-topics.js"),
+]);
+
+test("no typed module reaches the legacy news-settings, quiet-hours, pipeline-states, or excluded-topics modules directly", async () => {
+  for (const file of await sourceFiles(sourceRoot)) {
+    const source = await readFile(file, "utf8");
+    for (const specifier of importsOf(file, source)) {
+      if (!specifier.startsWith(".")) continue;
+      const resolved = path.resolve(path.dirname(file), specifier);
+      assert.equal(
+        FORBIDDEN_LEGACY_SETTINGS_MODULES.has(resolved),
+        false,
+        `${relative(file)} imports the legacy JS module ${specifier} (resolved: ${path.relative(projectRoot, resolved)}) — use its typed twin instead`,
+      );
+    }
+  }
+});
+
 const expectedPersistenceModules = new Map([
   ["src/catalog/catalog-persistence.module.ts", "CatalogPersistenceModule"],
   ["src/research/research-persistence.module.ts", "ResearchPersistenceModule"],
@@ -429,7 +457,7 @@ test("typed research execution engine has no direct database or legacy-runtime d
   const legacyJsImports = [...gateway.matchAll(/from "\.\.\/([^"/]+\.js)"/g)].map((match) => match[1]);
   assert.deepEqual(
     [...new Set(legacyJsImports)].sort(),
-    ["ai-usage.js", "excluded-topic-policy.js", "feed.js", "news-settings.js"],
+    ["ai-usage.js", "excluded-topic-policy.js", "feed.js"],
     "legacy JS reuse must stay exactly this narrow set — extending it is a deliberate change, not an accident",
   );
 
@@ -464,15 +492,17 @@ test("source acquisition and evidence curation engines have no direct database, 
     assertApplicationDependencies(relativePath, source);
   }
 
-  // evidence-curation.engine.ts's one legacy JS import (news-settings.js, for
-  // LANGUAGE_OPTIONS/TOPIC_PRESETS constants) is deliberate and narrow — make
-  // that explicit rather than leaving it as an unstated exception.
+  // evidence-curation.engine.ts's LANGUAGE_OPTIONS/TOPIC_PRESETS constants now
+  // come from the typed news-settings twin (src/settings/domain/news-settings.ts),
+  // not legacy JS — "Port settings and scheduling helpers to TypeScript"
+  // removed the last legacy-JS import this file had. Assert that stays zero
+  // rather than leaving the narrowing unstated.
   const curation = await readFile(
     path.join(sourceRoot, "research/curation/evidence-curation.engine.ts"),
     "utf8",
   );
   const legacyJsImports = [...curation.matchAll(/from "\.\.\/\.\.\/([^"/]+\.js)"/g)].map((match) => match[1]);
-  assert.deepEqual([...new Set(legacyJsImports)], ["news-settings.js"]);
+  assert.deepEqual([...new Set(legacyJsImports)], []);
 });
 
 test("scheduler adapters keep their legacy JS reuse narrow and stay unwired from production", async () => {
@@ -502,8 +532,13 @@ test("scheduler adapters keep their legacy JS reuse narrow and stay unwired from
   for (const specifier of importsOf("news-workflow.ts", newsWorkflow)) {
     assert.doesNotMatch(specifier, /research\.service|editorial-workflow\.service/, specifier);
   }
+  // Its one-time legacy JS import (news-settings.js, for buildSearchPlan) was
+  // removed by "Port settings and scheduling helpers to TypeScript" — the
+  // adapter now reaches the typed twin at src/settings/domain/news-settings.ts
+  // instead, which is a multi-segment specifier this single-segment pattern
+  // deliberately does not match.
   const legacyJsImports = [...newsWorkflow.matchAll(/from "\.\.\/([^"/]+\.js)"/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(legacyJsImports)], ["news-settings.js"]);
+  assert.deepEqual([...new Set(legacyJsImports)], []);
 
   for (const entrypoint of ["telegram-bot.js", "news-scheduler.js"]) {
     const source = await readFile(path.join(sourceRoot, entrypoint), "utf8");

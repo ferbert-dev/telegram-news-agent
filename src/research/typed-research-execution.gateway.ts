@@ -1,7 +1,7 @@
 import { Inject, Injectable, Optional } from "@nestjs/common";
 
 import { applyExcludedTopicPolicy, excludedTopicDefinitions, EXCLUDED_TOPIC_POLICY_PROMPT_VERSION } from "../excluded-topic-policy.js";
-import { newsSettingsSnapshot, normalizeNewsSettings } from "../news-settings.js";
+import { newsSettingsSnapshot, normalizeNewsSettings } from "../settings/domain/news-settings.js";
 import { recordAiUsageEvents } from "../ai-usage.js";
 import { hashText, canonicalizeUrl, assertPublicHttpUrl } from "../feed.js";
 
