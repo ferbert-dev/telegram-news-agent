@@ -1,5 +1,5 @@
-import { getGeminiConfig } from "../gemini-client.js";
 import { openaiProviderDescriptor } from "./providers/openai.provider.js";
+import { getTypedGeminiProviderConfig } from "./providers/gemini.provider.js";
 
 import type {
   AiProviderPort,
@@ -24,5 +24,7 @@ export function createGeminiClientAdapter(
   env: NodeJS.ProcessEnv = process.env,
   sdk: GeminiSdkPort,
 ): GeminiClientPort {
-  return { client: sdk, model: getGeminiConfig(env).model };
+  const config = getTypedGeminiProviderConfig(env);
+  if (!config) throw new Error("GEMINI_API_KEY is required");
+  return { client: sdk, model: config.model };
 }

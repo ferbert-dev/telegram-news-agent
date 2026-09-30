@@ -13,7 +13,7 @@ hours, in production.**
   </a>
 </p>
 
-**v2.0.0 in production since 2026-09-10** · TypeScript · NestJS · PostgreSQL ·
+**v2.0.1 in production** · TypeScript · NestJS · PostgreSQL ·
 OpenAI / Gemini / Exa · Oracle Cloud ·
 [live channel](https://t.me/HonestAINews) · [current status](docs/current-status.md)
 
@@ -48,6 +48,10 @@ The whole desk is operated from Telegram: `/news`, `/settings`, `/stats`,
   sent 1,005 requests in six minutes.
 - **Structured output, validated.** Model responses are parsed against schemas;
   an invalid one is a recorded failure with an error code, not a crash.
+- **Failure visibility.** The typed provider layer emits sanitized incident
+  records for failed requests, including whether it will retry, move to the
+  next provider, or leave the application to use its baseline. The NestJS
+  composition routes those records to the private operator chat.
 - **An editorial loop, not a single prompt.** Length and shape rules are checked
   after generation, and a draft that breaks them goes back to the model with
   exact feedback — *cut about twenty words, starting with the last sentence of
@@ -105,7 +109,7 @@ The whole desk is operated from Telegram: `/news`, `/settings`, `/stats`,
 | Tests | 900+ test cases · 18 end-to-end scenarios · 17 compiled-build checks |
 | Database | PostgreSQL 17 · 37 migrations |
 | History | 157 merged pull requests since June 2026 |
-| In production | v2.0.0 on the NestJS runtime since 2026-09-10 |
+| In production | v2.0.1 on the NestJS runtime |
 
 ## The cutover to v2.0.0
 

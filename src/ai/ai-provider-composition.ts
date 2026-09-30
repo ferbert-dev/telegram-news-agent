@@ -13,6 +13,9 @@ import type { AiProviderDescriptor } from "./providers/provider-descriptor.contr
 
 import type {
   AiProviderAttemptWriter,
+  AiProviderFailureAlert,
+  AiProviderFailureContinuation,
+  AiProviderFailureNotifier,
   AiProviderLogger,
   AiProviderOperation,
   AiProviderPort,
@@ -62,7 +65,7 @@ export type FallbackAiProvider = {
   testExaConnection: () => Promise<AiProviderResult>;
 };
 
-const FALLBACK_PROVIDER_DEADLINE_MS = 30_000;
+const FALLBACK_PROVIDER_DEADLINE_MS = 60_000;
 
 /**
  * How long an operation is allowed, when the work itself is slower than the
@@ -81,9 +84,9 @@ const FALLBACK_PROVIDER_DEADLINE_MS = 30_000;
  * was being rewritten.
  */
 export const DEFAULT_OPERATION_DEADLINES_MS: Readonly<Record<string, number>> = {
-  editorial_enrichment: 90_000,
-  editorial_enrichment_retry: 90_000,
-  editorial_draft: 60_000,
+  editorial_enrichment: 180_000,
+  editorial_enrichment_retry: 180_000,
+  editorial_draft: 120_000,
 };
 const FALLBACK_PROVIDER_ATTEMPTS = 3;
 
@@ -185,6 +188,7 @@ export function createFallbackAiProvider(
   {
     log = console,
     attemptRepository,
+    failureNotifier,
     now = () => new Date(),
     sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
     providerDeadlineMs = FALLBACK_PROVIDER_DEADLINE_MS,
@@ -196,6 +200,7 @@ export function createFallbackAiProvider(
   }: {
     log?: AiProviderLogger;
     attemptRepository?: AiProviderAttemptWriter | null;
+    failureNotifier?: AiProviderFailureNotifier | null;
     now?: () => Date;
     sleep?: (ms: number) => Promise<void>;
     providerDeadlineMs?: number;
@@ -211,6 +216,35 @@ export function createFallbackAiProvider(
 ): FallbackAiProvider {
   const available = providers.filter((provider): provider is AiProviderPort => Boolean(provider));
   if (!available.length) throw new Error("No AI provider is configured; enable Exa or set an OpenAI/Gemini API key");
+
+  const failureByError = new Map<unknown, Omit<AiProviderFailureAlert, "continuation">>();
+
+  const rememberFailure = (
+    error: unknown,
+    input: Omit<AiProviderFailureAlert, "continuation">,
+  ): void => {
+    failureByError.set(error, input);
+  };
+
+  const notifyFailure = async (
+    error: unknown,
+    continuation: AiProviderFailureContinuation,
+  ): Promise<void> => {
+    const failure = failureByError.get(error);
+    if (!failure) return;
+    failureByError.delete(error);
+    if (!failureNotifier) return;
+    try {
+      await failureNotifier.notify({ ...failure, continuation });
+    } catch {
+      log.warn?.(JSON.stringify({
+        event: "ai_provider_failure_alert_failed",
+        attempt_id: failure.attemptId,
+        operation: failure.operation,
+        provider: failure.provider,
+      }));
+    }
+  };
 
   /** Consecutive throttled calls, and when the provider may be tried again. */
   const throttleState = new Map<
@@ -328,10 +362,21 @@ export function createFallbackAiProvider(
       const mutable = error as { traceId?: string; providerDiagnostics?: Record<string, unknown> };
       mutable.traceId ??= correlationId;
       mutable.providerDiagnostics = { ...mutable.providerDiagnostics, provider: provider.name };
+      const latencyMs = Math.max(0, now().valueOf() - started.valueOf());
       await persistCompleteAiProviderAttempt(attemptRepository, {
         id, status: "failed", completedAt: now().toISOString(),
-        latencyMs: Math.max(0, now().valueOf() - started.valueOf()), error,
+        latencyMs, error,
       }, log as Required<AiProviderLogger>);
+      rememberFailure(error, {
+        attemptId: id,
+        correlationId,
+        operation: semanticOperation,
+        provider: provider.name,
+        model: provider.model ?? null,
+        attemptNumber,
+        latencyMs,
+        errorCode: classifyProviderError(error),
+      });
       throw error;
     } finally {
       if (timeoutId !== undefined) clearTimeoutImpl(timeoutId);
@@ -380,13 +425,24 @@ export function createFallbackAiProvider(
       const mutable = error as { traceId?: string; providerDiagnostics?: Record<string, unknown> };
       mutable.traceId ??= correlationId;
       mutable.providerDiagnostics = { ...mutable.providerDiagnostics, provider: provider.name };
+      const latencyMs = Math.max(0, now().valueOf() - started.valueOf());
       await persistCompleteAiProviderAttempt(attemptRepository, {
         id,
         status: "failed",
         completedAt: now().toISOString(),
-        latencyMs: Math.max(0, now().valueOf() - started.valueOf()),
+        latencyMs,
         error,
       }, log as Required<AiProviderLogger>);
+      rememberFailure(error, {
+        attemptId: id,
+        correlationId,
+        operation,
+        provider: provider.name,
+        model: provider.model ?? null,
+        attemptNumber,
+        latencyMs,
+        errorCode: classifyProviderError(error),
+      });
       throw error;
     }
   };
@@ -401,7 +457,9 @@ export function createFallbackAiProvider(
     const parentSignal = isAbortSignal(input.signal) ? input.signal : null;
     throwIfAborted(parentSignal);
     let attemptNumber = 0;
-    for (const provider of available) {
+    for (let providerIndex = 0; providerIndex < available.length; providerIndex += 1) {
+      const provider = available[providerIndex];
+      if (!provider) continue;
       if (!provider[operation]) continue;
       if (isThrottleOpen(provider.name)) {
         // Skipped without a request. This is the whole point: the next 300
@@ -444,15 +502,30 @@ export function createFallbackAiProvider(
           } catch (error) {
             errors.push(error);
             warn(operation, provider, error);
+            if (parentSignal?.aborted) failureByError.delete(error);
             throwIfAborted(parentSignal);
             const errorCode = classifyProviderError(error);
-            if (traitsOf(provider.name, descriptors).haltsCascadeOnQuotaExhaustion && errorCode === "quota_exhausted") throw error;
-            if (!isTransientProviderError(error)) throw error;
-            if (
+            const haltCascade = traitsOf(provider.name, descriptors).haltsCascadeOnQuotaExhaustion
+              && errorCode === "quota_exhausted";
+            const canRetry = isTransientProviderError(error) && !(
               providerAttempt >= FALLBACK_PROVIDER_ATTEMPTS
               || controller.signal.aborted
               || now().getTime() >= deadlineAtMs
-            ) throw error;
+            );
+            const hasNextProvider = !haltCascade && available
+              .slice(providerIndex + 1)
+              .some((candidate) => Boolean(candidate[operation]) && !isThrottleOpen(candidate.name));
+            await notifyFailure(
+              error,
+              canRetry
+                ? "retrying_same_provider"
+                : hasNextProvider
+                  ? "trying_next_provider"
+                  : "request_failed",
+            );
+            if (haltCascade) throw error;
+            if (!isTransientProviderError(error)) throw error;
+            if (!canRetry) throw error;
             const remainingMs = Math.max(0, deadlineAtMs - now().getTime());
             await sleep(Math.min(retryDelayMs(providerAttempt, random), remainingMs));
           }
@@ -505,9 +578,11 @@ export function createFallbackAiProvider(
       recordThrottleOutcome(provider.name, null);
       return result;
     } catch (error) {
+      if (parentSignal?.aborted) failureByError.delete(error);
       throwIfAborted(parentSignal);
       recordThrottleOutcome(provider.name, classifyProviderError(error) ?? "unknown");
       warn(operation, provider, error);
+      await notifyFailure(error, "request_failed");
       throw new AiProvidersExhaustedError(operation, [error], (error as { traceId?: string }).traceId ?? correlationId);
     }
   };
@@ -523,15 +598,23 @@ export function createFallbackAiProvider(
     try {
       return await runSequentialAttempt(input, exclusive, "searchFact", correlationId, 1);
     } catch (error) {
+      if (parentSignal?.aborted) failureByError.delete(error);
       throwIfAborted(parentSignal);
       warn("searchFact", exclusive, error);
-      if (!isTransientProviderError(error)) throw new AiProvidersExhaustedError("searchFact", [error], correlationId);
+      if (!isTransientProviderError(error)) {
+        await notifyFailure(error, "request_failed");
+        throw new AiProvidersExhaustedError("searchFact", [error], correlationId);
+      }
+      await notifyFailure(error, "retrying_same_provider");
       try {
         await sleep(250);
         throwIfAborted(parentSignal);
         return await runSequentialAttempt(input, exclusive, "searchFact", correlationId, 2);
       } catch (retryError) {
+        if (parentSignal?.aborted) failureByError.delete(retryError);
+        throwIfAborted(parentSignal);
         warn("searchFact", exclusive, retryError);
+        await notifyFailure(retryError, "request_failed");
         throw new AiProvidersExhaustedError("searchFact", [error, retryError], correlationId);
       }
     }

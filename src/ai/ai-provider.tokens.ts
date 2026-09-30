@@ -1,6 +1,7 @@
 export const AI_PROVIDER_ENV = Symbol("AI_PROVIDER_ENV");
 export const AI_PROVIDER_ATTEMPT_WRITER = Symbol("AI_PROVIDER_ATTEMPT_WRITER");
 export const AI_PROVIDER_LOGGER = Symbol("AI_PROVIDER_LOGGER");
+export const AI_PROVIDER_FAILURE_NOTIFIER = Symbol("AI_PROVIDER_FAILURE_NOTIFIER");
 export const OPENAI_SDK = Symbol("OPENAI_SDK");
 export const GEMINI_SDK = Symbol("GEMINI_SDK");
 export const EXA_SDK = Symbol("EXA_SDK");

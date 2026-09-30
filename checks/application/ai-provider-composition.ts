@@ -10,6 +10,8 @@ import {
 import { createFallbackAiProvider as createLegacyFallbackAiProvider } from "../../src/ai-provider.js";
 import { AiProvidersModule } from "../../src/ai/ai-providers.module.js";
 import { AI_PROVIDER, GEMINI_CLIENT, GEMINI_SDK } from "../../src/ai/ai-provider.tokens.js";
+import type { AiProviderFailureAlert } from "../../src/ai/ai-provider.contracts.js";
+import { getTypedGeminiProviderConfig } from "../../src/ai/providers/gemini.provider.js";
 
 test("typed composition preserves configured order and retries only transient failures", async () => {
   const calls: string[] = [];
@@ -23,6 +25,109 @@ test("typed composition preserves configured order and retries only transient fa
   assert.equal((await provider.searchNews({})).provider, "gemini");
   assert.deepEqual(calls, ["openai", "openai", "openai", "gemini"]);
   assert.deepEqual(getAiProviderOrder({}), ["openai", "gemini"]);
+});
+
+test("every failed typed provider attempt emits one sanitized continuation alert", async () => {
+  const alerts: AiProviderFailureAlert[] = [];
+  let openAiCalls = 0;
+  const provider = createFallbackAiProvider([
+    {
+      name: "openai",
+      model: "gpt-5.4-2026-03-05",
+      async generateStructured() {
+        openAiCalls += 1;
+        throw Object.assign(new Error("sensitive provider text"), { status: 429 });
+      },
+    },
+    {
+      name: "gemini",
+      model: "gemini-3.8-flash",
+      async generateStructured() {
+        return { provider: "gemini" };
+      },
+    },
+  ], {
+    log: { warn() {} },
+    sleep: async () => {},
+    failureNotifier: {
+      async notify(input) {
+        alerts.push(input);
+      },
+    },
+  });
+
+  assert.equal((await provider.generateStructured({
+    usageOperation: "editorial_enrichment",
+    prompt: "must never appear in an alert",
+  })).provider, "gemini");
+  assert.equal(openAiCalls, 3);
+  assert.equal(alerts.length, 3);
+  assert.equal(new Set(alerts.map((alert) => alert.attemptId)).size, 3);
+  assert.deepEqual(alerts.map((alert) => alert.continuation), [
+    "retrying_same_provider",
+    "retrying_same_provider",
+    "trying_next_provider",
+  ]);
+  assert.ok(alerts.every((alert) => alert.operation === "editorial_enrichment"));
+  assert.ok(alerts.every((alert) => alert.errorCode === "rate_limited"));
+  assert.equal(JSON.stringify(alerts).includes("sensitive provider text"), false);
+  assert.equal(JSON.stringify(alerts).includes("must never appear"), false);
+});
+
+test("a failed incident notification never prevents provider fallback", async () => {
+  const warnings: string[] = [];
+  const provider = createFallbackAiProvider([
+    {
+      name: "openai",
+      async generateStructured() {
+        throw Object.assign(new Error("rejected"), { code: "authentication_failed" });
+      },
+    },
+    {
+      name: "gemini",
+      async generateStructured() {
+        return { provider: "gemini" };
+      },
+    },
+  ], {
+    log: { warn(message) { warnings.push(message); } },
+    failureNotifier: {
+      async notify() {
+        throw new Error("Telegram unavailable");
+      },
+    },
+  });
+
+  assert.equal((await provider.generateStructured({})).provider, "gemini");
+  assert.ok(warnings.some((warning) => warning.includes("ai_provider_failure_alert_failed")));
+  assert.equal(warnings.some((warning) => warning.includes("Telegram unavailable")), false);
+});
+
+test("the final failed attempt reports application fallback to the baseline", async () => {
+  const alerts: AiProviderFailureAlert[] = [];
+  const provider = createFallbackAiProvider([
+    {
+      name: "openai",
+      async generateStructured() {
+        throw Object.assign(new Error("bad key"), { status: 401 });
+      },
+    },
+  ], {
+    log: { warn() {} },
+    failureNotifier: {
+      async notify(input) {
+        alerts.push(input);
+      },
+    },
+  });
+
+  await assert.rejects(
+    provider.generateStructured({ usageOperation: "editorial_enrichment" }),
+    AiProvidersExhaustedError,
+  );
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0]?.errorCode, "authentication_failed");
+  assert.equal(alerts[0]?.continuation, "request_failed");
 });
 
 test("typed composition retains Exa cap and one-shot boundaries", async () => {
@@ -125,6 +230,7 @@ test("typed composition preserves legacy full transient retry exhaustion", async
 
 test("typed composition fails fast before provider work when already cancelled", async () => {
   const calls: string[] = [];
+  const alerts: AiProviderFailureAlert[] = [];
   const cancellation = new Error("lease lost");
   cancellation.name = "AbortError";
   const controller = new AbortController();
@@ -132,13 +238,18 @@ test("typed composition fails fast before provider work when already cancelled",
   const provider = createFallbackAiProvider([
     { name: "openai", async searchNews() { calls.push("openai"); return { provider: "openai" }; } },
     { name: "gemini", async searchNews() { calls.push("gemini"); return { provider: "gemini" }; } },
-  ], { log: { warn() {} } });
+  ], {
+    log: { warn() {} },
+    failureNotifier: { async notify(input) { alerts.push(input); } },
+  });
   await assert.rejects(provider.searchNews({ signal: controller.signal }), (error) => error === cancellation);
   assert.deepEqual(calls, []);
+  assert.deepEqual(alerts, []);
 });
 
 test("typed composition stops retries and fallback after mid-operation cancellation", async () => {
   const calls: string[] = [];
+  const alerts: AiProviderFailureAlert[] = [];
   const cancellation = new Error("lease lost");
   cancellation.name = "AbortError";
   const controller = new AbortController();
@@ -151,11 +262,13 @@ test("typed composition stops retries and fallback after mid-operation cancellat
     { name: "gemini", async searchNews() { calls.push("gemini"); return { provider: "gemini" }; } },
   ], {
     log: { warn() {} },
+    failureNotifier: { async notify(input) { alerts.push(input); } },
     setTimeoutImpl() { return 1; },
     clearTimeoutImpl() {},
   });
   await assert.rejects(provider.searchNews({ signal: controller.signal }), (error) => error === cancellation);
   assert.deepEqual(calls, ["openai"]);
+  assert.deepEqual(alerts, []);
 });
 
 test("typed composition uses fresh per-provider AbortSignal and bounded fallback windows", async () => {
@@ -217,12 +330,27 @@ test("Gemini client uses the injected SDK Symbol override", async () => {
   }
 });
 
+test("typed Gemini configuration defaults to the supported 3.8 Flash model", () => {
+  assert.deepEqual(getTypedGeminiProviderConfig({ GEMINI_API_KEY: " key " }), {
+    apiKey: "key",
+    model: "gemini-3.8-flash",
+  });
+  assert.equal(
+    getTypedGeminiProviderConfig({
+      GEMINI_API_KEY: "key",
+      GEMINI_MODEL: "gemini-custom",
+    })?.model,
+    "gemini-custom",
+  );
+});
+
 test("a rejected credential takes a provider out of rotation instead of being retried forever", async () => {
   // A 401 is not a throttle, so it never opened the breaker: an invalid key was
   // retried three times on every single call, for the life of the process.
   // Measured on the integration stage as 1,967 rejections that produced
   // nothing and delayed every call by ~680ms before the fallback was tried.
   const calls: string[] = [];
+  const alerts: AiProviderFailureAlert[] = [];
   const rejecting = {
     name: "openai",
     async generateStructured() {
@@ -243,6 +371,7 @@ test("a rejected credential takes a provider out of rotation instead of being re
   const provider = createFallbackAiProvider([rejecting, working] as never, {
     log: { info() {}, warn() {}, error() {} },
     attemptRepository: null,
+    failureNotifier: { async notify(input: AiProviderFailureAlert) { alerts.push(input); } },
     retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 },
   } as never);
 
@@ -260,6 +389,11 @@ test("a rejected credential takes a provider out of rotation instead of being re
   assert.ok(
     openaiCalls <= 6,
     `a rejected credential must stop being asked; it was attempted ${openaiCalls} times across 8 calls`,
+  );
+  assert.equal(
+    alerts.length,
+    openaiCalls,
+    "breaker skips are not provider requests and must not create incident alerts",
   );
 });
 
@@ -295,8 +429,12 @@ test("a long operation gets its own deadline, not the default one", async () => 
   });
 
   await composed.generateStructured({ usageOperation: "editorial_enrichment" });
+  await composed.generateStructured({ usageOperation: "editorial_enrichment_retry" });
+  await composed.generateStructured({ usageOperation: "editorial_draft" });
   await composed.generateStructured({ usageOperation: "feed_candidate_curation" });
 
-  assert.equal(deadlines[0], 90_000, "enrichment gets the long deadline");
-  assert.equal(deadlines[1], 30_000, "everything else keeps the default");
+  assert.equal(deadlines[0], 180_000, "enrichment gets the doubled long deadline");
+  assert.equal(deadlines[1], 180_000, "enrichment retry gets the doubled long deadline");
+  assert.equal(deadlines[2], 120_000, "editorial drafting gets the doubled draft deadline");
+  assert.equal(deadlines[3], 60_000, "everything else gets the doubled default");
 });

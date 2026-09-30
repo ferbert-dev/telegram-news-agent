@@ -45,9 +45,9 @@ EXA_DAILY_SEARCH_CAP=20
 EXA_MAX_RESULTS=8
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5.4-2026-03-05
-OPENAI_REASONING_EFFORT=medium
+OPENAI_REASONING_EFFORT=high
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 NEWS_EDITOR_KEY=mikhail-onest
 NEWS_EDITOR_NAME=Михаил Онест
 NOTION_API_KEY=
@@ -241,13 +241,22 @@ event, and has a five-minute per-admin cooldown.
 Provider attempts are recorded separately from the billing ledger with safe,
 redacted operational metadata only. Normal fallback operations make up to
 three attempts per configured provider for transient failures, using two
-exponential jittered delays within a separate 30-second deadline for each
-provider. A provider timeout therefore preserves the next provider's bounded
-fallback window instead of exhausting the entire chain before trying the next
-configured provider. One-shot structured generation retains its existing
-one-call budget. The NestJS runtime's provider composition keeps the same
-contract and adds a per-provider circuit breaker, so a provider that is rate
-limiting stops being called instead of being retried into a request storm.
+exponential jittered delays within a separate 60-second deadline for each
+provider. Editorial drafting gets 120 seconds, while editorial enrichment and
+its retry get 180 seconds. A provider timeout therefore preserves the next
+provider's bounded fallback window instead of exhausting the entire chain
+before trying the next configured provider. One-shot structured generation
+retains its existing one-call budget. The NestJS runtime's provider composition
+also adds a per-provider circuit breaker, so a provider that is rate limiting
+stops being called instead of being retried into a request storm.
+
+Every distinct failed NestJS provider attempt sends one best-effort incident
+message to the current private review chat. The message contains only the
+operation, provider, model, safe failure class, attempt number, latency, trace
+ID, and whether the runtime will retry, try the next provider, or leave the
+application to use its baseline fallback. Prompts, generated text, API keys,
+and raw provider errors are never included. An alert-delivery failure is logged
+but cannot turn a successful provider fallback or publication into a failure.
 
 Send `/labs` in the private admin chat to control experimental features without
 redeploying the bot. Article tags have three versioned per-channel states:
