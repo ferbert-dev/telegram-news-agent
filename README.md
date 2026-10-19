@@ -99,6 +99,9 @@ The whole desk is operated from Telegram: `/news`, `/settings`, `/stats`,
   the AI, the feeds and Telegram faked — so a full run costs nothing.
 - **Differential tests** run the legacy and the new publication code on the same
   fixture and compare every Telegram call and every database write.
+- **Database test isolation.** PostgreSQL integration files run sequentially
+  because job claims span the whole queue. Concurrency assertions within each
+  file still race real workers against the database.
 - **Guards are proven by mutation.** Each important check is shown to go red
   when the behaviour it protects is removed.
 - **Immutable, health-gated releases.** A version tag retags the image that
