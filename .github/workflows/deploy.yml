@@ -436,6 +436,16 @@ jobs:
           const perOp = await client.query(`select operation, count(*)::int as n from public.ai_provider_attempts where started_at > now() - interval '24 hours' group by operation order by n desc`);
           if (!perOp.rows.length) console.log("AiCalls24h (none)");
           for (const r of perOp.rows) console.log(`AiCalls24h operation=${r.operation} count=${r.n}`);
+          const searchRuns = await client.query(`select id, status, error, result_count, metadata->'candidate_curation' as candidate_curation, started_at, finished_at from public.search_runs order by started_at desc limit 5`);
+          if (!searchRuns.rows.length) console.log("SearchRun (none)");
+          for (const r of searchRuns.rows) console.log(`SearchRun id=${r.id} status=${r.status} error_present=${Boolean(r.error)} results=${r.result_count} curation=${JSON.stringify(r.candidate_curation ?? null)} started=${r.started_at?.toISOString?.() ?? r.started_at} finished=${r.finished_at?.toISOString?.() ?? r.finished_at ?? "none"}`);
+          const deliveries = await client.query(`select s.id, s.status, s.metadata->'candidate_curation'->>'trace_id' as trace_id, a.id as article_id, a.status as article_status, d.status as draft_status, p.telegram_message_id from (select * from public.search_runs order by started_at desc limit 5) s left join public.articles a on a.id::text = s.metadata->>'selected_article_id' left join lateral (select id, status from public.drafts where article_id = a.id order by created_at desc limit 1) d on true left join public.published_posts p on p.draft_id = d.id`);
+          for (const r of deliveries.rows) console.log(`CurationDeliveryOutcome trace_id=${r.trace_id ?? "none"} search_run_id=${r.id} outcome=${r.telegram_message_id ? "published" : r.status === "failed" ? "research_failed" : r.draft_status ?? r.status} article=${r.article_id ?? "none"} article_status=${r.article_status ?? "none"} message=${r.telegram_message_id ?? "none"}`);
+          const reasoning = process.env.OPENAI_REASONING_EFFORT || "medium";
+          console.log(`AiConfiguration openai_reasoning=${["none", "low", "medium", "high", "xhigh"].includes(reasoning) ? reasoning : "invalid"}`);
+          const decisions = await client.query(`select d.article_id, a.title, d.relation, d.duplicate_of_article_id, d.decision_source, d.reason, d.decided_at from public.article_story_decisions d join public.articles a on a.id = d.article_id order by d.decided_at desc limit 10`);
+          if (!decisions.rows.length) console.log("StoryDecision (none)");
+          for (const r of decisions.rows) console.log(`StoryDecision article=${r.article_id} relation=${r.relation} duplicate_of=${r.duplicate_of_article_id ?? "none"} source=${r.decision_source} reason=${JSON.stringify(r.reason ?? "none")} title=${JSON.stringify(r.title)} decided=${r.decided_at?.toISOString?.() ?? r.decided_at}`);
           await client.end();
           NODE
 
@@ -786,6 +796,16 @@ jobs:
           const perOp = await client.query(`select operation, count(*)::int as n from public.ai_provider_attempts where started_at > now() - interval '24 hours' group by operation order by n desc`);
           if (!perOp.rows.length) console.log("AiCalls24h (none)");
           for (const r of perOp.rows) console.log(`AiCalls24h operation=${r.operation} count=${r.n}`);
+          const searchRuns = await client.query(`select id, status, error, result_count, metadata->'candidate_curation' as candidate_curation, started_at, finished_at from public.search_runs order by started_at desc limit 5`);
+          if (!searchRuns.rows.length) console.log("SearchRun (none)");
+          for (const r of searchRuns.rows) console.log(`SearchRun id=${r.id} status=${r.status} error_present=${Boolean(r.error)} results=${r.result_count} curation=${JSON.stringify(r.candidate_curation ?? null)} started=${r.started_at?.toISOString?.() ?? r.started_at} finished=${r.finished_at?.toISOString?.() ?? r.finished_at ?? "none"}`);
+          const deliveries = await client.query(`select s.id, s.status, s.metadata->'candidate_curation'->>'trace_id' as trace_id, a.id as article_id, a.status as article_status, d.status as draft_status, p.telegram_message_id from (select * from public.search_runs order by started_at desc limit 5) s left join public.articles a on a.id::text = s.metadata->>'selected_article_id' left join lateral (select id, status from public.drafts where article_id = a.id order by created_at desc limit 1) d on true left join public.published_posts p on p.draft_id = d.id`);
+          for (const r of deliveries.rows) console.log(`CurationDeliveryOutcome trace_id=${r.trace_id ?? "none"} search_run_id=${r.id} outcome=${r.telegram_message_id ? "published" : r.status === "failed" ? "research_failed" : r.draft_status ?? r.status} article=${r.article_id ?? "none"} article_status=${r.article_status ?? "none"} message=${r.telegram_message_id ?? "none"}`);
+          const reasoning = process.env.OPENAI_REASONING_EFFORT || "medium";
+          console.log(`AiConfiguration openai_reasoning=${["none", "low", "medium", "high", "xhigh"].includes(reasoning) ? reasoning : "invalid"}`);
+          const decisions = await client.query(`select d.article_id, a.title, d.relation, d.duplicate_of_article_id, d.decision_source, d.reason, d.decided_at from public.article_story_decisions d join public.articles a on a.id = d.article_id order by d.decided_at desc limit 10`);
+          if (!decisions.rows.length) console.log("StoryDecision (none)");
+          for (const r of decisions.rows) console.log(`StoryDecision article=${r.article_id} relation=${r.relation} duplicate_of=${r.duplicate_of_article_id ?? "none"} source=${r.decision_source} reason=${JSON.stringify(r.reason ?? "none")} title=${JSON.stringify(r.title)} decided=${r.decided_at?.toISOString?.() ?? r.decided_at}`);
           // Feature flags, because their absence has already been mistaken for a
           // bug once: editorial enrichment was off on this stage while it was
           // on in production, and nothing in the inspection said so.

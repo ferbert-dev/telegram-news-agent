@@ -4,17 +4,24 @@ import { createServer } from "node:http";
 import test from "node:test";
 
 import {
+  CURATION_CANDIDATE_LIMIT,
+  CURATION_SUMMARY_CHAR_LIMIT,
   EvidenceCurationService,
   InvalidNewsCandidateCurationError,
+  rankDeterministicCurationFallback,
   SEMANTIC_ATTEMPT_CEILING,
   StorySemanticAttemptBudget,
 } from "../../src/research/curation/evidence-curation.engine.js";
 import { PinnedEvidenceHttpTransport } from "../../src/research/curation/evidence-curation.http.js";
 import { resolveSemanticAttemptLimit } from "../../src/research/curation/evidence-curation.module.js";
+import { FallbackStructuredGenerationAdapter } from "../../src/research/research-ai-adapter.js";
 import { EvidenceCurationModule } from "../../src/research/curation/evidence-curation.module.js";
 import { evaluateStoryDuplicate as legacyDedup, storyFingerprint as legacyFingerprint } from "../../src/story-deduplication.js";
 import { extractArticleText as legacyExtract } from "../../src/article-extractor.js";
-import { selectCurationSample as legacySample } from "../../src/news-curation.js";
+import {
+  rankDeterministicCurationFallback as legacyFallback,
+  selectCurationSample as legacySample,
+} from "../../src/news-curation.js";
 
 const publicDns = async () => [{ address: "93.184.216.34", family: 4 }];
 const sleep = { async sleep() {} };
@@ -297,6 +304,51 @@ test("typed candidate curation rejects unknown IDs and preserves recognized orde
       && error.code === "invalid_candidate_ids"
       && error.usageEvents[0]?.inputTokens === 5,
   );
+});
+
+test("candidate curation bounds payloads and propagates one trace ID", async () => {
+  let received: { input: unknown; traceId?: string } | undefined;
+  const candidates = Array.from({ length: 55 }, (_value, index) => ({
+    canonicalUrl: `https://publisher-${index}.example/story`,
+    title: `Story ${index}`,
+    publisher: `publisher-${index}`,
+    summary: "x".repeat(800),
+  }));
+  const typed = new EvidenceCurationService(
+    publicDns,
+    { fetchPinned: async () => new Response() },
+    sleep,
+    new FallbackStructuredGenerationAdapter({
+      async generateStructured(input: { input: unknown; traceId?: string }) {
+        received = input;
+        return { value: { rankedCandidateIds: ["candidate-1"] }, usageEvents: [] };
+      },
+    } as never),
+  );
+
+  const result = await typed.curateNewsCandidates(candidates, {}, undefined, undefined, "trace-curation");
+  const payload = received?.input as { candidates: Array<{ summary: string }> };
+  assert.equal(result.consideredCount, CURATION_CANDIDATE_LIMIT);
+  assert.equal(payload.candidates.length, CURATION_CANDIDATE_LIMIT);
+  assert.equal(payload.candidates.every((candidate) => candidate.summary.length <= CURATION_SUMMARY_CHAR_LIMIT), true);
+  assert.equal(received?.traceId, "trace-curation");
+});
+
+test("deterministic curation fallback is stable, publisher-diverse, and legacy-parity", () => {
+  const candidates = [
+    { canonicalUrl: "https://one.example/a", publisher: "one", score: 100, publishedAt: "2026-10-10T10:00:00Z", source: { reliability_score: 90 } },
+    { canonicalUrl: "https://one.example/b", publisher: "one", score: 99, publishedAt: "2026-10-10T09:00:00Z", source: { reliability_score: 90 } },
+    { canonicalUrl: "https://two.example/a", publisher: "two", score: 98, publishedAt: "2026-10-10T08:00:00Z", source: { reliability_score: 80 } },
+    { canonicalUrl: "https://three.example/a", publisher: "three", score: 97, publishedAt: "2026-10-10T07:00:00Z", source: { reliability_score: 70 } },
+  ];
+  const urls = rankDeterministicCurationFallback(candidates).map((candidate) => candidate.canonicalUrl);
+  assert.deepEqual(urls, [
+    "https://one.example/a",
+    "https://two.example/a",
+    "https://three.example/a",
+    "https://one.example/b",
+  ]);
+  assert.deepEqual(urls, legacyFallback(candidates).map((candidate) => candidate.canonicalUrl));
 });
 
 test("an over-limit semantic attempt configuration is refused rather than silently clamped", () => {

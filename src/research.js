@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { fetchArticle } from "./article-extractor.js";
 import {
   assertPublicHttpUrl,
@@ -7,7 +8,10 @@ import {
 } from "./feed.js";
 import { fetchRedditDiscoveries } from "./reddit.js";
 import { fetchGdeltDiscoveries } from "./gdelt.js";
-import { curateNewsCandidates } from "./news-curation.js";
+import {
+  curateNewsCandidates,
+  rankDeterministicCurationFallback,
+} from "./news-curation.js";
 import { recordAiUsageEvents } from "./ai-usage.js";
 import {
   discoverNewFeedSources,
@@ -269,6 +273,18 @@ export async function runResearch({
     },
   });
   let terminalRunRecorded = false;
+  let curationTraceId = null;
+  const logOutcome = (level, details) => {
+    try {
+      log[level]?.(JSON.stringify(details));
+    } catch {
+      // Diagnostics cannot change a durable research outcome.
+    }
+  };
+  const safeErrorCode = (error, fallback) =>
+    typeof error?.code === "string" && /^[a-z][a-z_]{0,63}$/.test(error.code)
+      ? error.code
+      : fallback;
 
   try {
     const excludedTopicAudits = [];
@@ -699,8 +715,9 @@ export async function runResearch({
 
     let candidateCuration = null;
     if (ranked.length && discoveryProvider?.generateStructured) {
+      curationTraceId = randomUUID();
       try {
-        candidateCuration = await curateNewsCandidates({
+        const curationResult = await curateNewsCandidates({
           aiProvider: discoveryProvider,
           candidates: ranked,
           newsSettings: normalizedSettings ?? {
@@ -708,24 +725,71 @@ export async function runResearch({
             topicCodes: ["ai"],
             customTopics: [],
           },
+          traceId: curationTraceId,
         });
+        candidateCuration = {
+          ...curationResult,
+          outcome: "ai_ranked",
+          traceId: curationTraceId,
+        };
         await recordAiUsageEvents(
           repository,
-          candidateCuration.usageEvents,
+          curationResult.usageEvents,
           {
             channelId: normalizedSettings?.channelId ?? null,
             searchRunId: run.id,
           },
         );
-        ranked = candidateCuration.candidates;
+        ranked = curationResult.candidates;
+        try {
+          log.info?.(
+            JSON.stringify({
+              event: "feed_candidate_curation_outcome",
+              outcome: "ai_ranked",
+              trace_id: curationTraceId,
+              search_run_id: run.id,
+              provider: curationResult.provider,
+              model: curationResult.model,
+              considered_count: curationResult.consideredCount,
+              ranked_count: curationResult.rankedCount ?? 0,
+            }),
+          );
+        } catch {
+          // Observability is best-effort and must not alter curation.
+        }
       } catch (error) {
         await recordAiUsageEvents(repository, error?.usageEvents, {
           channelId: normalizedSettings?.channelId ?? null,
           searchRunId: run.id,
         });
+        const errorCode = safeErrorCode(error, "candidate_curation_failed");
+        const traceId = curationTraceId;
+        ranked = rankDeterministicCurationFallback(ranked);
         candidateCuration = {
-          error: error?.code ?? "candidate_curation_failed",
+          outcome: "deterministic_baseline",
+          traceId,
+          consideredCount: Math.min(40, ranked.length),
+          rankedCount: 0,
+          error: errorCode,
+          errorCauses: error instanceof AggregateError
+            ? [...new Set(error.errors.map((cause) => safeErrorCode(cause, "provider_failed")))].slice(0, 5)
+            : [],
         };
+        try {
+          log.warn?.(
+            JSON.stringify({
+              event: "feed_candidate_curation_outcome",
+              outcome: "deterministic_baseline",
+              trace_id: traceId,
+              search_run_id: run.id,
+              error_code: errorCode,
+              error_causes: candidateCuration.errorCauses,
+              considered_count: Math.min(40, ranked.length),
+            }),
+          );
+        } catch {
+          // Observability is best-effort and must not alter fallback.
+        }
       }
     }
 
@@ -1029,7 +1093,10 @@ export async function runResearch({
           "No ranked news evidence remained after excluded-topic policy",
         );
       }
-      throw new Error("No ranked news evidence could be extracted");
+      throw Object.assign(new Error("No ranked news evidence could be extracted"), {
+        name: "ResearchEvidenceUnavailableError",
+        code: "research_evidence_unavailable",
+      });
     }
 
     await repository.finishSearchRun(run.id, {
@@ -1083,7 +1150,10 @@ export async function runResearch({
               model: candidateCuration.model ?? null,
               considered_count: candidateCuration.consideredCount ?? 0,
               ranked_count: candidateCuration.rankedCount ?? 0,
+              outcome: candidateCuration.outcome ?? null,
+              trace_id: candidateCuration.traceId ?? null,
               error: candidateCuration.error ?? null,
+              error_causes: candidateCuration.errorCauses ?? [],
             }
           : null,
         story_deduplication: {
@@ -1104,6 +1174,14 @@ export async function runResearch({
       },
     });
 
+    logOutcome("info", {
+      event: "research_outcome",
+      outcome: "selected",
+      trace_id: curationTraceId,
+      search_run_id: run.id,
+      article_id: selected.article.id,
+    });
+
     return {
       runId: run.id,
       selected,
@@ -1112,6 +1190,13 @@ export async function runResearch({
       extractionErrors,
     };
   } catch (error) {
+    logOutcome("warn", {
+      event: "research_outcome",
+      outcome: "failed",
+      trace_id: curationTraceId,
+      search_run_id: run.id,
+      error_code: safeErrorCode(error, "research_failed"),
+    });
     if (!terminalRunRecorded) {
       await repository.failSearchRun(run.id, error);
     }

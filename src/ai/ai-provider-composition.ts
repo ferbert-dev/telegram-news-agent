@@ -88,6 +88,19 @@ export const DEFAULT_OPERATION_DEADLINES_MS: Readonly<Record<string, number>> = 
   editorial_enrichment_retry: 180_000,
   editorial_draft: 120_000,
 };
+
+/**
+ * Provider-specific exceptions for semantic operations. Candidate curation is
+ * deliberately allowed more time on OpenAI without also doubling Gemini's
+ * outage detection window or every other OpenAI operation.
+ */
+export const DEFAULT_PROVIDER_OPERATION_DEADLINES_MS: Readonly<
+  Record<string, Readonly<Record<string, number>>>
+> = {
+  openai: {
+    feed_candidate_curation: 120_000,
+  },
+};
 const FALLBACK_PROVIDER_ATTEMPTS = 3;
 
 /**
@@ -193,6 +206,7 @@ export function createFallbackAiProvider(
     sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
     providerDeadlineMs = FALLBACK_PROVIDER_DEADLINE_MS,
     operationDeadlineMs = DEFAULT_OPERATION_DEADLINES_MS,
+    providerOperationDeadlineMs = DEFAULT_PROVIDER_OPERATION_DEADLINES_MS,
     random = Math.random,
     setTimeoutImpl = (callback: () => void, delayMs: number) => setTimeout(callback, delayMs),
     clearTimeoutImpl = (timeoutId: unknown) => clearTimeout(timeoutId as ReturnType<typeof setTimeout>),
@@ -205,6 +219,7 @@ export function createFallbackAiProvider(
     sleep?: (ms: number) => Promise<void>;
     providerDeadlineMs?: number;
     operationDeadlineMs?: Readonly<Record<string, number>>;
+    providerOperationDeadlineMs?: Readonly<Record<string, Readonly<Record<string, number>>>>;
     random?: () => number;
     setTimeoutImpl?: (callback: () => void, delayMs: number) => unknown;
     clearTimeoutImpl?: (timeoutId: unknown) => void;
@@ -299,6 +314,14 @@ export function createFallbackAiProvider(
   const deadlineForOperation = (input: Record<string, unknown>): number | undefined => {
     const semantic = typeof input.usageOperation === "string" ? input.usageOperation : null;
     return semantic ? operationDeadlineMs[semantic] : undefined;
+  };
+
+  const deadlineForProviderOperation = (
+    providerName: string,
+    input: Record<string, unknown>,
+  ): number | undefined => {
+    const semantic = typeof input.usageOperation === "string" ? input.usageOperation : null;
+    return semantic ? providerOperationDeadlineMs[providerName]?.[semantic] : undefined;
   };
 
   const runAttempt = async (
@@ -468,12 +491,12 @@ export function createFallbackAiProvider(
         continue;
       }
       throwIfAborted(parentSignal);
-      // Per-operation first, then per-provider. The operation wins because it
-      // describes the work: a long piece of writing takes the same time
-      // whichever provider is asked for it, while the provider trait exists
-      // for endpoints that are slow for their own reasons.
+      // The narrowest override wins: provider+operation, then operation, then
+      // provider traits. This keeps OpenAI curation at 120s while Gemini and
+      // unrelated OpenAI calls retain their existing ceilings.
       const deadlineForProviderMs =
-        deadlineForOperation(input)
+        deadlineForProviderOperation(provider.name, input)
+        ?? deadlineForOperation(input)
         ?? traitsOf(provider.name, descriptors).deadlineMs
         ?? providerDeadlineMs;
       const deadlineAtMs = now().getTime() + deadlineForProviderMs;
@@ -570,7 +593,8 @@ export function createFallbackAiProvider(
         correlationId,
         1,
         now().getTime()
-          + (deadlineForOperation(input)
+          + (deadlineForProviderOperation(provider.name, input)
+            ?? deadlineForOperation(input)
             ?? traitsOf(provider.name, descriptors).deadlineMs
             ?? providerDeadlineMs),
         controller,

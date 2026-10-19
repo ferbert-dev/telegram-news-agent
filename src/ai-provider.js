@@ -151,6 +151,15 @@ export function createFallbackAiProvider(
     );
   }
   const retryOptions = normalizeFallbackRetryOptions({ ...retry, random });
+  // Keep the supported rollback runtime's curation window aligned with Nest.
+  // Other legacy operations retain their existing configurable deadline.
+  const deadlineForProvider = (provider, input) => {
+    if (input?.usageOperation === "feed_candidate_curation") {
+      if (provider.name === "openai") return 120_000;
+      if (provider.name === "gemini") return 60_000;
+    }
+    return retryOptions.providerDeadlineMs;
+  };
 
   const writeAttempt = async (method, input) => {
     if (!attemptRepository?.[method]) return;
@@ -175,7 +184,7 @@ export function createFallbackAiProvider(
     const attemptController = controller ?? new AbortController();
     const effectiveDeadlineAtMs = Number.isFinite(deadlineAtMs)
       ? deadlineAtMs
-      : started.getTime() + retryOptions.providerDeadlineMs;
+      : started.getTime() + deadlineForProvider(provider, input);
     const semanticOperation = input?.usageOperation ?? operation;
     await writeAttempt("startAiProviderAttempt", {
       id, correlationId, operation: semanticOperation, provider: provider.name,
@@ -307,7 +316,7 @@ export function createFallbackAiProvider(
       // Give each configured provider its own bounded window. A single hanging
       // provider must not consume the fallback provider's entire budget.
       const controller = new AbortController();
-      const deadlineAtMs = now().getTime() + retryOptions.providerDeadlineMs;
+      const deadlineAtMs = now().getTime() + deadlineForProvider(provider, input);
       const deadline = {
         atMs: deadlineAtMs,
         isActive: () =>

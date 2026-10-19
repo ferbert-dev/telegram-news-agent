@@ -39,6 +39,7 @@ export class FallbackStructuredGenerationAdapter implements StructuredGeneration
     input: unknown;
     schemaName: string;
     usageOperation: string;
+    traceId?: string;
   }): Promise<StructuredGeneration> {
     const schema = SCHEMA_REGISTRY[input.schemaName];
     if (!schema) {
@@ -51,6 +52,7 @@ export class FallbackStructuredGenerationAdapter implements StructuredGeneration
       jsonSchema: schema.jsonSchema,
       schemaName: input.schemaName,
       usageOperation: input.usageOperation,
+      ...(input.traceId ? { traceId: input.traceId } : {}),
     });
     return {
       value: result.value,

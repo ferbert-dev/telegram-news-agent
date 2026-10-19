@@ -808,6 +808,14 @@ test("non-AI settings skip static AI feeds and allow provider-only research", as
         };
       },
       async generateStructured(request) {
+        if (request.schemaName === "news_candidate_curation") {
+          return {
+            provider: "openai",
+            model: "gpt-5.4-2026-03-05",
+            usageEvents: [],
+            value: { rankedCandidateIds: ["candidate-1"] },
+          };
+        }
         assert.equal(request.schemaName, "excluded_topic_classification");
         return {
           provider: "openai",
@@ -1737,7 +1745,7 @@ test("explicit empty exclusions preserve legacy research parity and emit no poli
   });
 
   assert.equal(result.selected.canonicalUrl, "https://example.com/legacy-parity");
-  assert.deepEqual(logs, []);
+  assert.deepEqual(logs.filter((line) => JSON.parse(line).event === "excluded_topic_policy"), []);
   assert.equal(
     Object.hasOwn(finished.metadata, "excluded_topic_policy"),
     false,
