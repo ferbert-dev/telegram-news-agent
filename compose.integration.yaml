@@ -175,7 +175,8 @@ services:
       # from: 20,278 provider calls in twenty-four hours, none of them chosen.
       EXA_DAILY_SEARCH_CAP: "24"
 
-      AI_PROVIDER_ORDER: exa,gemini,openai
+      AI_PROVIDER_ORDER: exa,openai,gemini
+      OPENAI_REASONING_EFFORT: high
 
       # Fifteen minutes: the same as the pipeline lease's TTL, and not less.
       #

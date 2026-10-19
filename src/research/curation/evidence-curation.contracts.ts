@@ -13,7 +13,7 @@ export interface HttpPort { fetchPinned(url: URL, init: RequestInit, addresses: 
 export interface SleepPort { sleep(delayMs: number): Promise<void>; }
 export type RandomPort = () => number;
 export type StructuredGeneration = { value: unknown; provider?: string | null; model?: string | null; usageEvents?: RecordAiUsageInput[] };
-export interface StructuredGenerationPort { generateStructured(input: { systemInstruction: string; input: JsonValue; schemaName: string; usageOperation: string }): Promise<StructuredGeneration>; }
+export interface StructuredGenerationPort { generateStructured(input: { systemInstruction: string; input: JsonValue; schemaName: string; usageOperation: string; traceId?: string }): Promise<StructuredGeneration>; }
 export type FactSearchResult = {
   value: unknown;
   sourceUrls: string[];

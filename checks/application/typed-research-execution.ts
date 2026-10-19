@@ -103,6 +103,7 @@ function buildGateway({
   ai = fakeAi(),
   articleHtml = `<article><p>${"Extracted primary article evidence with enough length to pass extraction. ".repeat(4)}</p></article>`,
   generator = curationGenerator,
+  log = { info() {}, warn() {} },
 }: {
   acquisition: SourceAcquisition;
   catalog: CatalogPersistence;
@@ -112,6 +113,7 @@ function buildGateway({
   ai?: FallbackAiProvider;
   articleHtml?: string;
   generator?: typeof curationGenerator;
+  log?: Pick<Console, "info" | "warn">;
 }) {
   const curation = new EvidenceCurationService(
     publicDns,
@@ -119,7 +121,7 @@ function buildGateway({
     noSleep,
     generator,
   );
-  return new TypedResearchExecutionGateway(acquisition, curation, ai, catalog, research, storyDedup, usage, () => NOW, { info() {}, warn() {} });
+  return new TypedResearchExecutionGateway(acquisition, curation, ai, catalog, research, storyDedup, usage, () => NOW, log);
 }
 
 test("typed execute persists candidates, saves discovery and evidence raw content, then finishes the run", async () => {
@@ -297,6 +299,11 @@ test("execute never calls finishSearchRun after a transitionArticle failure — 
     research: research as ResearchIngestionPersistence,
     storyDedup,
     usage,
+    generator: {
+      async generateStructured() {
+        throw Object.assign(new Error("curation unavailable"), { code: "ai_providers_exhausted" });
+      },
+    },
   });
 
   await assert.rejects(
@@ -689,8 +696,15 @@ test("a curation failure is recorded and the run still finishes, and its attache
   // misbehaving.)
   const recordedUsage: unknown[] = [];
   const finishes: Record<string, unknown>[] = [];
-  const curationError = Object.assign(new Error("curation upstream failed"), {
+  const warnings: string[] = [];
+  let dedupDecisions = 0;
+  let suppliedTrace: string | undefined;
+  const curationError = Object.assign(new AggregateError([
+    Object.assign(new Error("sensitive provider response"), { code: "timeout" }),
+    Object.assign(new Error("sensitive provider response"), { code: "upstream_unavailable" }),
+  ], "curation upstream failed"), {
     code: "curation_provider_unavailable",
+    traceId: "untrusted-provider-trace",
     usageEvents: [{ provider: "openai", model: "test", providerResponseId: "resp-curation-failed" }],
   });
 
@@ -725,6 +739,7 @@ test("a curation failure is recorded and the run still finishes, and its attache
       return [];
     },
     async recordStoryDedupDecision() {
+      dedupDecisions += 1;
       return {} as never;
     },
   };
@@ -754,10 +769,12 @@ test("a curation failure is recorded and the run still finishes, and its attache
     storyDedup,
     usage,
     generator: {
-      async generateStructured() {
+      async generateStructured(input: { schemaName: string; input: unknown; traceId?: string }) {
+        suppliedTrace = input.traceId;
         throw curationError;
       },
     },
+    log: { info() {}, warn(message) { warnings.push(message); } },
   });
 
   const result = await gateway.execute({ input: { query: "AI news" } });
@@ -768,8 +785,19 @@ test("a curation failure is recorded and the run still finishes, and its attache
   assert.equal(finishes[0]?.resultCount, 1);
 
   // The error code is carried into the run's metadata, not swallowed.
-  const metadata = finishes[0]?.metadata as { candidate_curation?: { error?: string } };
+  const metadata = finishes[0]?.metadata as { candidate_curation?: { error?: string; outcome?: string; trace_id?: string; error_causes?: string[] } };
   assert.equal(metadata?.candidate_curation?.error, "curation_provider_unavailable");
+  assert.equal(metadata?.candidate_curation?.outcome, "deterministic_baseline");
+  assert.match(suppliedTrace ?? "", /^[a-f0-9-]{36}$/);
+  assert.equal(metadata?.candidate_curation?.trace_id, suppliedTrace);
+  assert.deepEqual(metadata?.candidate_curation?.error_causes, ["timeout", "upstream_unavailable"]);
+  assert.equal(warnings.some((warning) => warning.includes("sensitive provider response") || warning.includes("untrusted-provider-trace")), false);
+  assert.equal(dedupDecisions, 1, "deterministic fallback must still pass through story deduplication");
+  assert.equal(
+    warnings.some((warning) => warning.includes('"event":"feed_candidate_curation_outcome"')
+      && warning.includes(`"trace_id":"${suppliedTrace}"`)),
+    true,
+  );
 
   // And the billed call is still recorded.
   assert.equal(

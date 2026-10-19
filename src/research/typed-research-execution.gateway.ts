@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Inject, Injectable, Optional } from "@nestjs/common";
 
 import { applyExcludedTopicPolicy, excludedTopicDefinitions, EXCLUDED_TOPIC_POLICY_PROMPT_VERSION } from "../excluded-topic-policy.js";
@@ -56,6 +57,22 @@ export class NoResearchCandidatesError extends Error {
     super(message);
     this.name = "NoResearchCandidatesError";
   }
+}
+
+export class ResearchEvidenceUnavailableError extends Error {
+  readonly code = "research_evidence_unavailable";
+
+  constructor() {
+    super("No ranked news evidence could be extracted");
+    this.name = "ResearchEvidenceUnavailableError";
+  }
+}
+
+function safeResearchErrorCode(error: unknown, fallback = "candidate_curation_failed"): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && /^[a-z][a-z_]{0,63}$/.test(code)
+    ? code
+    : fallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,6 +290,7 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
       metadata: { keywords, window_hours: windowHours, news_settings: settingsSnapshot },
     });
     let terminalRunRecorded = false;
+    let curationTraceId: string | null = null;
     const usageRepository = { recordAiUsage: (input: unknown) => this.usage.recordAiUsage(input as never) };
     const aiAdapter = { generateStructured: (input: Record<string, unknown>) => this.ai.generateStructured({ ...input, signal }) };
 
@@ -560,24 +578,71 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
       let candidateCuration: Record<string, unknown> | null = null;
       if (ranked.length) {
         throwIfAborted(signal);
+        curationTraceId = randomUUID();
         try {
           const result = await this.curation.curateNewsCandidates(
             ranked as never,
             normalizedSettings ? { ...normalizedSettings, topicCodes: [...normalizedSettings.topicCodes], customTopics: [...normalizedSettings.customTopics] } : { languageCode: "en", topicCodes: ["ai"], customTopics: [] },
-            60,
+            undefined,
+            undefined,
+            curationTraceId,
           );
-          candidateCuration = result;
+          if (result.consideredCount === 0) {
+            throw Object.assign(new Error("Curation provider is not configured"), { code: "curation_not_configured" });
+          }
+          candidateCuration = { ...result, outcome: "ai_ranked", traceId: curationTraceId };
           await recordAiUsageEvents(usageRepository, result.usageEvents, {
             channelId: channelId,
             searchRunId: run.id,
           } as never);
           ranked = result.candidates as unknown as ScorableCandidate[];
+          try {
+            this.log.info?.(JSON.stringify({
+              event: "feed_candidate_curation_outcome",
+              outcome: "ai_ranked",
+              trace_id: curationTraceId,
+              search_run_id: run.id,
+              provider: result.provider,
+              model: result.model,
+              considered_count: result.consideredCount,
+              ranked_count: result.rankedCount ?? 0,
+            }));
+          } catch {
+            // Observability is best-effort and must not alter curation.
+          }
         } catch (error) {
           await recordAiUsageEvents(usageRepository, (error as { usageEvents?: unknown[] })?.usageEvents, {
             channelId: channelId,
             searchRunId: run.id,
           } as never);
-          candidateCuration = { error: (error as { code?: string })?.code ?? "candidate_curation_failed" };
+          const errorCode = safeResearchErrorCode(error);
+          // This is the trace supplied to the provider composition, not a
+          // provider-controlled value from the thrown error.
+          const traceId = curationTraceId;
+          ranked = this.curation.rankDeterministicFallback(ranked as never) as unknown as ScorableCandidate[];
+          candidateCuration = {
+            outcome: "deterministic_baseline",
+            traceId,
+            consideredCount: Math.min(40, ranked.length),
+            rankedCount: 0,
+            error: errorCode,
+            errorCauses: error instanceof AggregateError
+              ? [...new Set(error.errors.map((cause) => safeResearchErrorCode(cause)))].slice(0, 5)
+              : [],
+          };
+          try {
+            this.log.warn?.(JSON.stringify({
+              event: "feed_candidate_curation_outcome",
+              outcome: "deterministic_baseline",
+              trace_id: traceId,
+              search_run_id: run.id,
+              error_code: errorCode,
+              error_causes: candidateCuration.errorCauses,
+              considered_count: Math.min(40, ranked.length),
+            }));
+          } catch {
+            // Observability is best-effort and must not alter fallback.
+          }
         }
       }
 
@@ -982,7 +1047,7 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
           await finishPolicyFilteredSearchRun("selected_evidence");
           throw new NoResearchCandidatesError("No ranked news evidence remained after excluded-topic policy");
         }
-        throw new Error("No ranked news evidence could be extracted");
+        throw new ResearchEvidenceUnavailableError();
       }
 
       throwIfAborted(signal);
@@ -1027,7 +1092,10 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
                 model: candidateCuration.model ?? null,
                 considered_count: candidateCuration.consideredCount ?? 0,
                 ranked_count: candidateCuration.rankedCount ?? 0,
+                outcome: candidateCuration.outcome ?? null,
+                trace_id: candidateCuration.traceId ?? null,
                 error: candidateCuration.error ?? null,
+                error_causes: candidateCuration.errorCauses ?? [],
               }
             : null,
           story_deduplication: {
@@ -1046,6 +1114,18 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
         },
       });
 
+      try {
+        this.log.info?.(JSON.stringify({
+          event: "research_outcome",
+          outcome: "selected",
+          trace_id: curationTraceId,
+          search_run_id: run.id,
+          article_id: selected.article.id,
+        }));
+      } catch {
+        // Diagnostics must not change the durable research result.
+      }
+
       return {
         runId: run.id,
         selected: selected as unknown as ResearchExecutionCandidate,
@@ -1054,6 +1134,17 @@ export class TypedResearchExecutionGateway implements ResearchExecutionGateway {
         extractionErrors,
       };
     } catch (error) {
+      try {
+        this.log.warn?.(JSON.stringify({
+          event: "research_outcome",
+          outcome: signal?.aborted ? "cancelled" : "failed",
+          trace_id: curationTraceId,
+          search_run_id: run.id,
+          error_code: safeResearchErrorCode(error, "research_failed"),
+        }));
+      } catch {
+        // Keep persistence and the original failure as the source of truth.
+      }
       if (!terminalRunRecorded) {
         await this.research.failSearchRun(run.id, error);
       }

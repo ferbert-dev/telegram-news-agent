@@ -438,3 +438,42 @@ test("a long operation gets its own deadline, not the default one", async () => 
   assert.equal(deadlines[2], 120_000, "editorial drafting gets the doubled draft deadline");
   assert.equal(deadlines[3], 60_000, "everything else gets the doubled default");
 });
+
+test("OpenAI curation gets one 120s provider window while Gemini keeps 60s", async () => {
+  const deadlines: number[] = [];
+  let clock = 1_700_000_000_000;
+  const composed = createFallbackAiProvider([
+    {
+      name: "openai",
+      async generateStructured() {
+        clock += 10_000;
+        throw Object.assign(new Error("temporary OpenAI failure"), { status: 429 });
+      },
+    },
+    {
+      name: "gemini",
+      async generateStructured() {
+        return { value: {}, provider: "gemini", usageEvents: [] };
+      },
+    },
+  ] as never, {
+    log: { warn() {}, error() {}, info() {} } as never,
+    now: () => new Date(clock),
+    sleep: async () => {},
+    setTimeoutImpl: (_callback: () => void, delayMs: number) => {
+      deadlines.push(delayMs);
+      return 0;
+    },
+    clearTimeoutImpl: () => undefined,
+  });
+
+  assert.equal(
+    (await composed.generateStructured({ usageOperation: "feed_candidate_curation" })).provider,
+    "gemini",
+  );
+  assert.deepEqual(
+    deadlines,
+    [120_000, 110_000, 100_000, 60_000],
+    "all OpenAI retries share the 120s provider deadline; Gemini starts a fresh 60s window",
+  );
+});

@@ -19,6 +19,9 @@ export const NEWS_CANDIDATE_CURATION_JSON_SCHEMA = {
   required: ["rankedCandidateIds"],
 };
 
+export const CURATION_CANDIDATE_LIMIT = 40;
+export const CURATION_SUMMARY_CHAR_LIMIT = 400;
+
 function sanitizedUsageEvents(value) {
   return (Array.isArray(value) ? value : [])
     .filter((event) => event && typeof event === "object")
@@ -61,11 +64,14 @@ function publisherKey(candidate) {
       candidate.source?.name ??
       candidate.source?.homepage_url ??
       candidate.canonicalUrl,
-  ).toLowerCase();
+  ).trim().toLowerCase();
 }
 
-export function selectCurationSample(candidates, limit = 60) {
-  const boundedLimit = Math.max(1, Math.min(80, Number(limit) || 60));
+export function selectCurationSample(candidates, limit = CURATION_CANDIDATE_LIMIT) {
+  const boundedLimit = Math.max(
+    1,
+    Math.min(CURATION_CANDIDATE_LIMIT, Number(limit) || CURATION_CANDIDATE_LIMIT),
+  );
   const selected = [];
   const selectedUrls = new Set();
   const publishers = new Set();
@@ -87,11 +93,50 @@ export function selectCurationSample(candidates, limit = 60) {
   return selected;
 }
 
+export function rankDeterministicCurationFallback(candidates) {
+  const finite = (value, fallback = 0) => {
+    const parsed = value == null ? Number.NaN : Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+  const timestamp = (value) => {
+    const parsed = Date.parse(String(value ?? ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const sorted = [...candidates].sort(
+    (left, right) =>
+      finite(right.score) - finite(left.score) ||
+      finite(right.source?.reliability_score, 50) -
+        finite(left.source?.reliability_score, 50) ||
+      timestamp(right.publishedAt) - timestamp(left.publishedAt) ||
+      left.canonicalUrl.localeCompare(right.canonicalUrl),
+  );
+  const buckets = new Map();
+  for (const candidate of sorted) {
+    const publisher = publisherKey(candidate);
+    const bucket = buckets.get(publisher);
+    if (bucket) bucket.push(candidate);
+    else buckets.set(publisher, [candidate]);
+  }
+  const ranked = [];
+  for (let offset = 0; ranked.length < sorted.length; offset += 1) {
+    let added = false;
+    for (const bucket of buckets.values()) {
+      if (bucket[offset]) {
+        ranked.push(bucket[offset]);
+        added = true;
+      }
+    }
+    if (!added) break;
+  }
+  return ranked;
+}
+
 export async function curateNewsCandidates({
   aiProvider,
   candidates,
   newsSettings,
-  limit = 60,
+  limit = CURATION_CANDIDATE_LIMIT,
+  traceId,
 }) {
   if (!aiProvider?.generateStructured || !candidates.length) {
     return {
@@ -116,7 +161,10 @@ export async function curateNewsCandidates({
         120,
       ),
       publishedAt: candidate.publishedAt ?? null,
-      summary: plainText(candidate.summary ?? candidate.title),
+      summary: plainText(
+        candidate.summary ?? candidate.title,
+        CURATION_SUMMARY_CHAR_LIMIT,
+      ),
       topicCodes: candidate.source?.topic_codes ?? [],
       reliabilityScore: candidate.source?.reliability_score ?? 50,
       locallyCalculatedScore: candidate.score ?? 0,
@@ -144,6 +192,7 @@ export async function curateNewsCandidates({
     jsonSchema: NEWS_CANDIDATE_CURATION_JSON_SCHEMA,
     schemaName: "news_candidate_curation",
     usageOperation: "feed_candidate_curation",
+    ...(traceId ? { traceId } : {}),
   });
 
   const curated = [];

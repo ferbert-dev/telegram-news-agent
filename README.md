@@ -52,6 +52,13 @@ The whole desk is operated from Telegram: `/news`, `/settings`, `/stats`,
   records for failed requests, including whether it will retry, move to the
   next provider, or leave the application to use its baseline. The NestJS
   composition routes those records to the private operator chat.
+- **Bounded curation recovery.** Feed-candidate curation sends at most 40
+  candidates with 400-character summaries. OpenAI gets one shared 120-second
+  retry window for this operation while fallback providers retain 60 seconds;
+  exhaustion emits a correlated outcome and applies a deterministic,
+  publisher-diverse ranking before the normal story-deduplication gate.
+  Inspection links that trace to the selected article, draft and persisted
+  Telegram receipt. Integration uses OpenAI before Gemini with high reasoning.
 - **An editorial loop, not a single prompt.** Length and shape rules are checked
   after generation, and a draft that breaks them goes back to the model with
   exact feedback — *cut about twenty words, starting with the last sentence of

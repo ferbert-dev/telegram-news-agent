@@ -242,6 +242,26 @@ test("one-shot structured generation never spends a second provider attempt", as
   assert.deepEqual(calls, ["openai"]);
 });
 
+test("legacy curation shares OpenAI's 120s retry window before Gemini's 60s", async () => {
+  let clock = 1_700_000_000_000;
+  const deadlines = [];
+  const provider = createFallbackAiProvider([
+    { name: "openai", async generateStructured() {
+      clock += 10_000;
+      throw Object.assign(new Error("temporary"), { status: 429 });
+    } },
+    { name: "gemini", async generateStructured() { return { provider: "gemini" }; } },
+  ], {
+    log: { warn() {} },
+    now: () => new Date(clock),
+    sleep: async () => {},
+    setTimeoutImpl(_callback, delay) { deadlines.push(delay); return 0; },
+    clearTimeoutImpl() {},
+  });
+  assert.equal((await provider.generateStructured({ usageOperation: "feed_candidate_curation" })).provider, "gemini");
+  assert.deepEqual(deadlines, [120_000, 110_000, 100_000, 60_000]);
+});
+
 test("normal fallback records best-effort attempts, retries transient failures, then falls back", async () => {
   const calls = [];
   const records = [];
