@@ -291,10 +291,12 @@ legacy-notion-audit           -> nothing directly: the gateway takes a finalizer
 nothing imported it, so removing it needed no port before it.
 
 "Typed" means the orchestration is typed, not that the seam is gone.
-`typed-research-execution.gateway.ts` still reaches `feed.js`, `ai-usage.js`,
-`excluded-topic-policy.js` and `news-settings.js` -- shared helpers that have
-not been ported yet. That is what the gateway is for, and it is also the
-measure of how much is left.
+`typed-research-execution.gateway.ts` still reaches `feed.js`, `ai-usage.js`
+and `excluded-topic-policy.js` -- shared helpers that have not been ported
+yet. `news-settings.js` came off this list in "Port settings and scheduling
+helpers to TypeScript": the gateway now reaches the typed twin at
+`src/settings/domain/news-settings.ts` instead. That is what the gateway is
+for, and it is also the measure of how much is left.
 
 Cross-cutting modules that are not persistence slices: `ai-providers` (the
 provider-neutral port and its adapters), `editorial-integration-events`,

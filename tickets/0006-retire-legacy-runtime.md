@@ -41,7 +41,7 @@ only part of it:
 | `legacy-editorial-draft` | `draft.js`, `editorial-enrichment.js`, `article-tags.js`, `telegram.js` |
 | `legacy-editorial-publication` | `telegram.js` |
 | `legacy-notion-audit` | none directly; the composition root builds its finalizer from `notion-audit.js` |
-| `typed-research-execution` | `feed.js`, `ai-usage.js`, `excluded-topic-policy.js`, `news-settings.js` |
+| `typed-research-execution` | `feed.js`, `ai-usage.js`, `excluded-topic-policy.js` (`news-settings.js` ported 2026-09-24; see below) |
 
 `legacy-research-execution` was removed from this table: it and its module
 were deleted (2026-09-24), the one seam with no porting behind it, matching
@@ -50,6 +50,36 @@ the acceptance criterion below.
 So this is a porting job first and a deletion second: each of those slices is
 ported to TypeScript, its gateway removed, and only then does the module it
 wrapped become dead.
+
+**Re-measured 2026-09-24, after "Port settings and scheduling helpers to
+TypeScript":** thirty-one legacy modules are reached, both from
+`src/composition/runtime-entry.ts` (resolving every relative import and
+keeping only specifiers with no `.ts` twin, same rule as above) and from the
+compiled `dist/composition/runtime-entry.js` (resolving every relative import
+and keeping only the ones whose `dist/**/*.js` file has no `src/**/*.ts`
+origin -- the two counts agree). `news-settings.js`, `quiet-hours.js`, and
+`excluded-topics.js` got typed twins this round
+(`src/settings/domain/news-settings.ts`, `src/scheduler/domain/quiet-hours.ts`,
+`src/settings/domain/excluded-topics.ts`) and every typed (`.ts`) importer was
+switched to them -- `checks/architecture/nestjs-boundaries.ts` now asserts
+directly that no `.ts` file under `src/` resolves an import to any of the four
+legacy modules. Only `pipeline-states.js` actually dropped out of the
+transitive-reachability count (32 -> 31), because its typed twin
+(`src/operations/domain/pipeline-states.ts`) had no other path back in.
+`news-settings.js`, `quiet-hours.js`, and `excluded-topics.js` are still
+reached transitively -- not by typed code, but by other still-legacy `.js`
+modules that import them directly and are themselves still reachable.
+`news-settings.js` is imported by `draft.js`, `editorial-enrichment.js`,
+`gemini-provider.js`, `openai-provider.js`, `news-curation.js`, and
+`telegram-settings.js`; `quiet-hours.js` only by `telegram-settings.js`;
+`excluded-topics.js` only by `excluded-topic-policy.js`, exactly as expected
+since that module is out of scope for this ticket and is ported separately.
+(`pipeline.js`, `research.js`, `telegram-control.js`, `news-scheduler.js`, and
+`news-search.js` do import one or both of the first two legacy modules, but
+none of the five is itself reachable from `runtime-entry.ts` -- they belong to
+the legacy `telegram-bot.js` entrypoint's own require graph, not this one, so
+they do not appear in this count.) Retiring those three modules for real needs
+the legacy callers themselves ported, not just their typed siblings switched.
 
 ## Acceptance criteria
 

@@ -2,7 +2,7 @@ import {
   buildSearchPlan,
   newsSettingsSnapshot,
   normalizeNewsSettings,
-} from "../news-settings.js";
+} from "../settings/domain/news-settings.js";
 
 import type {
   EditorialWorkflowApplicationPort,
